@@ -15,13 +15,17 @@ class RoamioApp extends StatelessWidget {
     // When Firebase is not configured yet, show a guided setup screen
     // instead of a broken app (honest, actionable state).
     if (!container.firebaseReady) {
-      return MaterialApp(
-        title: 'Roamio',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: ThemeMode.system,
-        home: const SetupGuideScreen(),
+      // Keep the key-free demo map available even before Firebase is wired.
+      return AppScope(
+        container: container,
+        child: MaterialApp(
+          title: 'Roamio',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: ThemeMode.system,
+          home: const SetupGuideScreen(),
+        ),
       );
     }
 

@@ -115,12 +115,14 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    _zonesSub = _c.zonesRepository.watchAll().listen(
-      (List<SafetyZone> zones) {
-        if (mounted) setState(() => _zones = zones);
-      },
-      onError: (Object _) {},
-    );
+    if (_c.firebaseReady) {
+      _zonesSub = _c.zonesRepository.watchAll().listen(
+        (List<SafetyZone> zones) {
+          if (mounted) setState(() => _zones = zones);
+        },
+        onError: (Object _) {},
+      );
+    }
     _prepareMap();
   }
 

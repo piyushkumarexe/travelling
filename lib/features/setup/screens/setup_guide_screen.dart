@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../map/screens/map_screen.dart';
+
 /// Shown when Firebase is not configured yet (or on the splash route).
 /// This is a real, actionable state — the app never pretends to work
 /// without configuration.
@@ -61,8 +63,9 @@ class SetupGuideScreen extends StatelessWidget {
       (
         '3. Deploy the Roamio backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
-        'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
-        '(see functions/.env.example).',
+        'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_MAPS_API_KEY set '
+        '(see .env.example). GitHub Actions secrets are not read by the '
+        'deployed function; use Firebase Secret Manager.',
       ),
       (
         '4. Deploy rules',
@@ -70,10 +73,10 @@ class SetupGuideScreen extends StatelessWidget {
         'protected and admin gating works.',
       ),
       (
-        '5. Google Maps key',
-        'In android/app/src/main/AndroidManifest.xml replace '
-        'REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY with an Android-restricted '
-        'Maps SDK key for com.roamio.app.',
+        '5. Map is ready',
+        'Roamio now uses an interactive OpenStreetMap, so no Android Maps API '
+        'key is required. Live Places and road routes use the separately '
+        'deployed Firebase backend when configured.',
       ),
       (
         '6. Restart the app',
@@ -135,6 +138,16 @@ class SetupGuideScreen extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 8),
+          FilledButton.icon(
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Open demo map now'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const MapScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
             'Full instructions: see README.md in the repository.',
             style: Theme.of(context).textTheme.bodySmall,
