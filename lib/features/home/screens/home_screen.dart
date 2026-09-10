@@ -14,7 +14,6 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/sos_sheet.dart';
-import '../../../core/widgets/state_views.dart';
 import '../../../data/models/notification.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
