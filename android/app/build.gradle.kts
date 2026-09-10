@@ -20,6 +20,25 @@ val localProperties: Map<String, String> = if (localPropertiesFile.exists()) {
 val flutterVersionCode: Int = localProperties["flutter.versionCode"]?.toIntOrNull() ?: 1
 val flutterVersionName: String = localProperties["flutter.versionName"] ?: "1.0.0"
 
+// Production signing values belong in android/key.properties. The keystore and
+// this properties file are gitignored; CI creates them from encrypted secrets.
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties: Map<String, String> = if (keyPropertiesFile.exists()) {
+    keyPropertiesFile.readLines().mapNotNull { line ->
+        val separator = line.indexOf('=')
+        if (separator <= 0) null
+        else line.substring(0, separator).trim() to
+            line.substring(separator + 1).trim()
+    }.toMap()
+} else {
+    emptyMap()
+}
+val releaseStoreFile = keyProperties["storeFile"]?.let { rootProject.file(it) }
+val hasReleaseSigning = releaseStoreFile?.exists() == true &&
+    !keyProperties["storePassword"].isNullOrEmpty() &&
+    !keyProperties["keyAlias"].isNullOrEmpty() &&
+    !keyProperties["keyPassword"].isNullOrEmpty()
+
 android {
     namespace = "app.roamio.tourism"
     compileSdk = 35
@@ -37,6 +56,17 @@ android {
         jvmTarget = JavaVersion.VERSION_1_8.toString()
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = keyProperties["storePassword"]
+                keyAlias = keyProperties["keyAlias"]
+                keyPassword = keyProperties["keyPassword"]
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "app.roamio.tourism"
         minSdk = 23
@@ -47,11 +77,13 @@ android {
 
     buildTypes {
         release {
-            // Release builds are signed with the debug keystore by default so that
-            // CI can produce an installable APK without a committed keystore.
-            // Configure your own upload keystore (see README > "Release signing")
-            // before publishing to any store.
-            signingConfig = signingConfigs.getByName("debug")
+            // A permanent key enables in-place upgrades and stable Firebase
+            // OAuth fingerprints. Debug signing remains a CI fallback only.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -63,7 +95,9 @@ android {
 // Firebase without exposing any private signing material.
 val printReleaseSigningCertificate =
     tasks.register<Exec>("printReleaseSigningCertificate") {
-        val signing = android.signingConfigs.getByName("debug")
+        val signing = android.signingConfigs.getByName(
+            if (hasReleaseSigning) "release" else "debug",
+        )
         commandLine(
             "${System.getProperty("java.home")}/bin/keytool",
             "-list",
