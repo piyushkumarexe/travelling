@@ -319,41 +319,39 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: !_locationDone
-          ? const LoadingView(message: 'Preparing your dashboard…')
-          : RefreshIndicator(
-              onRefresh: _loadLocation,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                children: <Widget>[
-                  _weatherCard(),
-                  const SizedBox(height: 12),
-                  _safetyCard(),
-                  const SizedBox(height: 12),
-                  _sosCard(),
-                  const SectionHeader(title: 'Quick actions'),
-                  _quickActions(),
-                  const SectionHeader(
-                    title: 'Nearby attractions',
-                    actionLabel: 'See all',
-                  ),
-                  _attractionsRow(),
-                  const SectionHeader(
-                    title: 'Top-rated hotels nearby',
-                    actionLabel: 'Explore',
-                  ),
-                  _hotelsRow(),
-                  if (_alerts.isNotEmpty) ...<Widget>[
-                    const SectionHeader(title: 'Active alerts'),
-                    for (final AppNotification a in _alerts.take(3))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _alertRow(a),
-                      ),
-                  ],
-                ],
-              ),
+      body: RefreshIndicator(
+        onRefresh: _loadLocation,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: <Widget>[
+            _weatherCard(),
+            const SizedBox(height: 12),
+            _safetyCard(),
+            const SizedBox(height: 12),
+            _sosCard(),
+            const SectionHeader(title: 'Quick actions'),
+            _quickActions(),
+            const SectionHeader(
+              title: 'Nearby attractions',
+              actionLabel: 'See all',
             ),
+            _attractionsRow(),
+            const SectionHeader(
+              title: 'Top-rated hotels nearby',
+              actionLabel: 'Explore',
+            ),
+            _hotelsRow(),
+            if (_alerts.isNotEmpty) ...<Widget>[
+              const SectionHeader(title: 'Active alerts'),
+              for (final AppNotification a in _alerts.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _alertRow(a),
+                ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -386,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _weatherCard() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    if (_weatherLoading) {
+    if (!_locationDone || _weatherLoading) {
       return const SkeletonRow(height: 92);
     }
     if (_weatherError != null) {
@@ -665,7 +663,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _attractionsRow() {
-    if (_attrLoading) {
+    if (!_locationDone || _attrLoading) {
       return SizedBox(
         height: 104,
         child: Row(
@@ -722,7 +720,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _hotelsRow() {
-    if (_hotelsLoading) {
+    if (!_locationDone || _hotelsLoading) {
       return SizedBox(
         height: 104,
         child: Row(

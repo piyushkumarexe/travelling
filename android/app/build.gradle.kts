@@ -63,6 +63,7 @@ android {
                 storePassword = keyProperties["storePassword"]
                 keyAlias = keyProperties["keyAlias"]
                 keyPassword = keyProperties["keyPassword"]
+                storeType = keyProperties["storeType"] ?: "JKS"
             }
         }
     }

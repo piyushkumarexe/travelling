@@ -17,9 +17,9 @@ class ApiClient {
   final String baseUrl;
   late final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 15),
-    sendTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 90),
+    connectTimeout: const Duration(seconds: 5),
+    sendTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 30),
     contentType: 'application/json',
   ));
 
@@ -84,7 +84,21 @@ class ApiClient {
       msg = (data['error'] ?? data['message']) as String?;
       details = data['code'] as String?;
     } else if (data is String && data.isNotEmpty) {
-      msg = data.length > 300 ? data.substring(0, 300) : data;
+      final String lower = data.toLowerCase();
+      // Reverse proxies commonly return HTML for missing/unavailable
+      // Functions. Never expose raw markup as an in-app error.
+      if (!lower.contains('<html') && !lower.contains('<!doctype')) {
+        msg = data.length > 200 ? data.substring(0, 200) : data;
+      }
+    }
+    if (code == 404) {
+      return ApiException(
+        ApiErrorKind.server,
+        'This live service is not deployed yet. Please try again after the backend update.',
+        statusCode: code,
+        retryable: false,
+        details: 'backend_not_deployed',
+      );
     }
     if (code == 401) {
       return ApiException(ApiErrorKind.unauthorized,
