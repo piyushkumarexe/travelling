@@ -58,6 +58,29 @@ android {
     }
 }
 
+// Print the public signing-certificate fingerprints in CI. This makes it
+// possible to register the exact certificate used by an installable APK in
+// Firebase without exposing any private signing material.
+val printReleaseSigningCertificate =
+    tasks.register<Exec>("printReleaseSigningCertificate") {
+        val signing = android.signingConfigs.getByName("debug")
+        commandLine(
+            "${System.getProperty("java.home")}/bin/keytool",
+            "-list",
+            "-v",
+            "-keystore",
+            signing.storeFile!!.absolutePath,
+            "-storepass",
+            signing.storePassword!!,
+            "-alias",
+            signing.keyAlias!!,
+        )
+    }
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy(printReleaseSigningCertificate)
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
