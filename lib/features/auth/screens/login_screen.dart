@@ -78,13 +78,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: <Widget>[
                   _featureChip(Icons.map, 'OpenStreetMap'),
-                  const SizedBox(width: 8),
                   _featureChip(Icons.sos, 'SOS & geofencing'),
-                  const SizedBox(width: 8),
                   _featureChip(Icons.auto_awesome, 'AI assistant'),
                 ],
               ),

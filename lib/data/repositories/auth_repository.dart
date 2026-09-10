@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 /// Real Google Sign-In + Firebase Authentication.
@@ -43,6 +44,27 @@ class AuthRepository {
       rethrow;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_friendlyAuthError(e));
+    } on PlatformException catch (e) {
+      // Google Play services reports ApiException status 10 when this app's
+      // package/signing certificate is not registered as an Android OAuth
+      // client. Keep this explicit: a retry cannot fix developer setup.
+      final String details = '${e.code} ${e.message} ${e.details}'.toLowerCase();
+      if (details.contains('api exception: 10') ||
+          details.contains('apiexception: 10') ||
+          details.contains('developer_error')) {
+        throw AuthException(
+          'Google sign-in is not configured for this APK signing certificate. '
+          'Register its SHA-1 and SHA-256 in Firebase, then try again.',
+        );
+      }
+      if (e.code == 'network_error') {
+        throw AuthException(
+          'Network error during Google sign-in. Check your connection.',
+        );
+      }
+      throw AuthException(
+        'Google sign-in failed (${e.code}). Please try again.',
+      );
     } catch (_) {
       throw AuthException('Google sign-in failed. Please try again.');
     }
