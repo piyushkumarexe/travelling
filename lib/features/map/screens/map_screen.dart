@@ -194,7 +194,7 @@ class _MapScreenState extends State<MapScreen> {
         final List<Place> live = await _c.placesRepository.search(
           query,
           location: p == null
-              ? const google.LatLng(_lucknow.latitude, _lucknow.longitude)
+              ? google.LatLng(_lucknow.latitude, _lucknow.longitude)
               : google.LatLng(p.latitude, p.longitude),
           radiusMeters: 15000,
         );
