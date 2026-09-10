@@ -29,7 +29,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
-  Timer? _loadingTimeout;
   bool _saving = false;
   bool _uploadingPhoto = false;
 
@@ -52,36 +51,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _finishWithLocalProfile() {
-    if (!mounted || !_loading) return;
-    setState(() {
-      _profile ??= _localProfile();
-      _loading = false;
-    });
-  }
-
   void _listen() {
     final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) {
-      _finishWithLocalProfile();
-      return;
-    }
-    // Firestore may wait indefinitely while offline or before its rules are
-    // deployed. The identity screen must still open from Firebase Auth data.
-    _loadingTimeout = Timer(const Duration(seconds: 3), _finishWithLocalProfile);
+    // Render Firebase Auth identity immediately. Firestore preferences update
+    // the same screen whenever they arrive, but never block navigation.
+    _profile = _localProfile();
+    _loading = false;
+    if (uid == null) return;
     _sub = _c.profileRepository.watch(uid).listen(
       (Profile? p) {
-        if (!mounted) return;
-        _loadingTimeout?.cancel();
-        setState(() {
-          _profile = p ?? _localProfile();
-          _loading = false;
-        });
+        if (!mounted || p == null) return;
+        setState(() => _profile = p);
       },
-      onError: (Object _) {
-        _loadingTimeout?.cancel();
-        _finishWithLocalProfile();
-      },
+      onError: (Object _) {},
     );
   }
 
@@ -171,7 +153,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    _loadingTimeout?.cancel();
     _sub?.cancel();
     super.dispose();
   }
