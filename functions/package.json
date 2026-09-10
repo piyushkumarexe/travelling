@@ -1,0 +1,13 @@
+{
+  "name": "roamio-functions",
+  "description": "Roamio secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}

@@ -1,0 +1,47 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+*.iml
+.idea/
+.vscode/
+
+# Flutter / Dart
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+pubspec.lock
+
+# Android
+**/android/.gradle
+**/android/captures/
+**/android/local.properties
+**/android/**/*.keystore
+**/android/key.properties
+
+# Firebase - NEVER commit real credentials
+google-services.json
+**/firebase_options.dart.bak
+firebase-debug.log
+.firebaserc.bak
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.pem
+*.jks

@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function validCoords(lat, lng) {
+      return lat is number && lat >= -90 && lat <= 90
+        && lng is number && lng >= -180 && lng <= 180;
+    }
+
+    // ---- Account (role gate; clients can only create role 'user') ----
+    match /users/{uid} {
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSelf(uid)
+        && request.resource.data.role == 'user'
+        && request.resource.data.keys().hasAll(['role'])
+        && request.resource.data.keys().hasAtMost(['role', 'displayName', 'email', 'createdAt']);
+      allow update: if (isSelf(uid)
+        && resource.data.role == request.resource.data.role)
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Profiles (private per user) ----
+    match /profiles/{uid} {
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isSelf(uid);
+      allow delete: if isSelf(uid) || isAdmin();
+    }
+
+    // ---- Safety zones: any signed-in traveler can read; only admins write ----
+    match /safetyZones/{zoneId} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---- Incidents: reporter reads their own; admins read/manage all ----
+    match /incidents/{incidentId} {
+      allow get: if isSelf(resource.data.uid) || isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'reported'
+        && request.resource.data.severity in ['low', 'medium', 'high', 'critical']
+        && request.resource.data.category in [
+          'theft', 'fraud', 'assault', 'harassment', 'accident',
+          'unsafe_area', 'poor_infrastructure', 'natural_hazard', 'other'
+        ]
+        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.description.size() <= 2000
+        && request.resource.data.reporterName is string
+        && request.resource.data.reporterName.size() <= 120;
+
+      // Admins may change any field (status workflow); nobody else.
+      allow update: if isAdmin()
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ---- SOS emergency events: self + admins ----
+    match /emergencyEvents/{eventId} {
+      allow get: if isSelf(resource.data.uid) || isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 120;
+
+      // Owners may cancel their own active SOS; admins may resolve/cancel.
+      allow update: if (isSelf(resource.data.uid)
+        && resource.data.status == 'active'
+        && request.resource.data.status in ['cancelled', 'resolved']
+        && request.resource.data.uid == resource.data.uid)
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ---- Digital emergency IDs: token is the only externally visible part ----
+    match /digitalIds/{id} {
+      allow get, list: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.token is string
+        && request.resource.data.token.matches(r'^[0-9a-f]{64}$')
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() <= 80;
+
+      // Owners may revoke/reactivate; admins may manage everything.
+      allow update: if (isSelf(resource.data.uid)
+        && request.resource.data.status in ['active', 'revoked']
+        && request.resource.data.uid == resource.data.uid)
+        || isAdmin();
+      allow delete: if isSelf(resource.data.uid) || isAdmin();
+    }
+
+    // ---- Itineraries: per-user subcollection (rules-safe ownership) ----
+    match /users/{uid}/itineraries/{itineraryId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.destination is string
+        && request.resource.data.destination.size() >= 2
+        && request.resource.data.destination.size() <= 120
+        && request.resource.data.days is number
+        && request.resource.data.days >= 1
+        && request.resource.data.days <= 10
+        && request.resource.data.budget in ['budget', 'mid', 'luxury']
+        && request.resource.data.travelStyle in ['relaxed', 'balanced', 'packed']
+        && request.resource.data.plan is list;
+      allow update, delete: if isSelf(uid);
+    }
+
+    // ---- Eco score (document per uid) + activities subcollection ----
+    match /ecoScores/{uid} {
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isSelf(uid)
+        && request.resource.data.uid == uid;
+      allow delete: if isSelf(uid) || isAdmin();
+
+      match /activities/{activityId} {
+        allow get, list: if isSelf(uid);
+        allow create: if isSelf(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.mode in ['walk', 'cycle', 'transit']
+          && request.resource.data.distanceMeters is number
+          && request.resource.data.distanceMeters > 0
+          && request.resource.data.distanceMeters <= 2000000;
+        allow delete: if isSelf(uid) || isAdmin();
+      }
+    }
+
+    // ---- Notifications live in the per-user subcollection ----
+    match /users/{uid}/notifications/{notificationId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 600;
+      allow update: if isSelf(uid)
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if isSelf(uid);
+    }
+
+    // ---- Rate limits are backend-only ----
+    match /rateLimits/{key} {
+      allow read, write: if false;
+    }
+  }
+}
