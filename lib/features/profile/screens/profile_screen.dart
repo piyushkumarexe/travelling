@@ -79,7 +79,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _editProfile() {
     final Profile? p = _profile;
-    final String? photoUrl = p?.photoUrl;
     if (p == null) return;
     showModalBottomSheet<void>(
       context: context,
@@ -107,7 +106,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _uploadAvatar() async {
     final Profile? p = _profile;
-    final String? photoUrl = p?.photoUrl;
     final String? uid = _c.authRepository.currentUser?.uid;
     if (p == null || uid == null) return;
     setState(() => _uploadingPhoto = true);
