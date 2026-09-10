@@ -158,17 +158,19 @@ class AuthRepository {
     final DocumentReference<Map<String, dynamic>> userRef =
         _db.collection('users').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> userSnap = await userRef.get();
-    if (userSnap.exists) return;
+    if (!userSnap.exists) {
+      // Keep this payload aligned with Firestore's users/{uid} create allowlist.
+      // Extended identity fields belong in profiles/{uid} below.
+      await userRef.set(<String, dynamic>{
+        'displayName': user.displayName ?? '',
+        'email': user.email ?? '',
+        'role': 'user',
+        'createdAt': Timestamp.now(),
+      });
+    }
 
-    await userRef.set(<String, dynamic>{
-      'uid': user.uid,
-      'displayName': user.displayName ?? '',
-      'email': user.email ?? '',
-      'photoUrl': user.photoURL,
-      'role': 'user',
-      'createdAt': Timestamp.now(),
-    });
-
+    // Always repair a missing profile, including accounts created by older
+    // builds where the users document succeeded but profile creation did not.
     final DocumentReference<Map<String, dynamic>> profileRef =
         _db.collection('profiles').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> profileSnap =

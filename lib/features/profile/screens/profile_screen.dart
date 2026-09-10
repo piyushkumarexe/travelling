@@ -29,6 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
+  Timer? _loadingTimeout;
   bool _saving = false;
   bool _uploadingPhoto = false;
 
@@ -38,19 +39,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _listen();
   }
 
+  Profile? _localProfile() {
+    final User? user = _c.authRepository.currentUser;
+    if (user == null) return null;
+    final String emailName = (user.email ?? '').split('@').first;
+    return Profile(
+      uid: user.uid,
+      name: (user.displayName?.trim().isNotEmpty ?? false)
+          ? user.displayName!.trim()
+          : emailName,
+      photoUrl: user.photoURL,
+    );
+  }
+
+  void _finishWithLocalProfile() {
+    if (!mounted || !_loading) return;
+    setState(() {
+      _profile ??= _localProfile();
+      _loading = false;
+    });
+  }
+
   void _listen() {
     final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
-    _sub = _c.profileRepository
-        .watch(uid)
-        .listen((Profile? p) {
-      if (mounted) {
+    if (uid == null) {
+      _finishWithLocalProfile();
+      return;
+    }
+    // Firestore may wait indefinitely while offline or before its rules are
+    // deployed. The identity screen must still open from Firebase Auth data.
+    _loadingTimeout = Timer(const Duration(seconds: 3), _finishWithLocalProfile);
+    _sub = _c.profileRepository.watch(uid).listen(
+      (Profile? p) {
+        if (!mounted) return;
+        _loadingTimeout?.cancel();
         setState(() {
-          _profile = p;
+          _profile = p ?? _localProfile();
           _loading = false;
         });
-      }
-    }, onError: (Object _) {});
+      },
+      onError: (Object _) {
+        _loadingTimeout?.cancel();
+        _finishWithLocalProfile();
+      },
+    );
   }
 
   Future<void> _signOut() async {
@@ -139,6 +171,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _loadingTimeout?.cancel();
     _sub?.cancel();
     super.dispose();
   }
