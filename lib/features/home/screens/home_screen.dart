@@ -46,6 +46,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _attrLoading = false;
   String? _attrError;
 
+  List<Place> _hotels = const <Place>[];
+  bool _hotelsLoading = false;
+  String? _hotelsError;
+
   List<AppNotification> _alerts = const <AppNotification>[];
   List<SafetyZone> _zones = const <SafetyZone>[];
   String? _safetyText;
@@ -125,6 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }).catchError((Object _) {}));
       _loadWeather();
       _loadAttractions();
+      _loadHotels();
     } catch (_) {
       if (mounted) {
         setState(() => _locationDone = true);
@@ -183,6 +188,38 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _attrError = _friendly(e);
         _attrLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadHotels() async {
+    final Position? pos = _position;
+    if (pos == null) return;
+    setState(() {
+      _hotelsLoading = true;
+      _hotelsError = null;
+    });
+    try {
+      final List<Place> places = await _c.placesRepository.search(
+        '5 star hotels',
+        location: LatLng(pos.latitude, pos.longitude),
+        radiusMeters: 15000,
+      );
+      if (!mounted) return;
+      places.sort((Place a, Place b) {
+        final int rating = (b.rating ?? 0).compareTo(a.rating ?? 0);
+        if (rating != 0) return rating;
+        return (b.userRatingCount ?? 0).compareTo(a.userRatingCount ?? 0);
+      });
+      setState(() {
+        _hotels = places.take(5).toList();
+        _hotelsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hotelsError = _friendly(e);
+        _hotelsLoading = false;
       });
     }
   }
@@ -301,6 +338,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     actionLabel: 'See all',
                   ),
                   _attractionsRow(),
+                  const SectionHeader(
+                    title: 'Top-rated hotels nearby',
+                    actionLabel: 'Explore',
+                  ),
+                  _hotelsRow(),
                   if (_alerts.isNotEmpty) ...<Widget>[
                     const SectionHeader(title: 'Active alerts'),
                     for (final AppNotification a in _alerts.take(3))
@@ -675,6 +717,63 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () => context
                   .push('/explore/place/${_attractions[i].placeId}'),
             ),
+      ),
+    );
+  }
+
+  Widget _hotelsRow() {
+    if (_hotelsLoading) {
+      return SizedBox(
+        height: 104,
+        child: Row(
+          children: <Widget>[
+            const Expanded(child: SkeletonCard(height: 104)),
+            const SizedBox(width: 12),
+            Expanded(child: SkeletonCard(height: 104)),
+          ],
+        ),
+      );
+    }
+    if (_hotelsError != null) {
+      return AppCard(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.hotel_outlined,
+                color: Theme.of(context).colorScheme.error),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _hotelsError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            TextButton(onPressed: _loadHotels, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+    if (_hotels.isEmpty) {
+      return AppCard(
+        child: Text(
+          'No top-rated hotel results are available for this location.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
+    }
+    return SizedBox(
+      height: 104,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _hotels.length,
+        separatorBuilder: (BuildContext context, int index) =>
+            const SizedBox(width: 12),
+        itemBuilder: (BuildContext context, int i) => _MiniPlaceCard(
+          place: _hotels[i],
+          onTap: () => context.push('/explore/place/${_hotels[i].placeId}'),
+        ),
       ),
     );
   }

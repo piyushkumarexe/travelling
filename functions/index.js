@@ -665,20 +665,18 @@ async function googlePlacesSearch(body) {
     ];
     url = `${PLACES_URL}/nearbysearchjson?${params.join('&')}`;
   } else {
-    params = [
-      `input=${encodeURIComponent(query)}`,
-      'inputtype=textquery',
-    ];
+    params = [`query=${encodeURIComponent(query)}`];
     if (hasLoc) {
       const radius =
         body.radiusMeters && Number.isFinite(body.radiusMeters)
           ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
           : 5000;
       params.push(
-        `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
+        `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}`,
+        `radius=${radius}`,
       );
     }
-    url = `${PLACES_URL}/findplacefromtext/json?${params.join('&')}`;
+    url = `${PLACES_URL}/textsearch/json?${params.join('&')}`;
   }
   url += `&key=${encodeURIComponent(key)}`;
   const d = await fetchJson(url);

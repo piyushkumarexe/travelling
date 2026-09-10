@@ -16,11 +16,10 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/safety_zone.dart';
 
-/// Interactive OpenStreetMap screen with a useful Lucknow demo dataset.
-///
-/// Map tiles do not require an API key. When the Firebase backend and Google
-/// Places server key are available, search and routing automatically use the
-/// live backend; otherwise the built-in landmarks remain fully usable.
+/// Interactive location-aware map with MapTiler satellite and OSM street
+/// layers. Live place search and traffic-aware road routes use the secured
+/// Firebase backend; the MapTiler public client token is injected at build
+/// time rather than committed to source.
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -595,7 +594,7 @@ class _MapScreenState extends State<MapScreen> {
                 Text(
                   _route!.isApproximate
                       ? 'Approximate straight-line route'
-                      : 'Live road route',
+                      : 'Live traffic-aware road route',
                   style: themeTextSmall(context),
                 ),
               const SizedBox(height: 12),
