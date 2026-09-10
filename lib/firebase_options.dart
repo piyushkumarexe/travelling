@@ -11,6 +11,11 @@ import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 
 class DefaultFirebaseOptions {
+  /// OAuth 2.0 web client created by Firebase Authentication. Google Sign-In
+  /// uses this audience to return the ID token accepted by Firebase Auth.
+  static const String googleWebClientId =
+      '216165370573-eteu1jqusr6853ps9kru5ii8raejem3l.apps.googleusercontent.com';
+
   static FirebaseOptions get currentPlatform {
     if (Platform.isAndroid) return android;
     throw UnsupportedError('Roamio currently supports Android only.');

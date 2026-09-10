@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../firebase_options.dart';
+
 /// Real Google Sign-In + Firebase Authentication.
 
 class AuthException implements Exception {
@@ -15,7 +17,9 @@ class AuthException implements Exception {
 class AuthRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final GoogleSignIn _google = GoogleSignIn();
+  final GoogleSignIn _google = GoogleSignIn(
+    serverClientId: DefaultFirebaseOptions.googleWebClientId,
+  );
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
