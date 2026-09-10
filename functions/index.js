@@ -3,9 +3,14 @@
 'use strict';
 
 const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
+
+const NVIDIA_SECRET = defineSecret('NVIDIA_API_KEY');
+const OPENWEATHER_SECRET = defineSecret('OPENWEATHER_API_KEY');
+const GOOGLE_MAPS_SECRET = defineSecret('GOOGLE_MAPS_API_KEY');
 
 const REGION = process.env.GOOGLE_FUNCTION_REGION || 'us-central1';
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -200,20 +205,10 @@ function makeHandler(fn) {
   };
 }
 
-function env(name) {
-  const v = process.env[name];
-  if (!v) {
-    throw new HttpError(
-      500,
-      `Backend is missing the ${name} configuration. Ask your admin.`,
-      'config',
-    );
-  }
-  return v;
-}
-
 function googleKey() {
-  return env('GOOGLE_MAPS_API_KEY');
+  const value = GOOGLE_MAPS_SECRET.value();
+  if (!value) throw new HttpError(503, 'GOOGLE_MAPS_API_KEY is not configured.', 'not_configured');
+  return value;
 }
 
 async function fetchJson(url, opts) {
@@ -258,7 +253,8 @@ async function fetchJson(url, opts) {
 /* ------------------------------ NVIDIA AI ------------------------------ */
 
 async function nvidiaChat(messages, { jsonMode = false, maxTokens = 1200 } = {}) {
-  const key = env('NVIDIA_API_KEY');
+  const key = NVIDIA_SECRET.value();
+  if (!key) throw new HttpError(503, 'NVIDIA_API_KEY is not configured.', 'not_configured');
   const data = await fetchJson(NVIDIA_URL, {
     method: 'POST',
     headers: {
@@ -324,10 +320,7 @@ function pickString(obj, field, max) {
 /* -------------------------------- /chat -------------------------------- */
 
 exports.chat = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 60, memory: 512 },
-  },
+  { region: REGION, timeoutSeconds: 60, memory: '512MiB', secrets: [NVIDIA_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -380,10 +373,7 @@ exports.chat = onRequest(
 /* ------------------------------- /itinerary ---------------------------- */
 
 exports.itinerary = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 90, memory: 512 },
-  },
+  { region: REGION, timeoutSeconds: 90, memory: '512MiB', secrets: [NVIDIA_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -451,10 +441,7 @@ exports.itinerary = onRequest(
 /* ---------------------------- /incidentAnalyze -------------------------- */
 
 exports.incidentAnalyze = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 60, memory: 512 },
-  },
+  { region: REGION, timeoutSeconds: 60, memory: '512MiB', secrets: [NVIDIA_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -507,7 +494,9 @@ exports.incidentAnalyze = onRequest(
 /* ------------------------------- OpenWeather ---------------------------- */
 
 function ownKey() {
-  return env('OPENWEATHER_API_KEY');
+  const value = OPENWEATHER_SECRET.value();
+  if (!value) throw new HttpError(503, 'OPENWEATHER_API_KEY is not configured.', 'not_configured');
+  return value;
 }
 
 function weatherConditionLabel(d) {
@@ -516,7 +505,7 @@ function weatherConditionLabel(d) {
 }
 
 exports.weatherCurrent = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [OPENWEATHER_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -549,7 +538,7 @@ exports.weatherCurrent = onRequest(
 );
 
 exports.weatherForecast = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [OPENWEATHER_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -691,7 +680,7 @@ async function googlePlacesSearch(body) {
 }
 
 exports.placesSearch = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -706,7 +695,7 @@ exports.placesSearch = onRequest(
 );
 
 exports.placesDetails = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -726,7 +715,7 @@ exports.placesDetails = onRequest(
 );
 
 exports.placesPhoto = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'POST') {
       throw new HttpError(405, 'Method not allowed.', 'validation');
@@ -764,7 +753,7 @@ exports.placesPhoto = onRequest(
 );
 
 exports.emergencyNearby = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -829,7 +818,7 @@ async function googleRoute(origin, destination) {
 }
 
 exports.route = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
@@ -894,7 +883,7 @@ function buildLabel(components) {
 }
 
 exports.geocodeReverse = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  { region: REGION, timeoutSeconds: 30, memory: '256MiB', secrets: [GOOGLE_MAPS_SECRET] },
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
