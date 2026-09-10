@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/creator_mark.dart';
 import '../../map/screens/map_screen.dart';
 
 /// Shown when Firebase is not configured yet (or on the splash route).
@@ -20,22 +21,19 @@ class SetupGuideScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Container(
-                width: 84,
-                height: 84,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-                  ),
-                  borderRadius: BorderRadius.circular(24),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Image.asset(
+                  'assets/branding/tourism_logo.png',
+                  width: 92,
+                  height: 92,
+                  fit: BoxFit.cover,
+                  semanticLabel: 'Tourism app logo',
                 ),
-                child: const Icon(Icons.explore, size: 46, color: Colors.white),
               ),
               const SizedBox(height: 24),
               const Text(
-                'Roamio',
+                'Tourism',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 20),
@@ -61,7 +59,7 @@ class SetupGuideScreen extends StatelessWidget {
         'manually (apiKey, appId, messagingSenderId, projectId, bucket).',
       ),
       (
-        '3. Deploy the Roamio backend',
+        '3. Deploy the Tourism backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
         'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_MAPS_API_KEY set '
         '(see .env.example). GitHub Actions secrets are not read by the '
@@ -74,7 +72,7 @@ class SetupGuideScreen extends StatelessWidget {
       ),
       (
         '5. Map is ready',
-        'Roamio now uses an interactive OpenStreetMap, so no Android Maps API '
+        'Tourism now uses an interactive OpenStreetMap, so no Android Maps API '
         'key is required. Live Places and road routes use the separately '
         'deployed Firebase backend when configured.',
       ),
@@ -86,7 +84,7 @@ class SetupGuideScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Roamio setup')),
+      appBar: AppBar(title: const Text('Tourism setup')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: <Widget>[
@@ -152,6 +150,7 @@ class SetupGuideScreen extends StatelessWidget {
             'Full instructions: see README.md in the repository.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const Center(child: CreatorMark()),
         ],
       ),
     );

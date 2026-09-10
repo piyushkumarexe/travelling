@@ -48,7 +48,7 @@ class PrimaryButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(88, 48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
         child: Padding(
@@ -64,7 +64,7 @@ class PrimaryButton extends StatelessWidget {
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
           ),
           backgroundColor: danger ? AppTheme.danger : scheme.primary,
           foregroundColor: Colors.white,

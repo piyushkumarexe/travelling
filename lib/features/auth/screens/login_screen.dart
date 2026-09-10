@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/creator_mark.dart';
 import '../../../data/repositories/auth_repository.dart'
     show AuthException;
 import '../../map/screens/map_screen.dart';
@@ -51,22 +52,19 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-                  ),
-                  borderRadius: BorderRadius.circular(28),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/branding/tourism_logo.png',
+                  width: 104,
+                  height: 104,
+                  fit: BoxFit.cover,
+                  semanticLabel: 'Tourism app logo',
                 ),
-                child: const Icon(Icons.explore, size: 52, color: Colors.white),
               ),
               const SizedBox(height: 24),
               Text(
-                'Roamio',
+                'Tourism',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -116,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: scheme.onSurfaceVariant),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const CreatorMark(padding: EdgeInsets.only(top: 16)),
             ],
           ),
         ),

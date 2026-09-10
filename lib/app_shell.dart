@@ -7,6 +7,7 @@ import 'core/services/geofence_service.dart';
 import 'core/state/app_container.dart';
 import 'core/state/auth_state.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/creator_mark.dart';
 import 'core/widgets/sos_fab.dart';
 import 'core/widgets/sos_sheet.dart';
 
@@ -131,34 +132,42 @@ class _AppShellState extends State<AppShell> {
       body: widget.child,
       floatingActionButton: const SosFab(),
       bottomNavigationBar: onTab
-          ? NavigationBar(
-              selectedIndex: index,
-              onDestinationSelected: (int i) => context.go(_tabs[i]),
-              destinations: const <NavigationDestination>[
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home),
-                  label: 'Home',
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const CreatorMark(
+                  padding: EdgeInsets.only(top: 5, bottom: 1),
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.explore_outlined),
-                  selectedIcon: Icon(Icons.explore),
-                  label: 'Explore',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.map_outlined),
-                  selectedIcon: Icon(Icons.map),
-                  label: 'Map',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.shield_outlined),
-                  selectedIcon: Icon(Icons.shield),
-                  label: 'Safety',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: 'Profile',
+                NavigationBar(
+                  selectedIndex: index,
+                  onDestinationSelected: (int i) => context.go(_tabs[i]),
+                  destinations: const <NavigationDestination>[
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore),
+                      label: 'Explore',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.shield_outlined),
+                      selectedIcon: Icon(Icons.shield),
+                      label: 'Safety',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.person_outline),
+                      selectedIcon: Icon(Icons.person),
+                      label: 'Profile',
+                    ),
+                  ],
                 ),
               ],
             )

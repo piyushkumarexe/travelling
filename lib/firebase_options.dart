@@ -18,7 +18,7 @@ class DefaultFirebaseOptions {
 
   static FirebaseOptions get currentPlatform {
     if (Platform.isAndroid) return android;
-    throw UnsupportedError('Roamio currently supports Android only.');
+    throw UnsupportedError('Tourism currently supports Android only.');
   }
 
   static const FirebaseOptions android = FirebaseOptions(

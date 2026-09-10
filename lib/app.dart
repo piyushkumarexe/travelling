@@ -5,8 +5,8 @@ import 'core/state/app_container.dart';
 import 'core/theme/app_theme.dart';
 import 'features/setup/screens/setup_guide_screen.dart';
 
-class RoamioApp extends StatelessWidget {
-  const RoamioApp({super.key, required this.container});
+class TourismApp extends StatelessWidget {
+  const TourismApp({super.key, required this.container});
 
   final AppContainer container;
 
@@ -19,7 +19,7 @@ class RoamioApp extends StatelessWidget {
       return AppScope(
         container: container,
         child: MaterialApp(
-          title: 'Roamio',
+          title: 'Tourism',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
@@ -33,7 +33,7 @@ class RoamioApp extends StatelessWidget {
     return AppScope(
       container: container,
       child: MaterialApp.router(
-        title: 'Roamio',
+        title: 'Tourism',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),

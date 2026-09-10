@@ -1,6 +1,6 @@
-# Roamio — Smart Tourism & Safety Assistant (Android)
+# Tourism — Smart Tourism & Safety Assistant (Android)
 
-Roamio is a native Android app (Flutter) that combines a premium travel
+Tourism is a native Android app (Flutter) that combines a premium travel
 experience with real safety tooling: live Google Maps, real AI assistance
 (NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
 zones with Android notifications, a one-tap SOS flow, a Digital Emergency

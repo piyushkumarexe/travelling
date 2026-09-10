@@ -2,7 +2,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../models/itinerary.dart';
 
-/// NVIDIA AI calls — always through the Roamio backend. The NVIDIA key
+/// NVIDIA AI calls — always through the Tourism backend. The NVIDIA key
 /// never touches the client.
 
 class AiChatMessage {

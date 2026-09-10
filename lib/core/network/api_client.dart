@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_exception.dart';
 
-/// HTTP client for the Roamio backend (Firebase Cloud Functions).
+/// HTTP client for the Tourism backend (Firebase Cloud Functions).
 ///
 /// The backend URL is derived from the Firebase project id; no secrets and
 /// no third-party endpoints are reachable from this client. Every request
@@ -107,7 +107,7 @@ class ApiClient {
       case DioExceptionType.receiveTimeout:
       case DioExceptionType.transformTimeout:
         return ApiException(ApiErrorKind.timeout,
-            'The Roamio backend did not respond in time. Check your connection and try again.');
+            'The Tourism backend did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:
         return ApiException(ApiErrorKind.network,
             'No network connection. Check your internet connection and try again.');
@@ -118,7 +118,7 @@ class ApiClient {
         return ApiException(ApiErrorKind.unknown, 'Request cancelled.');
       case DioExceptionType.badResponse:
         return ApiException(ApiErrorKind.server,
-            msg ?? 'The Roamio backend returned an error (${code ?? 'unknown'}).',
+            msg ?? 'The Tourism backend returned an error (${code ?? 'unknown'}).',
             statusCode: code,
             details: details);
       case DioExceptionType.unknown:
