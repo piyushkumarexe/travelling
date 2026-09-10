@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart' as osm;
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as google;
+import 'package:latlong2/latlong.dart' as ll;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/geo.dart';
@@ -12,10 +15,11 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/safety_zone.dart';
 
-/// REAL interactive Google Maps screen (Google Maps SDK for Flutter):
-/// GPS location, zoom/pan/rotate, place search, tourist attractions,
-/// nearby places, safety zones, emergency services, destination markers,
-/// route info and actual Google Maps navigation on the device.
+/// Interactive OpenStreetMap screen with a useful Lucknow demo dataset.
+///
+/// Map tiles do not require an API key. When the Firebase backend and Google
+/// Places server key are available, search and routing automatically use the
+/// live backend; otherwise the built-in landmarks remain fully usable.
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -24,8 +28,6 @@ class MapScreen extends StatefulWidget {
     this.initialName,
   });
 
-  /// When set (e.g. coming from a place detail screen), the map focuses
-  /// here on open.
   final double? initialLat;
   final double? initialLng;
   final String? initialName;
@@ -35,338 +37,331 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  static const ll.LatLng _lucknow = ll.LatLng(26.8467, 80.9462);
+
+  static final List<Place> _demoPlaces = <Place>[
+    Place(
+      placeId: 'demo-bara-imambara',
+      name: 'Bara Imambara',
+      lat: 26.8694,
+      lng: 80.9126,
+      address: 'Husainabad, Lucknow',
+      rating: 4.5,
+      primaryType: 'tourist_attraction',
+      types: const <String>['tourist_attraction'],
+    ),
+    Place(
+      placeId: 'demo-residency',
+      name: 'The Residency',
+      lat: 26.8606,
+      lng: 80.9230,
+      address: 'Mahatma Gandhi Marg, Lucknow',
+      rating: 4.4,
+      primaryType: 'tourist_attraction',
+      types: const <String>['tourist_attraction', 'museum'],
+    ),
+    Place(
+      placeId: 'demo-ambedkar-park',
+      name: 'Dr. Ambedkar Memorial Park',
+      lat: 26.8485,
+      lng: 80.9874,
+      address: 'Gomti Nagar, Lucknow',
+      rating: 4.4,
+      primaryType: 'park',
+      types: const <String>['park', 'tourist_attraction'],
+    ),
+    Place(
+      placeId: 'demo-rumi-darwaza',
+      name: 'Rumi Darwaza',
+      lat: 26.8678,
+      lng: 80.9135,
+      address: 'Husainabad Road, Lucknow',
+      rating: 4.5,
+      primaryType: 'tourist_attraction',
+      types: const <String>['tourist_attraction'],
+    ),
+    Place(
+      placeId: 'demo-janeshwar-park',
+      name: 'Janeshwar Mishra Park',
+      lat: 26.8489,
+      lng: 81.0107,
+      address: 'Gomti Nagar Extension, Lucknow',
+      rating: 4.5,
+      primaryType: 'park',
+      types: const <String>['park'],
+    ),
+  ];
+
   AppContainer get _c => AppScope.of(context);
 
-  GoogleMapController? _controller;
-  bool _ready = false;
-  CameraPosition _initial = const CameraPosition(
-    target: LatLng(20.5937, 78.9629),
-    zoom: 4,
-  );
-
-  Position? _position;
-  bool _permissionDenied = false;
-
-  Set<Marker> _markers = <Marker>{};
-  Set<Circle> _circles = <Circle>{};
-  Set<Polyline> _polylines = <Polyline>{};
-
-  Place? _selected;
-  RouteInfo? _route;
-  bool _routeLoading = false;
-  double? _distanceToSelected;
-
+  final osm.MapController _mapController = osm.MapController();
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
-  List<Place> _results = const <Place>[];
-  bool _resultsVisible = false;
-  bool _searchLoading = false;
-  String? _searchError;
-
-  List<SafetyZone> _zones = const <SafetyZone>[];
-  bool _showZones = true;
-  String? _activeChip;
-
   StreamSubscription<List<SafetyZone>>? _zonesSub;
-  StreamSubscription<Position>? _posSub;
+
+  bool _ready = false;
+  bool _searching = false;
+  bool _permissionDenied = false;
+  String? _message;
+  Position? _position;
+  Place? _selected;
+  RouteInfo? _route;
+  List<Place> _places = List<Place>.of(_demoPlaces);
+  List<SafetyZone> _zones = const <SafetyZone>[];
+  ll.LatLng _initialCenter = _lucknow;
+  double _initialZoom = 12.5;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     _zonesSub = _c.zonesRepository.watchAll().listen(
-          (List<SafetyZone> z) {
-        if (mounted) {
-          setState(() => _zones = z);
-          _rebuildZones();
-        }
+      (List<SafetyZone> zones) {
+        if (mounted) setState(() => _zones = zones);
       },
       onError: (Object _) {},
-        );
-    _resolveInitial();
+    );
+    _prepareMap();
   }
 
-  Future<void> _resolveInitial() async {
+  Future<void> _prepareMap() async {
     final double? lat = widget.initialLat;
     final double? lng = widget.initialLng;
     if (lat != null && lng != null) {
-      setState(() {
-        _initial = CameraPosition(target: LatLng(lat, lng), zoom: 15);
-        _ready = true;
-      });
-      return;
+      _initialCenter = ll.LatLng(lat, lng);
+      _initialZoom = 15;
+      _selected = Place(
+        placeId: 'initial-destination',
+        name: widget.initialName ?? 'Destination',
+        lat: lat,
+        lng: lng,
+      );
     }
     try {
-      final Position? pos = await _c.locationService.currentPosition();
-      if (!mounted) return;
-      final LocationPermission perm = await _c.locationService.checkPermission();
-      if (pos == null &&
-          (perm == LocationPermission.denied ||
-              perm == LocationPermission.deniedForever)) {
-        setState(() {
-          _permissionDenied = true;
-          _ready = true;
-        });
-      } else if (pos != null) {
-        setState(() {
-          _position = pos;
-          _initial = CameraPosition(
-            target: LatLng(pos.latitude, pos.longitude),
-            zoom: 14,
-          );
-          _ready = true;
-        });
+      final LocationPermission permission =
+          await _c.locationService.ensurePermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _permissionDenied = true;
       } else {
-        setState(() => _ready = true);
+        final Position? position =
+            await _c.locationService.currentPosition();
+        if (position != null) {
+          _position = position;
+          if (lat == null || lng == null) {
+            _initialCenter = ll.LatLng(position.latitude, position.longitude);
+            _initialZoom = 14;
+          }
+        }
       }
     } catch (_) {
-      if (mounted) setState(() => _ready = true);
+      // Lucknow remains a useful default when GPS is unavailable.
     }
-    // Live position for distance + recentering.
-    _posSub = _c.locationService.watchPosition(distanceFilter: 20).listen(
-          (Position p) {
-        if (mounted) {
-          setState(() => _position = p);
-          _updateDistance();
-        }
-      },
-      onError: (Object _) {},
-        );
+    if (mounted) setState(() => _ready = true);
   }
 
   void _onSearchChanged() {
-    final String q = _searchController.text.trim();
     _searchDebounce?.cancel();
-    if (q.isEmpty) {
+    _searchDebounce = Timer(const Duration(milliseconds: 500), _search);
+  }
+
+  Future<void> _search() async {
+    final String query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _places = List<Place>.of(_demoPlaces);
+        _message = null;
+      });
+      return;
+    }
+
+    final String lower = query.toLowerCase();
+    final List<Place> local = _demoPlaces
+        .where((Place place) =>
+            place.name.toLowerCase().contains(lower) ||
+            (place.address?.toLowerCase().contains(lower) ?? false) ||
+            place.types.any((String type) => type.contains(lower)))
+        .toList();
+
+    setState(() {
+      _searching = true;
+      _message = null;
+    });
+
+    if (_c.backendConfigured) {
+      try {
+        final Position? p = _position;
+        final List<Place> live = await _c.placesRepository.search(
+          query,
+          location: p == null
+              ? const google.LatLng(_lucknow.latitude, _lucknow.longitude)
+              : google.LatLng(p.latitude, p.longitude),
+          radiusMeters: 15000,
+        );
+        if (!mounted) return;
+        setState(() {
+          _places = live.isEmpty ? local : live;
+          _searching = false;
+          _message = live.isEmpty ? 'No live result; showing demo matches.' : null;
+        });
+        return;
+      } catch (_) {
+        // Gracefully keep the key-free demo useful if Places isn't configured.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _places = local;
+      _searching = false;
+      _message = local.isEmpty
+          ? 'No demo place matched. Deploy the Places backend for live search.'
+          : 'Showing built-in Lucknow demo places.';
+    });
+  }
+
+  void _showCategory(String type) {
+    _searchController.clear();
+    setState(() {
+      _places = _demoPlaces
+          .where((Place place) => place.types.contains(type))
+          .toList();
+      _message = 'Demo category · live search is available from the search box.';
+    });
+  }
+
+  void _select(Place place) {
+    setState(() {
+      _selected = place;
+      _route = null;
+    });
+    _mapController.move(ll.LatLng(place.lat, place.lng), 15);
+  }
+
+  Future<void> _routeToSelected() async {
+    final Place? destination = _selected;
+    if (destination == null) return;
+    final Position? current = _position;
+    if (current == null) {
+      setState(() {
+        _route = RouteInfo(
+          distanceMeters: 0,
+          durationSeconds: 0,
+          polyline: <google.LatLng>[
+            google.LatLng(_lucknow.latitude, _lucknow.longitude),
+            destination.coords,
+          ],
+          provider: 'fallback',
+        );
+      });
+      return;
+    }
+
+    try {
+      final RouteInfo route = await _c.placesRepository.route(
+        google.LatLng(current.latitude, current.longitude),
+        destination.coords,
+      );
+      if (mounted) setState(() => _route = route);
+    } catch (_) {
+      final google.LatLng from =
+          google.LatLng(current.latitude, current.longitude);
+      final double distance =
+          GeoUtils.distanceMeters(from, destination.coords);
       if (mounted) {
         setState(() {
-          _resultsVisible = false;
-          _results = const <Place>[];
+          _route = RouteInfo(
+            distanceMeters: distance,
+            durationSeconds: distance / 1.3,
+            polyline: <google.LatLng>[from, destination.coords],
+            provider: 'fallback',
+          );
         });
       }
-      return;
     }
-    _searchDebounce = Timer(const Duration(milliseconds: 550), _runSearch);
-  }
-
-  Future<void> _runSearch() async {
-    final String q = _searchController.text.trim();
-    if (q.isEmpty || _searchLoading) return;
-    setState(() {
-      _searchLoading = true;
-      _searchError = null;
-    });
-    try {
-      final LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
-        q,
-        location: target,
-        radiusMeters: 10000,
-      );
-      if (!mounted) return;
-      setState(() {
-        _results = places;
-        _resultsVisible = true;
-        _searchLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _searchError = e.toString();
-        _searchLoading = false;
-      });
-    }
-  }
-
-  void _searchCategory(String label, String query, {List<String>? types}) {
-    if (_activeChip == label) {
-      setState(() => _activeChip = null);
-      _searchController.clear();
-      setState(() => _resultsVisible = false);
-      return;
-    }
-    setState(() {
-      _activeChip = label;
-      _searchError = null;
-    });
-    _searchController.text = query;
-    _runSearchWithTypes(query, types);
-  }
-
-  Future<void> _runSearchWithTypes(String q, List<String>? types) async {
-    setState(() => _searchLoading = true);
-    try {
-      final LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
-        q,
-        location: target,
-        radiusMeters: 8000,
-        types: types,
-      );
-      if (!mounted) return;
-      setState(() {
-        _results = places;
-        _resultsVisible = true;
-        _searchLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _searchError = e.toString();
-        _searchLoading = false;
-      });
-    }
-  }
-
-  LatLng? _cameraTarget() {
-    final Position? p = _position;
-    if (p != null) return LatLng(p.latitude, p.longitude);
-    return null;
-  }
-
-  void _rebuildZones() {
-    if (!_showZones) {
-      _circles = <Circle>{};
-      return;
-    }
-    final Set<Circle> circles = <Circle>{};
-    for (final SafetyZone z in _zones) {
-      if (!z.active) continue;
-      final Color color = RiskBadge.colorFor(context, z.riskLevel);
-      circles.add(Circle(
-        circleId: CircleId('zone-${z.id}'),
-        center: LatLng(z.lat, z.lng),
-        radius: z.radiusMeters,
-        fillColor: color.withOpacity(0.18),
-        strokeColor: color.withOpacity(0.7),
-        strokeWidth: 2,
-      ));
-    }
-    _circles = circles;
-  }
-
-  Future<void> _select(Place p) async {
-    setState(() {
-      _selected = p;
-      _route = null;
-      _polylines = <Polyline>{};
-      _distanceToSelected = _distance(p.coords);
-      _resultsVisible = false;
-      _markers = <Marker>{
-        Marker(
-          markerId: const MarkerId('selected'),
-          position: p.coords,
-          infoWindow: InfoWindow(
-            title: p.name,
-            snippet: p.address ?? '',
-          ),
-        ),
-      };
-    });
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(p.coords, 15),
-    );
-  }
-
-  double? _distance(LatLng target) {
-    final Position? p = _position;
-    if (p == null) return null;
-    return GeoUtils.distanceMeters(
-      LatLng(p.latitude, p.longitude),
-      target,
-    );
-  }
-
-  void _updateDistance() {
-    final Place? s = _selected;
-    if (s == null) return;
-    setState(() => _distanceToSelected = _distance(s.coords));
-  }
-
-  void _clearSelection() {
-    setState(() {
-      _selected = null;
-      _route = null;
-      _markers = <Marker>{};
-      _polylines = <Polyline>{};
-      _distanceToSelected = null;
-    });
-  }
-
-  Future<void> _getRoute() async {
-    final Place? p = _selected;
-    if (p == null) return;
-    final Position? pos = _position;
-    if (pos == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Waiting for your GPS fix — try again in a second.')),
-      );
-      return;
-    }
-    setState(() => _routeLoading = true);
-    try {
-      final RouteInfo r = await _c.placesRepository.route(
-        LatLng(pos.latitude, pos.longitude),
-        p.coords,
-      );
-      if (!mounted) return;
-      setState(() {
-        _route = r;
-        _routeLoading = false;
-        _polylines = r.polyline.length >= 2
-            ? <Polyline>{
-                Polyline(
-                  polylineId: const PolylineId('route'),
-                  points: r.polyline,
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 5,
-                ),
-              }
-            : <Polyline>{};
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _routeLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not get a route: $e')),
-      );
-    }
-  }
-
-  Future<void> _openNavigation() async {
-    final Place? p = _selected;
-    if (p == null) return;
-    await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
   }
 
   Future<void> _recenter() async {
     final Position? p = _position;
-    if (p == null) return;
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(p.latitude, p.longitude), 15),
+    _mapController.move(
+      p == null ? _lucknow : ll.LatLng(p.latitude, p.longitude),
+      p == null ? 12.5 : 15,
     );
   }
 
-  Future<void> _enableLocation() async {
-    final LocationPermission perm =
-        await _c.locationService.ensurePermission();
-    if (!mounted) return;
-    if (perm == LocationPermission.denied ||
-        perm == LocationPermission.deniedForever) {
-      return;
+  List<osm.Marker> _markers() {
+    final List<osm.Marker> markers = _places
+        .map(
+          (Place place) => osm.Marker(
+            point: ll.LatLng(place.lat, place.lng),
+            width: 46,
+            height: 52,
+            child: GestureDetector(
+              onTap: () => _select(place),
+              child: Tooltip(
+                message: place.name,
+                child: Icon(
+                  place.types.contains('park') ? Icons.park : Icons.location_on,
+                  size: 42,
+                  color: _selected?.placeId == place.placeId
+                      ? Colors.deepOrange
+                      : const Color(0xFF0E7C7B),
+                ),
+              ),
+            ),
+          ),
+        )
+        .toList();
+    final Position? p = _position;
+    if (p != null) {
+      markers.add(
+        osm.Marker(
+          point: ll.LatLng(p.latitude, p.longitude),
+          width: 28,
+          height: 28,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(color: Colors.black26, blurRadius: 5),
+              ],
+            ),
+          ),
+        ),
+      );
     }
-    final Position? pos = await _c.locationService.currentPosition();
-    if (mounted) {
-      setState(() {
-        _position = pos;
-        _permissionDenied = false;
-      });
-      if (pos != null) {
-        _recenter();
-      }
-    }
+    return markers;
+  }
+
+  List<osm.CircleMarker> _zoneCircles() => _zones
+      .where((SafetyZone zone) => zone.active)
+      .map((SafetyZone zone) {
+        final Color color = RiskBadge.colorFor(context, zone.riskLevel);
+        return osm.CircleMarker(
+          point: ll.LatLng(zone.lat, zone.lng),
+          radius: zone.radiusMeters,
+          useRadiusInMeter: true,
+          color: color.withOpacity(0.18),
+          borderColor: color,
+          borderStrokeWidth: 2,
+        );
+      })
+      .toList();
+
+  List<osm.Polyline> _routeLines() {
+    final RouteInfo? route = _route;
+    if (route == null || route.polyline.length < 2) return const <osm.Polyline>[];
+    return <osm.Polyline>[
+      osm.Polyline(
+        points: route.polyline
+            .map((google.LatLng p) => ll.LatLng(p.latitude, p.longitude))
+            .toList(),
+        strokeWidth: 5,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ];
   }
 
   @override
@@ -374,68 +369,57 @@ class _MapScreenState extends State<MapScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _zonesSub?.cancel();
-    _posSub?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(
-        body: LoadingView(message: 'Preparing the map…'),
-      );
+      return const Scaffold(body: LoadingView(message: 'Preparing map…'));
     }
     return Scaffold(
       body: Stack(
         children: <Widget>[
-          GoogleMap(
-            initialCameraPosition: _initial,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: true,
-            compassEnabled: true,
-            rotateGesturesEnabled: true,
-            tiltGesturesEnabled: true,
-            onMapCreated: (GoogleMapController controller) {
-              _controller = controller;
-            },
-            markers: _markers,
-            circles: _circles,
-            polylines: _polylines,
-            onTap: (LatLng _) => _clearSelection(),
+          osm.FlutterMap(
+            mapController: _mapController,
+            options: osm.MapOptions(
+              initialCenter: _initialCenter,
+              initialZoom: _initialZoom,
+              minZoom: 3,
+              maxZoom: 19,
+              onTap: (_, __) => setState(() => _selected = null),
+            ),
+            children: <Widget>[
+              osm.TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.roamio.app',
+                maxNativeZoom: 19,
+              ),
+              osm.CircleLayer(circles: _zoneCircles()),
+              osm.PolylineLayer(polylines: _routeLines()),
+              osm.MarkerLayer(markers: _markers()),
+              osm.RichAttributionWidget(
+                attributions: <osm.SourceAttribution>[
+                  osm.TextSourceAttribution(
+                    'OpenStreetMap contributors',
+                    onTap: () => launchUrl(
+                      Uri.parse('https://www.openstreetmap.org/copyright'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _topBar(),
-          ),
-          if (_resultsVisible)
-            Positioned(
-              top: 148,
-              left: 12,
-              right: 12,
-              child: _resultsSheet(),
-            ),
-          if (_permissionDenied)
-            Positioned(
-              top: 200,
-              left: 12,
-              right: 12,
-              child: _permissionBanner(),
-            ),
-          if (_selected != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _selectedSheet(),
-            ),
+          _searchPanel(),
+          if (_permissionDenied) _locationBanner(),
+          if (_selected != null) _placeCard(_selected!),
           Positioned(
             right: 16,
-            bottom: _selected != null ? 260 : 96,
+            bottom: _selected == null ? 32 : 220,
             child: FloatingActionButton.small(
-              tooltip: 'My location',
+              tooltip: _position == null ? 'Show Lucknow' : 'My location',
               onPressed: _recenter,
               child: const Icon(Icons.my_location),
             ),
@@ -445,61 +429,36 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _topBar() {
+  Widget _searchPanel() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        padding: const EdgeInsets.all(12),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                          color: Theme.of(context).colorScheme.outlineVariant),
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search places, attractions…',
-                        prefixIcon: const Icon(Icons.search, size: 20),
-                        suffixIcon: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            if (_searchLoading)
-                              const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                            if (_searchController.text.isNotEmpty)
-                              IconButton(
-                                icon: const Icon(Icons.clear, size: 18),
-                                onPressed: () => _searchController.clear(),
-                              ),
-                          ],
-                        ),
-                        isDense: true,
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                            vertical: 14, horizontal: 8),
-                      ),
-                      onSubmitted: (String _) => _runSearch(),
-                    ),
-                  ),
+            Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(16),
+              color: scheme.surface,
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search a place…',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : null,
+                  border: InputBorder.none,
                 ),
-              ],
+                onSubmitted: (_) => _search(),
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -507,289 +466,144 @@ class _MapScreenState extends State<MapScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: <Widget>[
-                  _chip('Attractions', () => _searchCategory(
-                      'Attractions', 'tourist attractions')),
+                  ActionChip(
+                    avatar: const Icon(Icons.attractions, size: 18),
+                    label: const Text('Attractions'),
+                    onPressed: () => _showCategory('tourist_attraction'),
+                  ),
                   const SizedBox(width: 8),
-                  _chip('Food', () => _searchCategory('Food', 'restaurants')),
+                  ActionChip(
+                    avatar: const Icon(Icons.park, size: 18),
+                    label: const Text('Parks'),
+                    onPressed: () => _showCategory('park'),
+                  ),
                   const SizedBox(width: 8),
-                  _chip('Parks', () => _searchCategory('Parks', 'parks')),
-                  const SizedBox(width: 8),
-                  _chip('Hospitals', () => _searchCategory(
-                      'Hospitals', 'hospitals', types: const <String>['hospital'])),
-                  const SizedBox(width: 8),
-                  _chip('Police', () => _searchCategory(
-                      'Police', 'police stations',
-                      types: const <String>['police_station'])),
-                  const SizedBox(width: 8),
-                  _chip('Fire', () => _searchCategory(
-                      'Fire', 'fire stations',
-                      types: const <String>['fire_station'])),
-                  const SizedBox(width: 8),
-                  _chip(
-                    'Safety zones',
-                    () => setState(() {
-                      _showZones = !_showZones;
-                      _rebuildZones();
-                    }),
-                    active: _showZones,
+                  ActionChip(
+                    avatar: const Icon(Icons.refresh, size: 18),
+                    label: const Text('All demo places'),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _places = List<Place>.of(_demoPlaces));
+                    },
                   ),
                 ],
               ),
             ),
+            if (_message != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Material(
+                  color: scheme.surface.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(_message!, style: themeTextSmall(context)),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _chip(String label, VoidCallback onTap, {bool active = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: active
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: active
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.outlineVariant,
+  Widget _locationBanner() => Positioned(
+        top: 154,
+        left: 12,
+        right: 12,
+        child: Material(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          elevation: 3,
+          child: const Padding(
+            padding: EdgeInsets.all(10),
+            child: Text(
+              'Location permission is off — showing the Lucknow demo map.',
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: active
-                ? Theme.of(context).colorScheme.onPrimary
-                : Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
-    );
-  }
+      );
 
-  Widget _resultsSheet() {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 260),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant),
-        boxShadow: <BoxShadow>[
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 8, 4),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    'Search results',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _resultsVisible = false);
-                  },
-                  child: const Text('Clear'),
-                ),
-              ],
-            ),
-          ),
-          if (_searchError != null)
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text(_searchError!,
-                  style: TextStyle(color: scheme.error)),
-            )
-          else if (_results.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text('No places found. Try a different search.',
-                  style: Theme.of(context).textTheme.bodySmall),
-            )
-          else
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: _results.length,
-                separatorBuilder: (BuildContext context, int i) =>
-                    const Divider(height: 1),
-                itemBuilder: (BuildContext context, int i) {
-                  final Place p = _results[i];
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      backgroundColor:
-                          scheme.primaryContainer.withOpacity(0.6),
-                      child: Icon(Icons.place, color: scheme.primary),
-                    ),
-                    title: Text(p.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                      [
-                        if (p.address != null) p.address!,
-                        if (_distance(p.coords) != null)
-                          GeoUtils.formatDistance(_distance(p.coords)!),
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => _select(p),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _permissionBanner() {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(Icons.location_off, color: scheme.onErrorContainer),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Location is needed for GPS, distances and nearby places.',
-              style:
-                  TextStyle(color: scheme.onErrorContainer, fontSize: 13),
-            ),
-          ),
-          TextButton(
-            onPressed: _enableLocation,
-            child: Text(
-              'Enable',
-              style: TextStyle(
-                  color: scheme.onErrorContainer,
-                  fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _selectedSheet() {
-    final Place p = _selected!;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final RouteInfo? r = _route;
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-          16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+  Widget _placeCard(Place place) {
+    final Position? current = _position;
+    final double? distance = current == null
+        ? null
+        : GeoUtils.distanceMeters(
+            google.LatLng(current.latitude, current.longitude),
+            place.coords,
+          );
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 16,
+      child: Card(
+        elevation: 8,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  p.name,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      place.name,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _selected = null),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
-              if (_distanceToSelected != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    GeoUtils.formatDistance(_distanceToSelected!),
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurfaceVariant),
-                  ),
+              if (place.address != null) Text(place.address!),
+              if (distance != null)
+                Text('Distance: ${GeoUtils.formatDistance(distance)}'),
+              if (_route != null)
+                Text(
+                  _route!.isApproximate
+                      ? 'Approximate straight-line route'
+                      : 'Live road route',
+                  style: themeTextSmall(context),
                 ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _clearSelection,
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'Show route',
+                      icon: Icons.route,
+                      onPressed: _routeToSelected,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'Navigate',
+                      icon: Icons.navigation,
+                      outlined: true,
+                      onPressed: () => _c.placesRepository.openInGoogleMaps(
+                        place.lat,
+                        place.lng,
+                        place.name,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          if (p.address != null)
-            Text(p.address!,
-                style:
-                    Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        )),
-          if (r != null) ...<Widget>[
-            const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                Icon(Icons.route, size: 18, color: scheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${GeoUtils.formatDistance(r.distanceMeters)} · '
-                    '${GeoUtils.formatDuration(r.durationSeconds)}'
-                    '${r.isApproximate ? ' (estimate)' : ''}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: PrimaryButton(
-                  label: _routeLoading ? 'Calculating…' : 'Get route',
-                  icon: _routeLoading ? null : Icons.directions,
-                  loading: _routeLoading,
-                  onPressed: _getRoute,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: PrimaryButton(
-                  label: 'Navigate',
-                  icon: Icons.navigation,
-                  outlined: true,
-                  onPressed: _openNavigation,
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 }
+
+TextStyle? themeTextSmall(BuildContext context) =>
+    Theme.of(context).textTheme.bodySmall;
