@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,14 +5,20 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.inputStream().use { localProperties.load(it) }
+val localProperties: Map<String, String> = if (localPropertiesFile.exists()) {
+    localPropertiesFile.readLines().mapNotNull { line ->
+        val separator = line.indexOf('=')
+        if (separator <= 0) null
+        else line.substring(0, separator).trim() to
+            line.substring(separator + 1).trim()
+    }.toMap()
+} else {
+    emptyMap()
 }
 
-val flutterVersionCode: Int = localProperties.getProperty("flutter.versionCode")?.toIntOrNull() ?: 1
-val flutterVersionName: String = localProperties.getProperty("flutter.versionName") ?: "1.0.0"
+val flutterVersionCode: Int = localProperties["flutter.versionCode"]?.toIntOrNull() ?: 1
+val flutterVersionName: String = localProperties["flutter.versionName"] ?: "1.0.0"
 
 android {
     namespace = "com.roamio.app"
