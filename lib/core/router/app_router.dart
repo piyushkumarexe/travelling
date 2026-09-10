@@ -23,6 +23,7 @@ import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
+import '../../features/vehicle/screens/vehicle_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
 import '../state/app_container.dart';
 import '../state/auth_state.dart';
@@ -92,6 +93,11 @@ class AppRouter {
             path: '/safety',
             builder: (BuildContext context, GoRouterState state) =>
                 const SafetyScreen(),
+          ),
+          GoRoute(
+            path: '/vehicle',
+            builder: (BuildContext context, GoRouterState state) =>
+                const VehicleScreen(),
           ),
           GoRoute(
             path: '/profile',

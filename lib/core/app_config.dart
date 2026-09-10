@@ -19,6 +19,15 @@ class AppConfig {
   static String functionsBaseUrl(String projectId) =>
       'https://$functionsRegion-$projectId.cloudfunctions.net';
 
+  /// Public MapTiler browser/mobile token used for satellite raster tiles.
+  ///
+  /// Map tile tokens are shipped to clients by design; restrict this token to
+  /// the approved app/domain and rotate it from the MapTiler dashboard if it
+  /// is ever abused. A build can override it with --dart-define.
+  static const String mapTilerKey = String.fromEnvironment(
+    'MAPTILER_API_KEY',
+  );
+
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 

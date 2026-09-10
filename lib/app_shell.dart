@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/services/geofence_service.dart';
@@ -31,11 +32,13 @@ class _AppShellState extends State<AppShell> {
     '/explore',
     '/map',
     '/safety',
+    '/vehicle',
     '/profile',
   ];
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
   bool _startedGeofence = false;
+  DateTime? _lastBackPress;
 
   @override
   void didChangeDependencies() {
@@ -122,56 +125,85 @@ class _AppShellState extends State<AppShell> {
     return 0;
   }
 
+  Future<void> _handleBack(String location) async {
+    if (location != '/home') {
+      context.go('/home');
+      return;
+    }
+    final DateTime now = DateTime.now();
+    if (_lastBackPress == null ||
+        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+      _lastBackPress = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Press back again to exit Tourism')),
+      );
+      return;
+    }
+    await SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     final int index = _indexOf(location);
     final bool onTab = _tabs.contains(location);
 
-    return Scaffold(
-      body: widget.child,
-      floatingActionButton: const SosFab(),
-      bottomNavigationBar: onTab
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const CreatorMark(
-                  padding: EdgeInsets.only(top: 5, bottom: 1),
-                ),
-                NavigationBar(
-                  selectedIndex: index,
-                  onDestinationSelected: (int i) => context.go(_tabs[i]),
-                  destinations: const <NavigationDestination>[
-                    NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home),
-                      label: 'Home',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.explore_outlined),
-                      selectedIcon: Icon(Icons.explore),
-                      label: 'Explore',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.map_outlined),
-                      selectedIcon: Icon(Icons.map),
-                      label: 'Map',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.shield_outlined),
-                      selectedIcon: Icon(Icons.shield),
-                      label: 'Safety',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.person_outline),
-                      selectedIcon: Icon(Icons.person),
-                      label: 'Profile',
-                    ),
-                  ],
-                ),
-              ],
-            )
-          : null,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_handleBack(location));
+      },
+      child: Scaffold(
+        body: widget.child,
+        floatingActionButton: const SosFab(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        bottomNavigationBar: onTab
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const CreatorMark(
+                    padding: EdgeInsets.only(top: 5, bottom: 1),
+                  ),
+                  NavigationBar(
+                    selectedIndex: index,
+                    onDestinationSelected: (int i) => context.go(_tabs[i]),
+                    destinations: const <NavigationDestination>[
+                      NavigationDestination(
+                        icon: Icon(Icons.home_outlined),
+                        selectedIcon: Icon(Icons.home),
+                        label: 'Home',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.explore_outlined),
+                        selectedIcon: Icon(Icons.explore),
+                        label: 'Explore',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.map_outlined),
+                        selectedIcon: Icon(Icons.map),
+                        label: 'Map',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.shield_outlined),
+                        selectedIcon: Icon(Icons.shield),
+                        label: 'Safety',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.directions_car_outlined),
+                        selectedIcon: Icon(Icons.directions_car),
+                        label: 'Vehicle',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: 'Profile',
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : null,
+      ),
     );
   }
 }

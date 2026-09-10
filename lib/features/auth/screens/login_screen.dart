@@ -6,6 +6,7 @@ import '../../../core/widgets/creator_mark.dart';
 import '../../../data/repositories/auth_repository.dart'
     show AuthException;
 import '../../map/screens/map_screen.dart';
+import '../widgets/email_auth_sheet.dart';
 
 /// Real Google Sign-In screen (Firebase Authentication under the hood).
 class LoginScreen extends StatefulWidget {
@@ -40,6 +41,15 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showEmailSignIn() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const EmailAuthSheet(),
+    );
   }
 
   @override
@@ -92,6 +102,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 icon: _loading ? null : Icons.account_circle,
                 loading: _loading,
                 onPressed: _signIn,
+              ),
+              const SizedBox(height: 10),
+              PrimaryButton(
+                label: 'Continue with email',
+                icon: Icons.mail_outline,
+                outlined: true,
+                onPressed: _showEmailSignIn,
               ),
               const SizedBox(height: 10),
               PrimaryButton(

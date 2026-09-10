@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as google;
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
@@ -100,6 +101,7 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription<List<SafetyZone>>? _zonesSub;
 
   bool _ready = false;
+  bool _satellite = AppConfig.mapTilerKey.isNotEmpty;
   bool _searching = false;
   bool _permissionDenied = false;
   String? _message;
@@ -394,15 +396,25 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: <Widget>[
               osm.TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: _satellite
+                    ? 'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${AppConfig.mapTilerKey}'
+                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'app.roamio.tourism',
-                maxNativeZoom: 19,
+                maxNativeZoom: _satellite ? 20 : 19,
               ),
               osm.CircleLayer(circles: _zoneCircles()),
               osm.PolylineLayer(polylines: _routeLines()),
               osm.MarkerLayer(markers: _markers()),
               osm.RichAttributionWidget(
                 attributions: <osm.SourceAttribution>[
+                  if (_satellite)
+                    osm.TextSourceAttribution(
+                      'MapTiler',
+                      onTap: () => launchUrl(
+                        Uri.parse('https://www.maptiler.com/copyright/'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    ),
                   osm.TextSourceAttribution(
                     'OpenStreetMap contributors',
                     onTap: () => launchUrl(
@@ -417,6 +429,18 @@ class _MapScreenState extends State<MapScreen> {
           _searchPanel(),
           if (_permissionDenied) _locationBanner(),
           if (_selected != null) _placeCard(_selected!),
+          if (AppConfig.mapTilerKey.isNotEmpty)
+            Positioned(
+              right: 16,
+              top: MediaQuery.paddingOf(context).top + 118,
+              child: FloatingActionButton.small(
+                heroTag: 'map-layer',
+                tooltip: _satellite ? 'Use street map' : 'Use satellite map',
+                onPressed: () => setState(() => _satellite = !_satellite),
+                child:
+                    Icon(_satellite ? Icons.map_outlined : Icons.satellite_alt),
+              ),
+            ),
           Positioned(
             right: 16,
             bottom: _selected == null ? 32 : 220,

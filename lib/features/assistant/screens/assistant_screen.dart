@@ -156,7 +156,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Tourism Assistant'),
+        title: const Text('Tourism AI'),
         actions: <Widget>[
           if (_locationLabel != null)
             Padding(

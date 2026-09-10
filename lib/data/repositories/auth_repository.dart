@@ -85,8 +85,57 @@ class AuthRepository {
         return 'Too many attempts. Wait a minute and try again.';
       case 'network-request-failed':
         return 'Network error during sign-in. Check your connection.';
+      case 'invalid-email':
+        return 'Enter a valid email address.';
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'Email or password is incorrect.';
+      case 'email-already-in-use':
+        return 'An account already exists for this email.';
+      case 'weak-password':
+        return 'Use a stronger password with at least 8 characters.';
+      case 'operation-not-allowed':
+        return 'Email sign-in is not enabled in Firebase yet.';
       default:
         return 'Sign-in failed (${e.code}). Please try again.';
+    }
+  }
+
+  Future<User?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final UserCredential result = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    }
+  }
+
+  Future<User?> createAccountWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final UserCredential result = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    }
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
     }
   }
 
