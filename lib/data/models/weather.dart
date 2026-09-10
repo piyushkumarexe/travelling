@@ -83,7 +83,9 @@ List<String> weatherSafetyNotes(WeatherCurrent w) {
     notes.add('Cold day: layered clothing is recommended.');
   }
   final double windMsToKmh = w.windMs * 3.6;
-  if (windMsToKmh >= 40) {
+  // Weather APIs round wind speed; tolerate a tenth of a km/h around the
+  // public 40 km/h threshold (11.11 m/s is reported as 39.996 km/h).
+  if (windMsToKmh >= 39.9) {
     notes.add('Strong winds: avoid open areas, loose signage and water bodies.');
   } else if (windMsToKmh >= 25) {
     notes.add('Windy conditions: mind loose items and narrow bridges.');
