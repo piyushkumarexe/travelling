@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    function isVideo() {
+      return request.resource.contentType.matches(
+        'video/(mp4|quicktime|webm|3gpp)');
+    }
+
+    // Incident evidence: incidents/{uid}/* — owner uploads, owner + admin read
+    match /incidents/{uid}/{fileName} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow write: if isSelf(uid)
+        && (isImage() || isVideo())
+        && request.resource.size <= 52428800; // 50 MB
+      allow delete: if isSelf(uid) || isAdmin();
+    }
+
+    // Profile photos: avatars/{uid}/* — small, image-only
+    match /avatars/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow write: if isSelf(uid)
+        && isImage()
+        && request.resource.size <= 5242880; // 5 MB
+      allow delete: if isSelf(uid) || isAdmin();
+    }
+
+    // Everything else is denied by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
