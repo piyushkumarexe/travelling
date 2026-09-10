@@ -50,7 +50,7 @@ class SetupGuideScreen extends StatelessWidget {
       (
         '1. Create a Firebase project',
         'Console → create project → add an Android app with package name '
-        'com.roamio.app → download google-services.json (not required for '
+        'app.roamio.tourism → download google-services.json (not required for '
         'this codebase, but keep it handy) and copy the web/config values.',
       ),
       (

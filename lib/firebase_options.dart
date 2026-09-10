@@ -1,19 +1,10 @@
-// Firebase configuration template.
+// Firebase options generated from the Android configuration registered for
+// app.roamio.tourism in the tourism-39425 Firebase project.
 //
-// IMPORTANT
-// ---------
-// This file ships with PLACEHOLDER values so the project compiles out of the
-// box. It is NOT wired to a live Firebase project yet.
-//
-// To configure your real project (see README > "Firebase setup"):
-//   1. Create a Firebase project + Android app (com.roamio.app).
-//   2. Install the FlutterFire CLI:  dart pub global activate flutterfire_cli
-//   3. Run:  flutterfire configure --platforms=android
-//      (this rewrites this file with your real values)
-//   4. Or copy the values from Firebase Console > Project settings > Your
-//      apps > SDK setup and configuration into the constants below.
-//
-// NEVER commit real Firebase API keys or a real google-services.json.
+// Firebase client identifiers are bundled in every Android application and
+// are not server secrets. Access is protected by Firebase Auth, Security
+// Rules, App Check, and API restrictions. Third-party secrets (including the
+// NVIDIA key) must remain in Firebase Secret Manager.
 
 import 'dart:io' show Platform;
 
@@ -21,34 +12,25 @@ import 'package:firebase_core/firebase_core.dart';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    if (Platform.isAndroid) {
-      return android;
-    }
-    throw UnsupportedError(
-      'Roamio currently only supports Android. '
-      'Run `flutterfire configure --platforms=android`.',
-    );
+    if (Platform.isAndroid) return android;
+    throw UnsupportedError('Roamio currently supports Android only.');
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
-    appId: 'REPLACE_WITH_FIREBASE_ANDROID_APP_ID',
-    messagingSenderId: 'REPLACE_WITH_MESSAGING_SENDER_ID',
-    projectId: 'REPLACE_WITH_FIREBASE_PROJECT_ID',
-    storageBucket: 'REPLACE_WITH_FIREBASE_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyCjXD5ykiMulIXcb2VrzGLA8iBMkFTCt9M',
+    appId: '1:216165370573:android:fa5a4121d0e6fdfc077784',
+    messagingSenderId: '216165370573',
+    projectId: 'tourism-39425',
+    storageBucket: 'tourism-39425.firebasestorage.app',
   );
 }
 
-/// True when [DefaultFirebaseOptions] has been filled with real values.
-///
-/// The app uses this to show a guided setup screen instead of failing at
-/// runtime with an obscure Firebase error.
+/// True when the Android Firebase client is configured with real values.
 bool get firebaseIsConfigured {
-  final FirebaseOptions o = DefaultFirebaseOptions.android;
-  bool clean(String? v) =>
-      v != null && v.isNotEmpty && !v.startsWith('REPLACE_');
-  return clean(o.apiKey) &&
-      clean(o.appId) &&
-      clean(o.messagingSenderId) &&
-      clean(o.projectId);
+  final FirebaseOptions options = DefaultFirebaseOptions.android;
+  return options.apiKey.isNotEmpty &&
+      options.appId.isNotEmpty &&
+      options.messagingSenderId.isNotEmpty &&
+      options.projectId.isNotEmpty &&
+      !options.apiKey.startsWith('REPLACE_');
 }

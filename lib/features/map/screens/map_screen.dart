@@ -395,7 +395,7 @@ class _MapScreenState extends State<MapScreen> {
             children: <Widget>[
               osm.TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.roamio.app',
+                userAgentPackageName: 'app.roamio.tourism',
                 maxNativeZoom: 19,
               ),
               osm.CircleLayer(circles: _zoneCircles()),

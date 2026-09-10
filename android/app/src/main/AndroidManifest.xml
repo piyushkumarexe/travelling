@@ -57,7 +57,7 @@
         <!--
             Google Maps SDK for Android API key.
             REPLACE the placeholder with your key and restrict it in Google Cloud
-            Console to this applicationId (com.roamio.app) + the Maps SDK.
+            Console to this applicationId (app.roamio.tourism) + the Maps SDK.
             See README > "Google Maps SDK setup".
         -->
         <meta-data

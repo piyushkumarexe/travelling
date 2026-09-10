@@ -4,6 +4,7 @@ import '../../../core/state/app_container.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../data/repositories/auth_repository.dart'
     show AuthException;
+import '../../map/screens/map_screen.dart';
 
 /// Real Google Sign-In screen (Firebase Authentication under the hood).
 class LoginScreen extends StatefulWidget {
@@ -80,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  _featureChip(Icons.map, 'Real Google Maps'),
+                  _featureChip(Icons.map, 'OpenStreetMap'),
                   const SizedBox(width: 8),
                   _featureChip(Icons.sos, 'SOS & geofencing'),
                   const SizedBox(width: 8),
@@ -93,6 +94,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 icon: _loading ? null : Icons.account_circle,
                 loading: _loading,
                 onPressed: _signIn,
+              ),
+              const SizedBox(height: 10),
+              PrimaryButton(
+                label: 'Explore demo map',
+                icon: Icons.map_outlined,
+                outlined: true,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const MapScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               Text(
