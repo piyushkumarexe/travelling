@@ -139,7 +139,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   ),
                   if (_error != null) ...<Widget>[
                     const SizedBox(height: 10),
-                    Text(_error!, style: TextStyle(color: scheme.error)),
+                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   ],
                   const SizedBox(height: 16),
                   Row(
@@ -222,7 +222,6 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
   }
 
   Widget _resultCard(DigitalId id, {required bool active}) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
