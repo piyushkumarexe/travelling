@@ -92,7 +92,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          BUILD_NUMBER="$(date -u +%y%j%H%M)"
           flutter build apk --release \
+            --build-number="$BUILD_NUMBER" \
             --dart-define=MAPTILER_API_KEY="$MAPTILER_API_KEY"
 
       - name: Verify APK exists
