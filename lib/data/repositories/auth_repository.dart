@@ -56,10 +56,9 @@ class AuthRepository {
       if (details.contains('api exception: 10') ||
           details.contains('apiexception: 10') ||
           details.contains('developer_error')) {
-        final String fingerprints = await _apkSigningFingerprints();
         throw AuthException(
           'Google sign-in is not configured for this APK signing certificate. '
-          'Add these fingerprints in Firebase:\n$fingerprints',
+          'Register its SHA-1 and SHA-256 in Firebase, then try again.',
         );
       }
       if (e.code == 'network_error') {
@@ -72,17 +71,6 @@ class AuthRepository {
       );
     } catch (_) {
       throw AuthException('Google sign-in failed. Please try again.');
-    }
-  }
-
-  Future<String> _apkSigningFingerprints() async {
-    try {
-      const MethodChannel channel =
-          MethodChannel('app.roamio.tourism/signing');
-      return await channel.invokeMethod<String>('fingerprints') ??
-          'Fingerprint unavailable';
-    } catch (_) {
-      return 'Fingerprint unavailable';
     }
   }
 
