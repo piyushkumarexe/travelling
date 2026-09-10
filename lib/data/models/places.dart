@@ -1,7 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// A place returned by the Roamio backend (Google Places proxy).
-library;
 
 class Place {
   Place({
@@ -17,6 +16,7 @@ class Place {
     this.photoUrls = const <String>[],
     this.phone,
     this.website,
+    this.priceLevel,
     this.openNow,
   });
 

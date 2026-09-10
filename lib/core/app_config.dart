@@ -4,7 +4,6 @@
 /// client only talks to its own Firebase Cloud Functions backend; all third
 /// party keys (NVIDIA, OpenWeather, Google Places/Directions/Geocoding) are
 /// stored server-side as environment variables and proxied by the backend.
-library;
 
 class AppConfig {
   AppConfig._();

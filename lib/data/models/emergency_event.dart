@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// An SOS emergency event created when the user activates SOS.
-library;
 
 class EmergencyEvent {
   EmergencyEvent({

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -464,7 +465,10 @@ class _SosSheetViewState extends State<_SosSheetView> {
     return Material(
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: scheme.outlineVariant),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(

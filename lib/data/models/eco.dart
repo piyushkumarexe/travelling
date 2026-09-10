@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Eco score + logged eco-friendly travel activities.
-library;
 
 class EcoScore {
   EcoScore({

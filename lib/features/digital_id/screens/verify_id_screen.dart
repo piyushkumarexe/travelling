@@ -380,7 +380,7 @@ class _ScannerDialogState extends State<_ScannerDialog> {
   final MobileScannerController _controller = MobileScannerController();
   bool _handled = false;
 
-  void _onDetect(MobileScannerResult result) {
+  void _onDetect(BarcodeCapture result) {
     if (_handled) return;
     for (final Barcode barcode in result.barcodes) {
       final String? raw = barcode.rawValue;

@@ -1,5 +1,4 @@
 /// OpenWeather data (proxied through the Roamio backend).
-library;
 
 class WeatherCurrent {
   WeatherCurrent({

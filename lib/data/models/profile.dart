@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// User profile (extended identity + preferences), stored at profiles/{uid}.
-library;
 
 class Profile {
   Profile({

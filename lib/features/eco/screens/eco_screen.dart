@@ -92,7 +92,7 @@ class _EcoScreenState extends State<EcoScreen> {
             onPressed: () => Navigator.of(ctx).pop('cycle'),
             child: const Row(
               children: <Widget>[
-                Icon(Icons.pedestal),
+                Icon(Icons.pedal_bike),
                 SizedBox(width: 12),
                 Text('Cycling (GPS-tracked)'),
               ],
@@ -140,7 +140,7 @@ class _EcoScreenState extends State<EcoScreen> {
         content: Text(
           '${EcoMath.modeLabel(session.mode)} · '
           '${GeoUtils.formatDistance(session.distanceMeters)} · '
-          '${GeoUtils.formatDuration(session.duration.inSeconds)}',
+          '${GeoUtils.formatDuration(session.duration.inSeconds.toDouble())}',
         ),
         actions: <Widget>[
           TextButton(
@@ -364,7 +364,7 @@ class _EcoScreenState extends State<EcoScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _statCard(Icons.pedestal, 'Cycling',
+                child: _statCard(Icons.pedal_bike, 'Cycling',
                     GeoUtils.formatDistance(score.cycleKm * 1000)),
               ),
               const SizedBox(width: 10),
@@ -399,7 +399,7 @@ class _EcoScreenState extends State<EcoScreen> {
                   const SizedBox(height: 8),
                   Text(
                     'Distance: ${GeoUtils.formatDistance(session.distanceMeters)}'
-                    ' · Time: ${GeoUtils.formatDuration(session.duration.inSeconds)}'
+                    ' · Time: ${GeoUtils.formatDuration(session.duration.inSeconds.toDouble())}'
                     '${session.hasFixes ? '' : ' · waiting for GPS fixes…'}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -510,7 +510,7 @@ class _EcoScreenState extends State<EcoScreen> {
                                           fontWeight: FontWeight.w700),
                                 ),
                                 Text(
-                                  '${GeoUtils.formatDuration(a.durationSeconds.toInt())}'
+                                  '${GeoUtils.formatDuration(a.durationSeconds)}'
                                   ' · ${Fmt.dateTime(a.createdAt)}'
                                   '${a.note != null && a.note!.isNotEmpty ? ' · ${a.note}' : ''}',
                                   style: Theme.of(context).textTheme.bodySmall,
@@ -538,7 +538,7 @@ class _EcoScreenState extends State<EcoScreen> {
 
   IconData _modeIcon(String mode) => switch (mode) {
         'walk' => Icons.directions_walk,
-        'cycle' => Icons.pedestal,
+        'cycle' => Icons.pedal_bike,
         _ => Icons.train,
       };
 
@@ -665,7 +665,7 @@ class _ManualLogSheetState extends State<_ManualLogSheet> {
                   icon: Icon(Icons.directions_walk, size: 16)),
               ButtonSegment<String>(
                   value: 'cycle', label: Text('Cycle'),
-                  icon: Icon(Icons.pedestal, size: 16)),
+                  icon: Icon(Icons.pedal_bike, size: 16)),
               ButtonSegment<String>(
                   value: 'transit', label: Text('Transit'),
                   icon: Icon(Icons.train, size: 16)),
@@ -702,8 +702,8 @@ class _ManualLogSheetState extends State<_ManualLogSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _noteController,
-            decoration: const InputDecoration(
-                labelText: 'Note (optional)', maxLength: 120),
+            maxLength: 120,
+            decoration: const InputDecoration(labelText: 'Note (optional)'),
           ),
           const SizedBox(height: 18),
           PrimaryButton(

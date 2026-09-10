@@ -36,7 +36,7 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
   void initState() {
     super.initState();
     _sub = _c.itinerariesRepository
-        .watchOne(_uid(), widget.id)
+        .watchOne(_uid() ?? '', widget.id)
         .listen((Itinerary? it) {
       if (!mounted) return;
       setState(() {

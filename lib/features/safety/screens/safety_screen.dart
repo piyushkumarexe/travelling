@@ -335,7 +335,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   icon: const Icon(Icons.pause_circle_outline),
                   label: const Text('Pause'),
                   onPressed: _c.geofenceService.pause,
-                ),
+                )
               else
                 TextButton.icon(
                   icon: const Icon(Icons.play_circle_outline),

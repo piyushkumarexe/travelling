@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// A user-submitted incident (photo/video stored in Firebase Storage,
 /// AI analysis stored inline).
-library;
 
 class Incident {
   Incident({

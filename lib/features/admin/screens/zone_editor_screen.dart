@@ -119,7 +119,7 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
       return;
     }
 
-    final String? adminName = _adminName ?? 'Administrator';
+    final String adminName = _adminName ?? 'Administrator';
     setState(() => _saving = true);
     try {
       final SafetyZone? existing = _zone;

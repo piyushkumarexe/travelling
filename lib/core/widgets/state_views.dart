@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 /// Loading / empty / error state views (no fake data is ever shown).
-library;
 
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key, this.message});

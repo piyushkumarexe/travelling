@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
-library;
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({

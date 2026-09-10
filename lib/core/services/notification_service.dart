@@ -4,7 +4,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// Android local notifications with dedicated channels per alert type.
 /// Handles notification permission (Android 13+) explicitly and never
 /// crashes when the permission is denied.
-library;
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =

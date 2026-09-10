@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../data/repositories/auth_repository.dart'
+import '../../../data/repositories/auth_repository.dart'
     show AuthException;
 
 /// Real Google Sign-In screen (Firebase Authentication under the hood).

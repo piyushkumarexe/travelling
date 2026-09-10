@@ -4,7 +4,6 @@ import '../models/itinerary.dart';
 
 /// NVIDIA AI calls — always through the Roamio backend. The NVIDIA key
 /// never touches the client.
-library;
 
 class AiChatMessage {
   AiChatMessage({required this.role, required this.content});

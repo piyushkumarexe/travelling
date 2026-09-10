@@ -24,7 +24,10 @@ class AppCard extends StatelessWidget {
     final Widget box = Material(
       color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
       borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      border: Border.all(color: scheme.outlineVariant.withOpacity(0.6)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        side: BorderSide(color: scheme.outlineVariant.withOpacity(0.6)),
+      ),
       child: Padding(padding: padding, child: child),
     );
     if (onTap == null) return box;

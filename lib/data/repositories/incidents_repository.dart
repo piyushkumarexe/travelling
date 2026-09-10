@@ -29,7 +29,7 @@ class IncidentsRepository {
       .limit(200)
       .snapshots()
       .map((QuerySnapshot<Map<String, dynamic>> s) => s.docs
-          .map((d) => Incident.fromMap(d.id, d.data()))
+          .map((d) => Incident.fromMap(d.id, d.data()!))
           .toList());
 
   Stream<Incident?> watchOne(String id) => _db
@@ -37,12 +37,12 @@ class IncidentsRepository {
       .doc(id)
       .snapshots()
       .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-          d.exists ? Incident.fromMap(d.id, d.data()) : null);
+          d.exists ? Incident.fromMap(d.id, d.data()!) : null);
 
   Future<Incident?> get(String id) async {
     final DocumentSnapshot<Map<String, dynamic>> d =
         await _db.collection('incidents').doc(id).get();
-    return d.exists ? Incident.fromMap(d.id, d.data()) : null;
+    return d.exists ? Incident.fromMap(d.id, d.data()!) : null;
   }
 
   /// Admin-only in practice (enforced by security rules).

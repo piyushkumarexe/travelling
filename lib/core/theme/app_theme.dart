@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 /// Roamio Material 3 theme.
-library;
 
 class AppTheme {
   AppTheme._();
