@@ -103,7 +103,6 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Verify Emergency ID')),
       body: ListView(

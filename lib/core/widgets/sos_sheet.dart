@@ -129,7 +129,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
           type: 'emergency',
           payload: <String, dynamic>{'eventId': id},
         )
-        .catchError((Object _) {});
+        .catchError((Object _) => '');
   }
 
   Future<void> _loadServices() async {

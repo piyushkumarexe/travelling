@@ -12,7 +12,7 @@ class ZonesRepository {
       .map((QuerySnapshot<Map<String, dynamic>> s) {
         final List<SafetyZone> zones = s.docs
             .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-                SafetyZone.fromMap(d.id, d.data()))
+                SafetyZone.fromMap(d.id, d.data()!))
             .toList()
           ..sort((SafetyZone a, SafetyZone b) =>
               (b.createdAt?.millisecondsSinceEpoch ?? 0) -
@@ -25,7 +25,7 @@ class ZonesRepository {
         await _db.collection('safetyZones').get();
     return s.docs
         .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-            SafetyZone.fromMap(d.id, d.data()))
+            SafetyZone.fromMap(d.id, d.data()!))
         .toList();
   }
 

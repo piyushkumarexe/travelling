@@ -30,7 +30,7 @@ class DigitalIdRepository {
       .where('uid', isEqualTo: uid)
       .snapshots()
       .map((QuerySnapshot<Map<String, dynamic>> s) => s.docs
-          .map((d) => DigitalId.fromMap(d.id, d.data()!))
+          .map((d) => DigitalId.fromMap(d.id, d.data()))
           .toList());
 
   /// Verifies a token (the only value contained in the QR code) against the
