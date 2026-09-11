@@ -226,7 +226,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.shield, color: color),
@@ -389,7 +389,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: RiskBadge.colorFor(context, z.riskLevel).withOpacity(0.12),
+              color: RiskBadge.colorFor(context, z.riskLevel).withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.location_on,
@@ -535,7 +535,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: AppTheme.danger.withOpacity(0.12),
+                      color: AppTheme.danger.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(_serviceIcon(p), color: AppTheme.danger),

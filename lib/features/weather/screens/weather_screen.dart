@@ -327,7 +327,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        color: Colors.white.withOpacity(0.85), fontSize: 13),
+                        color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
                   ),
                 ),
               ],
@@ -353,7 +353,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
           Text(
             'Feels like ${w.feelsLikeC.round()}°C · Updated ${Fmt.time(w.updatedAt)}',
             style: TextStyle(
-                color: Colors.white.withOpacity(0.75), fontSize: 12),
+                color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
           ),
           const SizedBox(height: 16),
           Row(
@@ -383,7 +383,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -392,7 +392,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
           const SizedBox(height: 6),
           Text(
             label,
-            style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11),
           ),
           const SizedBox(height: 2),
           Text(
@@ -415,8 +415,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
         notes.first.contains('comfortable'));
     return AppCard(
       color: hasAlert
-          ? AppTheme.warning.withOpacity(0.08)
-          : AppTheme.success.withOpacity(0.06),
+          ? AppTheme.warning.withValues(alpha: 0.08)
+          : AppTheme.success.withValues(alpha: 0.06),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[

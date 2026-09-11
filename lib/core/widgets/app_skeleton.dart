@@ -15,10 +15,10 @@ class SkeletonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color base = scheme.surfaceContainerHighest.withOpacity(0.6);
+    final Color base = scheme.surfaceContainerHighest.withValues(alpha: 0.6);
     return Shimmer.fromColors(
       baseColor: base,
-      highlightColor: base.withOpacity(0.35),
+      highlightColor: base.withValues(alpha: 0.35),
       child: Container(
         height: height,
         decoration: BoxDecoration(
@@ -56,10 +56,10 @@ class SkeletonRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color base = scheme.surfaceContainerHighest.withOpacity(0.6);
+    final Color base = scheme.surfaceContainerHighest.withValues(alpha: 0.6);
     return Shimmer.fromColors(
       baseColor: base,
-      highlightColor: base.withOpacity(0.35),
+      highlightColor: base.withValues(alpha: 0.35),
       child: Container(
         height: height,
         decoration: BoxDecoration(

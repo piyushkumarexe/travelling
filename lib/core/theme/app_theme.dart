@@ -20,7 +20,7 @@ class AppTheme {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return <BoxShadow>[
       BoxShadow(
-        color: Colors.black.withOpacity(dark ? 0.28 : 0.06),
+        color: Colors.black.withValues(alpha: dark ? 0.28 : 0.06),
         blurRadius: 18,
         offset: const Offset(0, 6),
       ),
@@ -56,7 +56,7 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: dark ? scheme.surfaceContainer : Colors.white,
-        indicatorColor: scheme.primary.withOpacity(0.12),
+        indicatorColor: scheme.primary.withValues(alpha: 0.12),
         elevation: 8,
         labelTextStyle: WidgetStatePropertyAll<TextStyle>(
           TextStyle(
@@ -148,10 +148,10 @@ class AppTheme {
     return BoxDecoration(
       color: dark ? scheme.surfaceContainerLow : Colors.white,
       borderRadius: BorderRadius.circular(cardRadius),
-      border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
       boxShadow: <BoxShadow>[
         BoxShadow(
-          color: Colors.black.withOpacity(dark ? 0.28 : 0.06),
+          color: Colors.black.withValues(alpha: dark ? 0.28 : 0.06),
           blurRadius: 18,
           offset: const Offset(0, 6),
         ),
@@ -162,5 +162,6 @@ class AppTheme {
 
 /// Small helper for consistent colored "risk" / status surfaces.
 extension AppThemeColors on Color {
-  Color withAlphaDouble(double alpha) => withOpacity(alpha.clamp(0.0, 1.0));
+  Color withAlphaDouble(double alpha) =>
+      withValues(alpha: alpha.clamp(0.0, 1.0));
 }

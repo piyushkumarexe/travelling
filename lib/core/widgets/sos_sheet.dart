@@ -270,7 +270,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
           width: 84,
           height: 84,
           decoration: BoxDecoration(
-            color: AppTheme.danger.withOpacity(0.12),
+            color: AppTheme.danger.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
           child: const Icon(Icons.sos, size: 44, color: AppTheme.danger),
@@ -336,9 +336,9 @@ class _SosSheetViewState extends State<_SosSheetView> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppTheme.danger.withOpacity(0.1),
+            color: AppTheme.danger.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.danger.withOpacity(0.5)),
+            border: Border.all(color: AppTheme.danger.withValues(alpha: 0.5)),
           ),
           child: Row(
             children: <Widget>[
@@ -473,7 +473,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppTheme.danger.withOpacity(0.12),
+                color: AppTheme.danger.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(

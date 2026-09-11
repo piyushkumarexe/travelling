@@ -349,7 +349,7 @@ class _EcoScreenState extends State<EcoScreen> {
                 const SizedBox(height: 6),
                 Text(
                   _nextLevelHint(score.score),
-                  style: TextStyle(color: Colors.white.withOpacity(0.8),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 12),
                 ),
               ],
@@ -377,7 +377,7 @@ class _EcoScreenState extends State<EcoScreen> {
           const SizedBox(height: 12),
           if (session != null)
             AppCard(
-              color: AppTheme.success.withOpacity(0.08),
+              color: AppTheme.success.withValues(alpha: 0.08),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -555,12 +555,12 @@ class _EcoScreenState extends State<EcoScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: unlocked
-              ? AppTheme.success.withOpacity(0.12)
+              ? AppTheme.success.withValues(alpha: 0.12)
               : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: unlocked
-                ? AppTheme.success.withOpacity(0.5)
+                ? AppTheme.success.withValues(alpha: 0.5)
                 : scheme.outlineVariant,
           ),
         ),

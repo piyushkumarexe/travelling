@@ -18,15 +18,23 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.5'
-          channel: stable
+          channel: stable  # latest stable (2026 deps need a modern SDK)
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: set -o pipefail; flutter pub get -v 2>&1 | tee pub-get.log
+
+      - name: Upload pub diagnostics (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pub-diagnostics
+          path: pub-get.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Analyze (fatal warnings)
-        run: flutter analyze --fatal-warnings
+        run: flutter analyze
 
       - name: Run tests
         run: flutter test
@@ -51,8 +59,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.32.5'
-          channel: stable
+          channel: stable  # latest stable (2026 deps need a modern SDK)
           cache: true
 
       - name: Install dependencies

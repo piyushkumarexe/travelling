@@ -279,7 +279,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 shape: BoxShape.circle,
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: const Color(0xFF0D9488).withOpacity(0.30),
+                    color: const Color(0xFF0D9488).withValues(alpha: 0.30),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
@@ -320,7 +320,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
               ? scheme.surfaceContainerHighest
               : Colors.white,
           border: Border.all(
-              color: scheme.outlineVariant.withOpacity(0.6)),
+              color: scheme.outlineVariant.withValues(alpha: 0.6)),
           borderRadius:
               const BorderRadius.only(bottomLeft: Radius.circular(4),
                   topRight: Radius.circular(16),
@@ -371,12 +371,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
             border: isUser || m.isError
                 ? null
                 : Border.all(
-                    color: scheme.outlineVariant.withOpacity(0.6)),
+                    color: scheme.outlineVariant.withValues(alpha: 0.6)),
             boxShadow: isUser || m.isError
                 ? null
                 : <BoxShadow>[
                     BoxShadow(
-                      color: Colors.black.withOpacity(dark ? 0.25 : 0.05),
+                      color: Colors.black.withValues(alpha: dark ? 0.25 : 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),

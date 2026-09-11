@@ -328,7 +328,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: (p.openNow! ? AppTheme.success : AppTheme.danger)
-                              .withOpacity(0.14),
+                              .withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -452,7 +452,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.5),
+        color: scheme.primaryContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -477,7 +477,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 child: Icon(
                   PlaceCard.iconFor(p),
                   size: 64,
-                  color: PlaceCard.colorFor(context, p).withOpacity(0.6),
+                  color: PlaceCard.colorFor(context, p).withValues(alpha: 0.6),
                 ),
               ),
             ),

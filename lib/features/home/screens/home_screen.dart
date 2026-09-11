@@ -453,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.12),
+              color: accent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.shield, color: accent),
@@ -518,7 +518,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       'Records your location, alerts you & shows emergency services',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.85),
+                        color: Colors.white.withValues(alpha: 0.85),
                         fontSize: 12,
                       ),
                     ),
@@ -567,7 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: onTap,
         style: TextButton.styleFrom(
           foregroundColor: Colors.white,
-          backgroundColor: Colors.white.withOpacity(0.14),
+          backgroundColor: Colors.white.withValues(alpha: 0.14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -622,7 +622,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: scheme.primary.withOpacity(0.10),
+              color: scheme.primary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: scheme.primary, size: 20),
@@ -719,7 +719,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 20),
@@ -783,7 +783,7 @@ class _MiniPlaceCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: accent.withOpacity(0.12),
+                color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(PlaceCard.iconFor(place), color: accent),
