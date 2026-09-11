@@ -4,7 +4,6 @@ import 'package:shimmer/shimmer.dart';
 import '../theme/app_theme.dart';
 
 /// Loading skeletons shown while real data loads (never fake data).
-library;
 
 class SkeletonCard extends StatelessWidget {
   const SkeletonCard({super.key, this.height = 120, this.radius = AppTheme.cardRadius});

@@ -8,7 +8,6 @@ import '../models/itinerary.dart';
 /// deployed yet) and a build-time NVIDIA key is present, calls
 /// transparently fall back to a direct NVIDIA request so the AI features
 /// keep working.
-library;
 
 class AiChatMessage {
   AiChatMessage({required this.role, required this.content});

@@ -1,7 +1,6 @@
 import 'package:intl/intl.dart';
 
 /// Formatting helpers.
-library;
 
 class Fmt {
   Fmt._();

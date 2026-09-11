@@ -49,8 +49,10 @@ jobs:
       - name: Surface analyze errors as annotations
         if: failure()
         run: |
-          MSG=$(grep -a -E "error|warning" analyze.log | head -n 25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | head -c 3500)
-          echo "::error::flutter analyze failed:%0A$MSG"
+          grep -a -E " error | warning " analyze.log | head -n 100 | while IFS= read -r line; do
+            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
+            echo "::error title=flutter analyze::$MSG"
+          done
 
       - name: Run tests
         run: set -o pipefail; flutter test 2>&1 | tee test.log
@@ -58,8 +60,10 @@ jobs:
       - name: Surface test failures as annotations
         if: failure()
         run: |
-          MSG=$(grep -a -E "FAILED|failed|Expected|Actual|\[E\]" test.log | head -n 25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | head -c 3500)
-          echo "::error::flutter test failed:%0A$MSG"
+          grep -a -E "FAILED|Expected|Actual|_test.dart" test.log | head -n 60 | while IFS= read -r line; do
+            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
+            echo "::error title=flutter test::$MSG"
+          done
 
   build-apk:
     name: Build release APK

@@ -27,8 +27,7 @@ class ApiClient {
     try {
       final User? user = FirebaseAuth.instance.currentUser;
       if (user == null) return null;
-      final FirebaseIdTokenCredentials credentials = await user.getIdToken();
-      return credentials.token;
+      return await user.getIdToken();
     } catch (_) {
       return null;
     }
@@ -106,6 +105,7 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
         return ApiException(ApiErrorKind.timeout,
             'The YatraWise backend did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:

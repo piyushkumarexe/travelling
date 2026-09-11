@@ -112,6 +112,7 @@ class NvidiaDirectClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
         return ApiException(ApiErrorKind.timeout,
             'The AI did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:

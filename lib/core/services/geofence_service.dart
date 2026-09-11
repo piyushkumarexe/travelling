@@ -175,6 +175,7 @@ class GeofenceService extends ChangeNotifier {
           )
           .catchError((Object e) {
         debugPrint('Geofence notification record failed: $e');
+        return '';
       }));
     }
   }
