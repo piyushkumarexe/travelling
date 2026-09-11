@@ -92,7 +92,7 @@ class _EcoScreenState extends State<EcoScreen> {
             onPressed: () => Navigator.of(ctx).pop('cycle'),
             child: const Row(
               children: <Widget>[
-                Icon(Icons.pedestal),
+                Icon(Icons.directions_bike),
                 SizedBox(width: 12),
                 Text('Cycling (GPS-tracked)'),
               ],
