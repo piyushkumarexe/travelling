@@ -200,6 +200,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          // Preferred vehicle (Bike / Car / Auto) — first, as requested.
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Your vehicle',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Choose how you usually travel',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    _vehicleTile(Icons.two_wheeler, 'Bike'),
+                    const SizedBox(width: 10),
+                    _vehicleTile(Icons.directions_car, 'Car'),
+                    const SizedBox(width: 10),
+                    _vehicleTile(Icons.electric_rickshaw, 'Auto'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           // Identity header
           Container(
             padding: const EdgeInsets.all(20),
@@ -313,37 +344,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Preferred vehicle (Bike / Car / Auto) — placeholder for now.
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Your vehicle',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Choose how you usually travel',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: <Widget>[
-                    _vehicleTile(Icons.two_wheeler, 'Bike'),
-                    const SizedBox(width: 10),
-                    _vehicleTile(Icons.directions_car, 'Car'),
-                    const SizedBox(width: 10),
-                    _vehicleTile(Icons.electric_rickshaw, 'Auto'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
           // Saved details
           AppCard(
             child: Column(
@@ -428,9 +428,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 10),
           _linkTile(Icons.badge, 'Digital Emergency ID',
               'QR code for first responders', '/digital-id'),
-          const SizedBox(height: 8),
-          _linkTile(Icons.travel_explore, 'Itineraries',
-              'Generated trip plans', '/itineraries'),
           const SizedBox(height: 8),
           _linkTile(Icons.eco, 'Eco Score', 'Sustainable travel tracking',
               '/eco'),
