@@ -278,22 +278,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
-                ),
+                color: scheme.primary.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: const Color(0xFF0D9488).withValues(alpha: 0.30),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+                border: Border.all(color: scheme.outlineVariant),
               ),
-              child: const Icon(Icons.auto_awesome,
-                  size: 34, color: Colors.white),
+              child: Icon(Icons.auto_awesome, size: 34, color: scheme.primary),
             ),
             const SizedBox(height: 16),
             Text(

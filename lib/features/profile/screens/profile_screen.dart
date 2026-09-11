@@ -204,12 +204,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-              ),
+              color: scheme.surface,
               borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+              border: Border.all(color: scheme.outlineVariant),
             ),
             child: Column(
               children: <Widget>[
@@ -217,7 +214,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: <Widget>[
                     CircleAvatar(
                       radius: 40,
-                      backgroundColor: Colors.white24,
+                      backgroundColor: scheme.primary.withValues(alpha: 0.12),
                       child: (p?.photoUrl != null &&
                               p!.photoUrl!.isNotEmpty)
                           ? ClipOval(
@@ -228,25 +225,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fit: BoxFit.cover,
                                 errorBuilder: (BuildContext context,
                                         Object e, StackTrace? s) =>
-                                    const Icon(Icons.person,
-                                        size: 40, color: Colors.white70),
+                                    Icon(Icons.person,
+                                        size: 40, color: scheme.primary),
                               ),
                             )
                           : Text(
                               (p?.name.isNotEmpty == true)
                                   ? p!.name[0].toUpperCase()
                                   : '?',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 34,
                                   fontWeight: FontWeight.w800,
-                                  color: Colors.white),
+                                  color: scheme.primary),
                             ),
                     ),
                     Positioned(
                       right: 0,
                       bottom: 0,
                       child: Material(
-                        color: Colors.white,
+                        color: scheme.primaryContainer,
                         shape: const CircleBorder(),
                         child: InkWell(
                           customBorder: const CircleBorder(),
@@ -259,8 +256,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     height: 14,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2))
-                                : const Icon(Icons.camera_alt,
-                                    size: 14, color: Color(0xFF0B3954)),
+                                : Icon(Icons.camera_alt,
+                                    size: 14, color: scheme.onPrimaryContainer),
                           ),
                         ),
                       ),
@@ -272,8 +269,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   (p?.name.isNotEmpty ?? false)
                       ? p!.name
                       : (user?.displayName ?? 'Traveler'),
-                  style: const TextStyle(
-                      color: Colors.white,
+                  style: TextStyle(
+                      color: scheme.onSurface,
                       fontSize: 20,
                       fontWeight: FontWeight.w800),
                 ),
@@ -281,7 +278,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Text(
                     user!.email!,
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+                        color: scheme.onSurfaceVariant, fontSize: 13),
                   ),
                 if (_c.authState.isAdmin) ...<Widget>[
                   const SizedBox(height: 8),

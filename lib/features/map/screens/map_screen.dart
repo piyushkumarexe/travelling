@@ -312,7 +312,14 @@ class _MapScreenState extends State<MapScreen> {
   gm.LatLng? _cameraTarget() {
     final Position? p = _position;
     if (p != null) return gm.LatLng(p.latitude, p.longitude);
-    return null;
+    // Fall back to the map's center so search always works near what the
+    // user is looking at, even without a GPS fix (Google-style behaviour).
+    try {
+      final LatLng c = _controller.camera.center;
+      return gm.LatLng(c.latitude, c.longitude);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _rebuildZones() {

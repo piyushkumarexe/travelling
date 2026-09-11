@@ -376,33 +376,31 @@ class _EcoScreenState extends State<EcoScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFF1B5E20), Color(0xFF43A047)],
-              ),
+              color: AppTheme.success.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+              border: Border.all(
+                  color: AppTheme.success.withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(Icons.eco, color: Colors.white, size: 30),
+                    const Icon(Icons.eco, color: AppTheme.success, size: 30),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         EcoMath.levelFor(score.score),
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: scheme.onSurface,
                             fontSize: 18,
                             fontWeight: FontWeight.w800),
                       ),
                     ),
                     Text(
                       '${score.score} pts',
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 14),
+                      style: TextStyle(
+                          color: scheme.onSurfaceVariant, fontSize: 14),
                     ),
                   ],
                 ),
@@ -412,16 +410,17 @@ class _EcoScreenState extends State<EcoScreen> {
                   child: LinearProgressIndicator(
                     value: EcoMath.levelProgress(score.score),
                     minHeight: 10,
-                    backgroundColor: Colors.white24,
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(Colors.white),
+                    backgroundColor:
+                        AppTheme.success.withValues(alpha: 0.15),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppTheme.success),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _nextLevelHint(score.score),
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 12),
+                  style: TextStyle(
+                      color: scheme.onSurfaceVariant, fontSize: 12),
                 ),
               ],
             ),

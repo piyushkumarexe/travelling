@@ -364,14 +364,11 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
-              ),
+              color: scheme.primary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(_weatherIcon(w.icon), size: 30, color: Colors.white),
+            child:
+                Icon(_weatherIcon(w.icon), size: 30, color: scheme.primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -456,15 +453,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _sosCard() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFFB91C1C), Color(0xFFDC2626)],
-        ),
+        color: AppTheme.danger.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        border: Border.all(color: AppTheme.danger.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,22 +469,22 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 width: 52,
                 height: 52,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.call,
-                    color: Color(0xFFDC2626), size: 26),
+                child:
+                    const Icon(Icons.call, color: AppTheme.danger, size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       'Emergency? Tap SOS',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: scheme.onSurface,
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
@@ -497,7 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       'Records your location, alerts you & shows emergency services',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -505,7 +500,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               Material(
-                color: Colors.white,
+                color: AppTheme.danger,
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
@@ -516,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       'SOS',
                       style: TextStyle(
-                        color: Color(0xFFDC2626),
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -528,10 +523,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              _whiteTextButton(Icons.campaign, 'Report incident',
+              _sosTextButton(Icons.campaign, 'Report incident',
                   () => context.push('/incidents/report')),
               const SizedBox(width: 16),
-              _whiteTextButton(Icons.qr_code_2, 'Emergency ID',
+              _sosTextButton(Icons.qr_code_2, 'Emergency ID',
                   () => context.push('/digital-id')),
             ],
           ),
@@ -540,30 +535,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _whiteTextButton(IconData icon, String label, VoidCallback onTap) {
+  Widget _sosTextButton(IconData icon, String label, VoidCallback onTap) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: TextButton(
+      child: OutlinedButton.icon(
         onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: Colors.white,
-          backgroundColor: Colors.white.withValues(alpha: 0.14),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: scheme.onSurface,
+          side: BorderSide(color: scheme.outlineVariant),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           padding: const EdgeInsets.symmetric(vertical: 10),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(icon, size: 16),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(label,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ],
+        icon: Icon(icon, size: 16),
+        label: Flexible(
+          child: Text(label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
       ),
     );

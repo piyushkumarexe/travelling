@@ -91,15 +91,31 @@ class LocationService {
           p == LocationPermission.deniedForever) {
         return await lastKnown();
       }
-      final Position pos = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
-          accuracy: LocationAccuracy.best,
-          timeLimit: const Duration(seconds: 8),
-        ),
-      ).timeout(timeout);
-      _cached = pos;
-      await _writeCache(pos);
-      return pos;
+      // Try progressively more tolerant settings — a cold GPS can take longer
+      // than a single best-accuracy attempt allows.
+      for (final (LocationAccuracy accuracy, int seconds, bool forceManager)
+          in const <(LocationAccuracy, int, bool)>[
+        (LocationAccuracy.best, 10, false),
+        (LocationAccuracy.high, 12, false),
+        (LocationAccuracy.medium, 15, false),
+        (LocationAccuracy.high, 20, true), // OS location manager fallback
+      ]) {
+        try {
+          final Position pos = await Geolocator.getCurrentPosition(
+            locationSettings: LocationSettings(
+              accuracy: accuracy,
+              timeLimit: Duration(seconds: seconds),
+              forceLocationManager: forceManager,
+            ),
+          ).timeout(Duration(seconds: seconds + 2));
+          _cached = pos;
+          await _writeCache(pos);
+          return pos;
+        } catch (_) {
+          // Next tier.
+        }
+      }
+      return await lastKnown();
     } catch (_) {
       return await lastKnown();
     }
