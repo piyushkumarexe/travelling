@@ -84,6 +84,20 @@ class ApiClient {
       msg = (data['error'] ?? data['message']) as String?;
       details = data['code'] as String?;
     } else if (data is String && data.isNotEmpty) {
+      // Cloud Functions that are NOT deployed return an HTML error page from
+      // the hosting/gateway layer. Don't dump raw HTML at the user — explain
+      // what's actually wrong.
+      final String lower = data.toLowerCase();
+      if (lower.contains('<html') || lower.contains('<!doctype html')) {
+        return ApiException(
+          ApiErrorKind.server,
+          'The YatraWise backend is not available yet (Cloud Functions are '
+          'not deployed for this Firebase project). Deploy it with: '
+          '`firebase deploy --only functions`.',
+          statusCode: code,
+          retryable: true,
+        );
+      }
       msg = data.length > 300 ? data.substring(0, 300) : data;
     }
     if (code == 401) {

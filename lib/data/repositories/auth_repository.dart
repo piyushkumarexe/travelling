@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/app_config.dart';
@@ -53,9 +55,42 @@ class AuthRepository {
       rethrow;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_friendlyAuthError(e));
-    } catch (_) {
-      throw AuthException('Google sign-in failed. Please try again.');
+    } catch (e) {
+      debugPrint('Google sign-in error: $e');
+      throw AuthException(_googleSignInError(e));
     }
+  }
+
+  /// Turns the platform exception Google Sign-In throws into an actionable
+  /// message. The most common causes are a missing/mismatched SHA-1 on the
+  /// Android OAuth client (error 10) or an unpublished OAuth consent screen.
+  String _googleSignInError(Object e) {
+    String detail = '';
+    if (e is PlatformException) {
+      detail = (e.message ?? e.code).trim();
+    } else {
+      detail = e.toString();
+    }
+    final RegExp apiErr = RegExp(r'ApiException:\s*(\d+)');
+    final RegExpMatch? match = apiErr.firstMatch(detail);
+    if (match != null) {
+      switch (match.group(1)) {
+        case '10':
+          return 'Google Sign-In is not configured correctly for this app '
+              '(error 10). Check that this app\'s SHA-1 fingerprint and '
+              'package name are registered on the Android OAuth client.';
+        case '12501':
+          return 'Google Sign-In was cancelled or blocked (error 12501). '
+              'Check that the OAuth consent screen is published and the '
+              'correct SHA-1 is registered.';
+        case '12500':
+          return 'Google Sign-In failed (error 12500). Check the Web client '
+              'ID and that the OAuth consent screen is published.';
+      }
+    }
+    final String short =
+        detail.length > 180 ? '${detail.substring(0, 180)}…' : detail;
+    return 'Google sign-in failed. $short';
   }
 
   String _friendlyAuthError(FirebaseAuthException e) {
