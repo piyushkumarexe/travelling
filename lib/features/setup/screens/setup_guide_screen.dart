@@ -24,19 +24,20 @@ class SetupGuideScreen extends StatelessWidget {
                 width: 84,
                 height: 84,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-                  ),
+                  color: scheme.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: scheme.outlineVariant),
                 ),
-                child: const Icon(Icons.explore, size: 46, color: Colors.white),
+                child: Icon(Icons.explore, size: 46, color: scheme.primary),
               ),
               const SizedBox(height: 24),
-              const Text(
+              Text(
                 'Tourism',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
               ),
               const SizedBox(height: 20),
               const LoadingIndicator(),

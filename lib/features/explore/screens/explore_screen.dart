@@ -52,15 +52,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _initLocation() async {
+    // Search first with whatever (cached) location we already have, so the
+    // screen never sits on a spinner waiting for a cold GPS fix. A fresh fix
+    // then re-runs the nearby search in the background.
+    if (!_searchedOnce) _runDefaultSearch();
     try {
       final Position? pos = await _c.locationService.currentPosition();
-      if (mounted) {
-        setState(() {
-          _position = pos;
-          _locationDone = true;
-        });
-      }
-      if (!_searchedOnce) _runDefaultSearch();
+      if (!mounted) return;
+      final bool hadLocation = _position != null;
+      setState(() {
+        _position = pos;
+        _locationDone = true;
+      });
+      // A real fix just landed after the first search ran without one.
+      if (!hadLocation && pos != null) unawaited(_runSearch());
     } catch (_) {
       if (mounted) setState(() => _locationDone = true);
       if (!_searchedOnce) _runDefaultSearch();

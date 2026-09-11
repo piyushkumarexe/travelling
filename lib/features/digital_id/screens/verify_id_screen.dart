@@ -223,18 +223,16 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
   }
 
   Widget _resultCard(DigitalId id, {required bool active}) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            active ? const Color(0xFF0B3954) : const Color(0xFF37474F),
-            active ? const Color(0xFF0E7C7B) : const Color(0xFF546E7A),
-          ],
-        ),
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+            color: active
+                ? AppTheme.success.withValues(alpha: 0.4)
+                : AppTheme.danger.withValues(alpha: 0.4)),
       ),
       child: Column(
         children: <Widget>[
@@ -260,7 +258,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
           const SizedBox(height: 16),
           CircleAvatar(
             radius: 34,
-            backgroundColor: Colors.white24,
+            backgroundColor: scheme.primary.withValues(alpha: 0.12),
             child: id.photoUrl != null && id.photoUrl!.isNotEmpty
                 ? ClipOval(
                     child: Image.network(
@@ -270,21 +268,23 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                       fit: BoxFit.cover,
                       errorBuilder: (BuildContext context, Object e,
                               StackTrace? s) =>
-                          const Icon(Icons.person),
+                          Icon(Icons.person, color: scheme.primary),
                     ),
                   )
-                : const Icon(Icons.person, size: 36, color: Colors.white70),
+                : Icon(Icons.person, size: 36, color: scheme.primary),
           ),
           const SizedBox(height: 12),
           Text(
             id.ownerName,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+            style: TextStyle(
+                color: scheme.onSurface,
+                fontSize: 20,
+                fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
             'ID created ${Fmt.date(id.createdAt)}',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
           ),
           const SizedBox(height: 14),
           if (id.emergencyContactName != null &&
@@ -293,12 +293,12 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
                 children: <Widget>[
-                  const Icon(Icons.contacts, color: Colors.white70),
+                  Icon(Icons.contacts, color: scheme.onSurfaceVariant),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -307,13 +307,12 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                         Text(
                           'Emergency contact',
                           style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 11),
+                              color: scheme.onSurfaceVariant, fontSize: 11),
                         ),
                         Text(
                           id.emergencyContactName!,
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: scheme.onSurface,
                               fontWeight: FontWeight.w700),
                         ),
                       ],
@@ -322,13 +321,13 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   if (id.emergencyContactPhone != null &&
                       id.emergencyContactPhone!.isNotEmpty)
                     Material(
-                      color: Colors.white,
+                      color: scheme.primaryContainer,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
                         onTap: () => _call(id.emergencyContactPhone!),
-                        child: const Padding(
-                          padding: EdgeInsets.all(8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
                           child: Icon(Icons.call,
                               color: AppTheme.danger, size: 20),
                         ),
@@ -343,7 +342,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
               padding: const EdgeInsets.only(top: 10),
               child: Text(
                 'Phone: ${id.emergencyContactPhone}',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+                style: TextStyle(color: scheme.onSurfaceVariant),
               ),
             ),
           const SizedBox(height: 14),

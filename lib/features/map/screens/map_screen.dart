@@ -153,31 +153,33 @@ class _MapScreenState extends State<MapScreen> {
       });
       return;
     }
+    // Render the map immediately (country view) instead of blocking on a cold
+    // GPS fix. The position watch auto-centers as soon as a real fix lands.
+    setState(() => _ready = true);
+    try {
+      final LocationPermission perm = await _c.locationService.checkPermission();
+      if (!mounted) return;
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        setState(() => _permissionDenied = true);
+      }
+    } catch (_) {}
     try {
       final Position? pos = await _c.locationService.currentPosition();
-      if (!mounted) return;
-      final LocationPermission perm = await _c.locationService.checkPermission();
-      if (pos == null &&
-          (perm == LocationPermission.denied ||
-              perm == LocationPermission.deniedForever)) {
-        setState(() {
-          _permissionDenied = true;
-          _ready = true;
-        });
-      } else if (pos != null) {
-        setState(() {
-          _position = pos;
-          _initialCenter = LatLng(pos.latitude, pos.longitude);
-          _initialZoom = 14;
-          _ready = true;
-          _autoCentered = true;
-        });
-      } else {
-        setState(() => _ready = true);
+      if (!mounted || pos == null) return;
+      setState(() {
+        _position = pos;
+        _initialCenter = LatLng(pos.latitude, pos.longitude);
+        _initialZoom = 14;
+        _autoCentered = true;
+        _permissionDenied = false;
+      });
+      try {
+        _controller.move(LatLng(pos.latitude, pos.longitude), 14);
+      } catch (_) {
+        // Map not attached yet — the position watch will center it instead.
       }
-    } catch (_) {
-      if (mounted) setState(() => _ready = true);
-    }
+    } catch (_) {}
   }
 
   /// Default the travel mode to the vehicle saved in the profile (Vehicle tab)
