@@ -24,8 +24,10 @@ class ItinerariesRepository {
   Stream<Itinerary?> watchOne(String uid, String id) => _col(uid)
       .doc(id)
       .snapshots()
-      .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-          d.exists ? Itinerary.fromMap(d.id, d.data()) : null);
+      .map((DocumentSnapshot<Map<String, dynamic>> d) {
+        final Map<String, dynamic>? data = d.data();
+        return data == null ? null : Itinerary.fromMap(d.id, data);
+      });
 
   Future<String> create(String uid, Itinerary itinerary) =>
       _col(uid).add(itinerary.toMap()).then((ref) => ref.id);

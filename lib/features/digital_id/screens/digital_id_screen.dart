@@ -351,7 +351,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                   size: 180,
                   backgroundColor: Colors.white,
                   eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeStyleShape.square,
+                      eyeShape: QrEyeShape.square,
                       color: Colors.black),
                   dataModuleStyle: const QrDataModuleStyle(
                       dataModuleShape: QrDataModuleShape.square,
