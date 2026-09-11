@@ -101,12 +101,18 @@ class LocationService {
         (LocationAccuracy.high, 20, true), // OS location manager fallback
       ]) {
         try {
+          final LocationSettings settings = forceManager
+              ? AndroidSettings(
+                  accuracy: accuracy,
+                  timeLimit: Duration(seconds: seconds),
+                  forceLocationManager: true,
+                )
+              : LocationSettings(
+                  accuracy: accuracy,
+                  timeLimit: Duration(seconds: seconds),
+                );
           final Position pos = await Geolocator.getCurrentPosition(
-            locationSettings: LocationSettings(
-              accuracy: accuracy,
-              timeLimit: Duration(seconds: seconds),
-              forceLocationManager: forceManager,
-            ),
+            locationSettings: settings,
           ).timeout(Duration(seconds: seconds + 2));
           _cached = pos;
           await _writeCache(pos);
