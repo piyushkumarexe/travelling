@@ -273,7 +273,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Text(
                     user!.email!,
                     style: TextStyle(
-                        color: Colors.white.withOpacity(0.8), fontSize: 13),
+                        color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
                   ),
                 if (_c.authState.isAdmin) ...<Widget>[
                   const SizedBox(height: 8),
@@ -281,7 +281,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppTheme.warning.withOpacity(0.9),
+                      color: AppTheme.warning.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: const Row(
@@ -361,7 +361,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: scheme.primary.withOpacity(0.1),
+                            color: scheme.primary.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(

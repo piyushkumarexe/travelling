@@ -182,7 +182,7 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .primaryContainer
-                                                .withOpacity(0.5),
+                                                .withValues(alpha: 0.5),
                                             borderRadius:
                                                 BorderRadius.circular(999),
                                           ),

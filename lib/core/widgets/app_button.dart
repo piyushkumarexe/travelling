@@ -95,7 +95,7 @@ class IconButtonCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: (color ?? Theme.of(context).colorScheme.primary).withOpacity(0.1),
+      color: (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.1),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),

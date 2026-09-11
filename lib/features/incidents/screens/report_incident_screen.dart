@@ -463,7 +463,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
               width: 84,
               height: 84,
               decoration: BoxDecoration(
-                color: AppTheme.success.withOpacity(0.14),
+                color: AppTheme.success.withValues(alpha: 0.14),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.check_circle,

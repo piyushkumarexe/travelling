@@ -29,7 +29,7 @@ class AppCard extends StatelessWidget {
         color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
         borderRadius: radius,
         border:
-            Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+            Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         boxShadow: AppTheme.softShadow(context),
       ),
       child: Material(

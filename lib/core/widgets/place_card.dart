@@ -67,7 +67,7 @@ class PlaceCard extends StatelessWidget {
             width: 52,
             height: 52,
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.12),
+              color: accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(iconFor(place), color: accent),
@@ -110,7 +110,7 @@ class PlaceCard extends StatelessWidget {
               padding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: scheme.primaryContainer.withOpacity(0.5),
+                color: scheme.primaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(

@@ -257,7 +257,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     child: Text(
                       'YATRAWISE EMERGENCY ID',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
@@ -269,7 +269,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: (active ? AppTheme.success : AppTheme.danger)
-                          .withOpacity(0.9),
+                          .withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -321,7 +321,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             'Contact: ${id.emergencyContactName}',
                             style: TextStyle(
-                                color: Colors.white.withOpacity(0.85),
+                                color: Colors.white.withValues(alpha: 0.85),
                                 fontSize: 13),
                           ),
                         ],
@@ -330,7 +330,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             id.emergencyContactPhone!,
                             style: TextStyle(
-                                color: Colors.white.withOpacity(0.85),
+                                color: Colors.white.withValues(alpha: 0.85),
                                 fontSize: 13),
                           ),
                       ],
@@ -362,13 +362,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
               Text(
                 'Token: ${id.token.substring(0, 8)}…${id.token.substring(id.token.length - 8)}',
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.7), fontSize: 12),
+                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
               ),
               const SizedBox(height: 2),
               Text(
                 'Created ${Fmt.date(id.createdAt)}',
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.7), fontSize: 12),
+                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
               ),
             ],
           ),

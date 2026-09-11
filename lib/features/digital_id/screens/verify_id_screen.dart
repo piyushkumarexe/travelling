@@ -285,7 +285,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
           const SizedBox(height: 6),
           Text(
             'ID created ${Fmt.date(id.createdAt)}',
-            style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
           ),
           const SizedBox(height: 14),
           if (id.emergencyContactName != null &&
@@ -294,7 +294,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
+                color: Colors.white.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(
@@ -308,7 +308,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                         Text(
                           'Emergency contact',
                           style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 11),
                         ),
                         Text(
@@ -344,7 +344,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
               padding: const EdgeInsets.only(top: 10),
               child: Text(
                 'Phone: ${id.emergencyContactPhone}',
-                style: TextStyle(color: Colors.white.withOpacity(0.85)),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
               ),
             ),
           const SizedBox(height: 14),
@@ -419,7 +419,7 @@ class _ScannerDialogState extends State<_ScannerDialog> {
             Container(
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.35),
+                color: Colors.black.withValues(alpha: 0.35),
               ),
             ),
             Center(
@@ -439,7 +439,7 @@ class _ScannerDialogState extends State<_ScannerDialog> {
                 'Point the camera at the QR code on the Emergency ID card',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.9), fontSize: 13),
+                    color: Colors.white.withValues(alpha: 0.9), fontSize: 13),
               ),
             ),
           ],

@@ -178,7 +178,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                             side: BorderSide(
-                                color: scheme.outlineVariant.withOpacity(0.5)),
+                                color: scheme.outlineVariant.withValues(alpha: 0.5)),
                           ),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
@@ -191,7 +191,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
-                                      color: color.withOpacity(0.12),
+                                      color: color.withValues(alpha: 0.12),
                                       shape: BoxShape.circle,
                                     ),
                                     child: Icon(icon, size: 20, color: color),

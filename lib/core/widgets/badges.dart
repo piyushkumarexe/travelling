@@ -32,9 +32,9 @@ class RiskBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: bg.withOpacity(0.14),
+        color: bg.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: bg.withOpacity(0.4)),
+        border: Border.all(color: bg.withValues(alpha: 0.4)),
       ),
       child: Text(
         label,
@@ -61,9 +61,9 @@ class StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.12),
+        color: c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: c.withOpacity(0.35)),
+        border: Border.all(color: c.withValues(alpha: 0.35)),
       ),
       child: Text(
         label,

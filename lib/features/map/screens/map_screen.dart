@@ -237,8 +237,8 @@ class _MapScreenState extends State<MapScreen> {
         circleId: CircleId('zone-${z.id}'),
         center: LatLng(z.lat, z.lng),
         radius: z.radiusMeters,
-        fillColor: color.withOpacity(0.18),
-        strokeColor: color.withOpacity(0.7),
+        fillColor: color.withValues(alpha: 0.18),
+        strokeColor: color.withValues(alpha: 0.7),
         strokeWidth: 2,
       ));
     }
@@ -463,7 +463,7 @@ class _MapScreenState extends State<MapScreen> {
                           color: Theme.of(context).colorScheme.outlineVariant),
                       boxShadow: <BoxShadow>[
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
+                          color: Colors.black.withValues(alpha: 0.08),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -583,7 +583,7 @@ class _MapScreenState extends State<MapScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
         boxShadow: <BoxShadow>[
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10),
         ],
       ),
       child: Column(
@@ -637,7 +637,7 @@ class _MapScreenState extends State<MapScreen> {
                     dense: true,
                     leading: CircleAvatar(
                       backgroundColor:
-                          scheme.primaryContainer.withOpacity(0.6),
+                          scheme.primaryContainer.withValues(alpha: 0.6),
                       child: Icon(Icons.place, color: scheme.primary),
                     ),
                     title: Text(p.name,
@@ -726,7 +726,7 @@ class _MapScreenState extends State<MapScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withOpacity(0.5),
+                    color: scheme.primaryContainer.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(

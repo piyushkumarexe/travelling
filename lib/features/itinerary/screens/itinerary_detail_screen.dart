@@ -219,7 +219,7 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.5),
+        color: scheme.primaryContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -255,7 +255,7 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: scheme.primaryContainer.withOpacity(0.5),
+                color: scheme.primaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
