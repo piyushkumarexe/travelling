@@ -611,7 +611,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _actionTile('Explore', Icons.explore, '/explore'),
         _actionTile('Map & routes', Icons.map, '/map'),
         _actionTile('Report incident', Icons.campaign, '/incidents/report'),
-        _actionTile('Itineraries', Icons.travel_explore, '/itineraries'),
         _actionTile('Eco Score', Icons.eco, '/eco'),
         _actionTile('Emergency ID', Icons.qr_code_2, '/digital-id'),
         _actionTile('Weather', Icons.wb_sunny, '/weather'),
