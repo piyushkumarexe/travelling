@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/router/app_router.dart';
 import 'core/state/app_container.dart';
+import 'core/state/auth_state.dart';
 import 'core/theme/app_theme.dart';
 import 'features/setup/screens/setup_guide_screen.dart';
 
@@ -39,6 +40,25 @@ class TourismApp extends StatelessWidget {
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         routerConfig: appRouter.router,
+        builder: (BuildContext context, Widget? child) {
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (bool didPop, Object? result) {
+              if (didPop) return;
+              if (appRouter.router.canPop()) {
+                appRouter.router.pop();
+                return;
+              }
+              final String location = appRouter
+                  .router.routerDelegate.currentConfiguration.uri.path;
+              if (container.authState.status == AuthStatus.authenticated &&
+                  location != '/home') {
+                appRouter.router.go('/home');
+              }
+            },
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
       ),
     );
   }

@@ -37,30 +37,6 @@ class AppRouter {
   late final GoRouter router = GoRouter(
     initialLocation: '/',
     refreshListenable: container.authState,
-    builder: (BuildContext context, GoRouterState state, Widget child) {
-      return PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? result) {
-          if (didPop) return;
-          final GoRouter navigation = GoRouter.of(context);
-          if (navigation.canPop()) {
-            navigation.pop();
-          } else if (container.authState.status == AuthStatus.authenticated &&
-              state.matchedLocation != '/home') {
-            navigation.go('/home');
-          } else {
-            final ScaffoldMessengerState? messenger =
-                ScaffoldMessenger.maybeOf(context);
-            messenger
-              ?..hideCurrentSnackBar()
-              ..showSnackBar(
-                const SnackBar(content: Text('You are already on Tourism Home')),
-              );
-          }
-        },
-        child: child,
-      );
-    },
     redirect: (BuildContext context, GoRouterState state) {
       final AuthStatus status = container.authState.status;
       final String matched = state.matchedLocation;
