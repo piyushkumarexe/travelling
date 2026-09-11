@@ -86,8 +86,11 @@ class OpenAiCompatClient {
       raw = jsonEncode(data);
     }
     if (raw.isEmpty) return '';
-    final String clean =
-        raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String clean = raw
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', ' ')
+        .replaceAll('\t', ' ')
+        .trim();
     final String snippet =
         clean.length > 220 ? '${clean.substring(0, 220)}…' : clean;
     return '($snippet)\n';
