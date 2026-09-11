@@ -19,12 +19,12 @@ void main() {
       expect(d, lessThan(1050));
     });
 
-    test('Delhi–Jaipur is roughly 280 km', () {
+    test('Delhi–Jaipur is roughly 235 km straight-line', () {
       final LatLng delhi = LatLng(28.6139, 77.2090);
       final LatLng jaipur = LatLng(26.9124, 75.7873);
       final double d = GeoUtils.distanceMeters(delhi, jaipur);
-      expect(d, greaterThan(270000));
-      expect(d, lessThan(295000));
+      expect(d, greaterThan(225000));
+      expect(d, lessThan(245000));
     });
   });
 
