@@ -266,7 +266,7 @@ async function nvidiaChat(messages, { jsonMode = false, maxTokens = 1200 } = {})
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b',
+      model: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b',
       messages,
       temperature: 0.6,
       top_p: 0.9,

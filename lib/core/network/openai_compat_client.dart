@@ -27,7 +27,7 @@ class OpenAiCompatClient {
               baseUrl: baseUrl ?? AppConfig.aiResolvedBaseUrl,
               connectTimeout: const Duration(seconds: 15),
               sendTimeout: const Duration(seconds: 30),
-              receiveTimeout: const Duration(seconds: 120),
+              receiveTimeout: const Duration(seconds: 60),
               contentType: 'application/json',
             )),
         _apiKey = apiKey ?? AppConfig.aiResolvedApiKey,
@@ -185,7 +185,9 @@ class OpenAiCompatClient {
             statusCode: code);
       case DioExceptionType.unknown:
         return ApiException(ApiErrorKind.unknown,
-            'Something went wrong while contacting the AI service.');
+            'The AI connection dropped before a reply arrived. The model may '
+            'be busy or slow — please try again in a moment.',
+            retryable: true);
     }
   }
 
