@@ -133,6 +133,7 @@ class _EcoScreenState extends State<EcoScreen> {
       }
       return;
     }
+    if (!mounted) return;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -638,7 +639,8 @@ class _ManualLogSheetState extends State<_ManualLogSheet> {
           ? null
           : _noteController.text.trim(),
     );
-    if (context.mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   @override

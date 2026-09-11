@@ -1,15 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/utils/format.dart';
+import '../../core/widgets/app_button.dart';
 import '../../data/models/emergency_event.dart';
 import '../../data/models/places.dart';
-import '../../core/utils/format.dart';
-import '../theme/app_theme.dart';
-import '../../core/widgets/app_button.dart';
 import '../state/app_container.dart';
+import '../theme/app_theme.dart';
 
 /// Shows the global SOS bottom sheet from anywhere in the app.
 void showSOSSheet(BuildContext context) {
@@ -109,7 +111,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
         important: true,
         payload: 'sos:$id',
       );
-      _loadServices();
+      unawaited(_loadServices());
     } catch (e) {
       if (!mounted) return;
       setState(() {

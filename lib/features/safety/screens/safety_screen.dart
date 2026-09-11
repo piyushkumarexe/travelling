@@ -80,8 +80,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
         _locationDone = true;
       });
       if (pos != null) {
-        _loadServices();
-        _loadWeather();
+        unawaited(_loadServices());
+        unawaited(_loadWeather());
       }
     } catch (_) {
       if (mounted) setState(() => _locationDone = true);
