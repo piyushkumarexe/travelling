@@ -34,6 +34,11 @@ android {
         targetSdk = 35
         versionCode = flutterVersionCode
         versionName = flutterVersionName
+        // Google Maps Android key: injected from the MAPS_ANDROID_API_KEY
+        // CI secret when present; placeholder keeps debug builds compiling.
+        manifestPlaceholders["MAPS_API_KEY"] =
+            System.getenv("MAPS_ANDROID_API_KEY")
+                ?: "REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY"
     }
 
     // ---- Release signing: ONE permanent certificate ----
@@ -49,12 +54,21 @@ android {
     }
     val uploadStorePath: String? =
         System.getenv("ANDROID_KEYSTORE_FILE") ?: keystoreProps.getProperty("storeFile")
+    // The keystore FILE itself stays secret (single GitHub secret, never
+    // committed); these defaults only unlock it, so one secret is enough
+    // for CI. Override via env/CI secrets or keystore.properties if rotated.
     val uploadStorePassword: String? =
-        System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProps.getProperty("storePassword")
+        System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            ?: keystoreProps.getProperty("storePassword")
+            ?: "YatraWise-Upload-2026"
     val uploadKeyAlias: String? =
-        System.getenv("ANDROID_KEY_ALIAS") ?: keystoreProps.getProperty("keyAlias")
+        System.getenv("ANDROID_KEY_ALIAS")
+            ?: keystoreProps.getProperty("keyAlias")
+            ?: "upload"
     val uploadKeyPassword: String? =
-        System.getenv("ANDROID_KEY_PASSWORD") ?: keystoreProps.getProperty("keyPassword")
+        System.getenv("ANDROID_KEY_PASSWORD")
+            ?: keystoreProps.getProperty("keyPassword")
+            ?: "YatraWise-Upload-2026"
     val hasUploadKeystore: Boolean =
         uploadStorePath != null && project.file(uploadStorePath).exists()
 

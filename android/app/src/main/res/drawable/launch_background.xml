@@ -3,7 +3,7 @@
     <!-- YatraWise splash: warm cream background (matches brand logo) -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FFFBF0" />
+            <solid android:color="#FEFAF1" />
         </shape>
     </item>
     <!-- Centered launcher icon (emblem art, added with the new icons). -->

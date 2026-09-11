@@ -42,7 +42,7 @@ class DefaultFirebaseOptions {
 /// runtime with an obscure Firebase error.
 bool get firebaseIsConfigured {
   final FirebaseOptions o = DefaultFirebaseOptions.android;
-  final bool clean = (String? v) =>
+  bool clean(String? v) =>
       v != null && v.isNotEmpty && !v.startsWith('REPLACE_');
   return clean(o.apiKey) &&
       clean(o.appId) &&

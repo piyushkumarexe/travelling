@@ -58,7 +58,7 @@ class AppTheme {
         backgroundColor: dark ? scheme.surfaceContainer : Colors.white,
         indicatorColor: scheme.primary.withOpacity(0.12),
         elevation: 8,
-        labelTextStyle: MaterialStatePropertyAll<TextStyle>(
+        labelTextStyle: WidgetStatePropertyAll<TextStyle>(
           TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
