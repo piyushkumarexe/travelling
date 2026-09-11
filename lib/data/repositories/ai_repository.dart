@@ -1,14 +1,18 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
-import '../../core/network/nvidia_direct_client.dart';
-import '../../core/network/pollinations_client.dart';
+import '../../core/network/openai_compat_client.dart';
 import '../models/itinerary.dart';
 
-/// AI calls with a three-step transport fallback so the assistant keeps
-/// working out of the box:
+/// AI calls with a two-step transport fallback:
 ///   1. YatraWise Cloud Functions backend (server-side key, rate limits).
-///   2. Direct NVIDIA (only when a build-time NVIDIA_API_KEY is present).
-///   3. Keyless Pollinations.ai (always available, free anonymous tier).
+///   2. Direct OpenAI-compatible provider — NVIDIA NIM when a build-time
+///      `NVIDIA_API_KEY` is present, otherwise a generic provider configured
+///      via `AI_API_KEY` + `AI_BASE_URL` (+ `AI_MODEL`).
+///
+/// There is no reliable keyless LLM in 2026 (Pollinations legacy, Hack Club AI
+/// and DuckDuckGo AI all shut down anonymous access), so when neither transport
+/// is configured the repository surfaces a clear, actionable setup message
+/// instead of a confusing HTTP error.
 
 class AiChatMessage {
   AiChatMessage({required this.role, required this.content});
@@ -24,39 +28,35 @@ class AiChatMessage {
 class AiRepository {
   AiRepository(
     this._api, {
-    NvidiaDirectClient? direct,
-    PollinationsClient? pollinations,
-  })  : _direct = direct ?? NvidiaDirectClient(),
-        _pollinations = pollinations ?? PollinationsClient();
+    OpenAiCompatClient? direct,
+  }) : _direct = direct ?? OpenAiCompatClient();
 
   final ApiClient _api;
-  final NvidiaDirectClient _direct;
-  final PollinationsClient _pollinations;
+  final OpenAiCompatClient _direct;
 
   /// Errors that mean "service missing/unreachable" and are worth retrying
-  /// on the next transport. Auth/validation/rate-limit errors come from a
-  /// live backend and are reported as-is.
+  /// on the next transport. Auth/validation/rate-limit/payment errors come
+  /// from a live service and are reported as-is.
   bool _fallbackEligible(ApiException e) =>
       e.kind == ApiErrorKind.network ||
       e.kind == ApiErrorKind.timeout ||
       e.kind == ApiErrorKind.server ||
       e.kind == ApiErrorKind.unknown;
 
-  /// Tries the direct NVIDIA transport; if it is unavailable or fails on a
-  /// retryable error, falls through to the keyless Pollinations transport.
-  Future<Map<String, dynamic>> _directThenPollinations(
-    Future<Map<String, dynamic>> Function(NvidiaDirectClient direct) viaNvidia,
-    Future<Map<String, dynamic>> Function(PollinationsClient p) viaPollinations,
-  ) async {
-    if (_direct.enabled) {
-      try {
-        return await viaNvidia(_direct);
-      } on ApiException catch (e) {
-        if (!_fallbackEligible(e)) rethrow;
-      }
-    }
-    return viaPollinations(_pollinations);
-  }
+  /// Thrown when neither the backend nor a direct AI key is available.
+  ApiException _notConfigured() => ApiException(
+        ApiErrorKind.server,
+        'The AI assistant is not enabled yet.\n\n'
+        'Option 1 — deploy the backend and set an NVIDIA key there:\n'
+        '`firebase deploy --only functions`\n\n'
+        'Option 2 — build the app with a free AI key:\n'
+        '`flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...`\n'
+        '(free key at build.nvidia.com)\n\n'
+        'Option 3 — any OpenAI-compatible provider:\n'
+        '`--dart-define=AI_API_KEY=... --dart-define=AI_BASE_URL=https://.../v1 '
+        '--dart-define=AI_MODEL=...`',
+        retryable: false,
+      );
 
   /// Chat with the tourism assistant. `locationLabel` (e.g. "Rishikesh,
   /// Uttarakhand, India") is merged into the system prompt.
@@ -83,17 +83,11 @@ class AiRepository {
       return _replyFrom(data);
     } on ApiException catch (e) {
       if (!_fallbackEligible(e)) rethrow;
-      final Map<String, dynamic> data = await _directThenPollinations(
-        (NvidiaDirectClient d) => d.postChat(
-          messages: simple,
-          locationLabel: locationLabel,
-          profileContext: profileContext,
-        ),
-        (PollinationsClient p) => p.postChat(
-          messages: simple,
-          locationLabel: locationLabel,
-          profileContext: profileContext,
-        ),
+      if (!_direct.enabled) throw _notConfigured();
+      final Map<String, dynamic> data = await _direct.postChat(
+        messages: simple,
+        locationLabel: locationLabel,
+        profileContext: profileContext,
       );
       return _replyFrom(data);
     }
@@ -128,21 +122,13 @@ class AiRepository {
       return _planFrom(data);
     } on ApiException catch (e) {
       if (!_fallbackEligible(e)) rethrow;
-      final Map<String, dynamic> data = await _directThenPollinations(
-        (NvidiaDirectClient d) => d.postItinerary(
-          destination: destination.trim(),
-          days: days,
-          interests: interests,
-          budget: budget,
-          travelStyle: travelStyle,
-        ),
-        (PollinationsClient p) => p.postItinerary(
-          destination: destination.trim(),
-          days: days,
-          interests: interests,
-          budget: budget,
-          travelStyle: travelStyle,
-        ),
+      if (!_direct.enabled) throw _notConfigured();
+      final Map<String, dynamic> data = await _direct.postItinerary(
+        destination: destination.trim(),
+        days: days,
+        interests: interests,
+        budget: budget,
+        travelStyle: travelStyle,
       );
       return _planFrom(data);
     }
@@ -182,19 +168,12 @@ class AiRepository {
       return _triageFrom(data);
     } on ApiException catch (e) {
       if (!_fallbackEligible(e)) rethrow;
-      final Map<String, dynamic> data = await _directThenPollinations(
-        (NvidiaDirectClient d) => d.postIncidentAnalyze(
-          description: description.trim(),
-          locationLabel: locationLabel,
-          hasPhoto: hasPhoto,
-          hasVideo: hasVideo,
-        ),
-        (PollinationsClient p) => p.postIncidentAnalyze(
-          description: description.trim(),
-          locationLabel: locationLabel,
-          hasPhoto: hasPhoto,
-          hasVideo: hasVideo,
-        ),
+      if (!_direct.enabled) throw _notConfigured();
+      final Map<String, dynamic> data = await _direct.postIncidentAnalyze(
+        description: description.trim(),
+        locationLabel: locationLabel,
+        hasPhoto: hasPhoto,
+        hasVideo: hasVideo,
       );
       return _triageFrom(data);
     }

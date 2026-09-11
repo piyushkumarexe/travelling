@@ -45,8 +45,15 @@ class _MapScreenState extends State<MapScreen> {
   LatLng _initialCenter = const LatLng(20.5937, 78.9629);
   double _initialZoom = 4;
 
+  /// Current tile style: 'satellite' (default) or 'streets-v2'.
+  String _mapStyle = 'satellite';
+
   Position? _position;
   bool _permissionDenied = false;
+
+  /// When true the camera follows the live GPS position (real-time tracking).
+  bool _follow = false;
+  bool _autoCentered = false;
 
   List<Marker> _markers = <Marker>[];
   List<CircleMarker> _circles = <CircleMarker>[];
@@ -95,6 +102,7 @@ class _MapScreenState extends State<MapScreen> {
         _initialCenter = LatLng(lat, lng);
         _initialZoom = 15;
         _ready = true;
+        _autoCentered = true;
       });
       return;
     }
@@ -115,6 +123,7 @@ class _MapScreenState extends State<MapScreen> {
           _initialCenter = LatLng(pos.latitude, pos.longitude);
           _initialZoom = 14;
           _ready = true;
+          _autoCentered = true;
         });
       } else {
         setState(() => _ready = true);
@@ -122,12 +131,26 @@ class _MapScreenState extends State<MapScreen> {
     } catch (_) {
       if (mounted) setState(() => _ready = true);
     }
-    // Live position for distance + recentering.
+    // Live position for distance, the moving marker and (optionally) camera
+    // following — real-time location data as the traveler moves.
     _posSub = _c.locationService.watchPosition(distanceFilter: 20).listen(
           (Position p) {
         if (mounted) {
           setState(() => _position = p);
           _updateDistance();
+          try {
+            if (!_autoCentered) {
+              _autoCentered = true;
+              _controller.move(LatLng(p.latitude, p.longitude), 14);
+            } else if (_follow) {
+              _controller.move(
+                LatLng(p.latitude, p.longitude),
+                _controller.camera.zoom,
+              );
+            }
+          } catch (_) {
+            // Map controller not attached yet (first frames) — ignore.
+          }
         }
       },
       onError: (Object _) {},
@@ -347,6 +370,18 @@ class _MapScreenState extends State<MapScreen> {
     _controller.move(LatLng(p.latitude, p.longitude), 15);
   }
 
+  void _toggleStyle() {
+    setState(() {
+      _mapStyle = _mapStyle == 'satellite' ? 'streets-v2' : 'satellite';
+    });
+  }
+
+  void _toggleFollow() {
+    final bool on = !_follow;
+    setState(() => _follow = on);
+    if (on) _recenter();
+  }
+
   Future<void> _enableLocation() async {
     final LocationPermission perm =
         await _c.locationService.ensurePermission();
@@ -383,6 +418,7 @@ class _MapScreenState extends State<MapScreen> {
         body: LoadingView(message: 'Preparing the map…'),
       );
     }
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Stack(
         children: <Widget>[
@@ -395,7 +431,8 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: <Widget>[
               TileLayer(
-                urlTemplate: AppConfig.mapTilerTileUrl('streets-v2'),
+                key: ValueKey<String>(_mapStyle),
+                urlTemplate: AppConfig.mapTilerTileUrl(_mapStyle),
                 userAgentPackageName: 'app.roamio.tourism',
               ),
               MarkerLayer(
@@ -441,6 +478,32 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                FloatingActionButton.small(
+                  heroTag: 'map-layer-toggle',
+                  tooltip: _mapStyle == 'satellite'
+                      ? 'Switch to streets map'
+                      : 'Switch to satellite map',
+                  onPressed: _toggleStyle,
+                  child: Icon(
+                    _mapStyle == 'satellite'
+                        ? Icons.map
+                        : Icons.satellite_alt,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-follow',
+                  tooltip: _follow
+                      ? 'Stop following my location'
+                      : 'Follow my location live',
+                  backgroundColor: _follow ? scheme.primary : null,
+                  foregroundColor: _follow ? scheme.onPrimary : null,
+                  onPressed: _toggleFollow,
+                  child: Icon(
+                    _follow ? Icons.gps_fixed : Icons.gps_not_fixed,
+                  ),
+                ),
+                const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'map-zoom-in',
                   tooltip: 'Zoom in',

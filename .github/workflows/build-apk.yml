@@ -122,6 +122,18 @@ jobs:
           if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
             DEFINES="$DEFINES --dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
           fi
+          if [ -n "${{ secrets.AI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_API_KEY=${{ secrets.AI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.AI_BASE_URL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_BASE_URL=${{ secrets.AI_BASE_URL }}"
+          fi
+          if [ -n "${{ secrets.AI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_MODEL=${{ secrets.AI_MODEL }}"
+          fi
+          if [ -n "${{ secrets.MAPTILER_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=MAPTILER_API_KEY=${{ secrets.MAPTILER_API_KEY }}"
+          fi
           if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
             DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
           fi

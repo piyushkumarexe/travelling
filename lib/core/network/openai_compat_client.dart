@@ -5,28 +5,35 @@ import 'package:dio/dio.dart';
 import '../app_config.dart';
 import 'api_exception.dart';
 
-/// Direct NVIDIA chat-completions client (OpenAI-compatible API).
+/// Direct OpenAI-compatible chat-completions client (NVIDIA NIM or any
+/// provider that exposes `/chat/completions`).
 ///
-/// Fallback path used ONLY when the YatraWise Cloud Functions backend is
-/// unreachable (not deployed yet) AND a build-time NVIDIA key is present
-/// (`flutter build ... --dart-define=NVIDIA_API_KEY=nvapi-...`).
+/// Fallback path used only when the YatraWise Cloud Functions backend is
+/// unreachable (not deployed yet) AND a key was compiled into the app:
+///
+///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...        (NVIDIA)
+///   flutter build apk --dart-define=AI_API_KEY=... \
+///                     --dart-define=AI_BASE_URL=https://.../v1 \
+///                     --dart-define=AI_MODEL=some/model              (generic)
 ///
 /// It mirrors the backend prompts and response shapes so [AiRepository] can
 /// switch transports transparently. Prefer deploying the backend for
 /// production (server-side key, rate limits, no key inside the APK).
-class NvidiaDirectClient {
-  NvidiaDirectClient({Dio? dio, String? apiKey, String? model})
-      : _dio = dio ??
+class OpenAiCompatClient {
+  OpenAiCompatClient({Dio? dio, String? baseUrl, String? apiKey, String? model})
+      : _baseUrl = baseUrl ?? AppConfig.aiResolvedBaseUrl,
+        _dio = dio ??
             Dio(BaseOptions(
-              baseUrl: AppConfig.nvidiaBaseUrl,
+              baseUrl: baseUrl ?? AppConfig.aiResolvedBaseUrl,
               connectTimeout: const Duration(seconds: 15),
               sendTimeout: const Duration(seconds: 30),
               receiveTimeout: const Duration(seconds: 120),
               contentType: 'application/json',
             )),
-        _apiKey = apiKey ?? AppConfig.nvidiaApiKey,
-        _model = model ?? AppConfig.nvidiaModel;
+        _apiKey = apiKey ?? AppConfig.aiResolvedApiKey,
+        _model = model ?? AppConfig.aiResolvedModel;
 
+  final String _baseUrl;
   final Dio _dio;
   final String _apiKey;
   final String _model;
@@ -50,7 +57,7 @@ class NvidiaDirectClient {
   ];
 
   /// True when a direct key was compiled into the app.
-  bool get enabled => _apiKey.isNotEmpty;
+  bool get enabled => _apiKey.isNotEmpty && _baseUrl.isNotEmpty;
 
   Future<String> _complete({
     required List<Map<String, String>> messages,
@@ -98,7 +105,15 @@ class NvidiaDirectClient {
     if (code == 401 || code == 403) {
       return ApiException(
           ApiErrorKind.unauthorized,
-          'The NVIDIA API key was rejected. Please check the key and rebuild.',
+          'The AI API key was rejected. Please check the key and rebuild.',
+          statusCode: code,
+          retryable: false);
+    }
+    if (code == 402) {
+      return ApiException(
+          ApiErrorKind.upstream,
+          'The AI provider account has no credits or budget left. '
+          'Top it up or use another key.',
           statusCode: code,
           retryable: false);
     }
@@ -220,7 +235,7 @@ class NvidiaDirectClient {
         'Traveler interests: ${interests.isNotEmpty ? interests.join(', ') : 'general sightseeing'}. '
         'Budget level: $budget. Pace: $travelStyle. '
         'Respond with ONLY JSON matching exactly this schema: '
-        '{"plan":[{"day":1,"items":[{"time":"HH:MM","title":"...","description":"1-2 sentences","cost":"e.g. free, \$15, ~\u20B9500"}]}]}. '
+        '{\"plan\":[{\"day\":1,\"items\":[{\"time\":\"HH:MM\",\"title\":\"...\",\"description\":\"1-2 sentences\",\"cost\":\"e.g. free, \$15, ~\u20B9500\"}]}]}. '
         'Include 3-6 items per day with times, covering $destination\u2019s real attractions, '
         'food and transport. No markdown, no extra keys.';
     final String raw = await _complete(

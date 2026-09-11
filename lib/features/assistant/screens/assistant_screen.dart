@@ -120,10 +120,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ..._messages,
           _ChatMessage(
             role: 'assistant',
-            text:
-                'I could not reach the AI service: ${e.toString()}\n\n'
-                'Check your internet connection (and that the YatraWise '
-                'backend is deployed) and try again.',
+            text: e.toString(),
             isError: true,
           ),
         ];

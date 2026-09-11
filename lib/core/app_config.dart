@@ -50,6 +50,35 @@ class AppConfig {
   /// True when a direct NVIDIA key was compiled into the app.
   static bool get nvidiaDirectEnabled => nvidiaApiKey.isNotEmpty;
 
+  /// Generic OpenAI-compatible AI provider — used when NO NVIDIA key is set.
+  /// Lets the app talk to any provider (Groq, OpenRouter, Hack Club AI,
+  /// Mistral, …) that exposes `/chat/completions`. Build with:
+  ///   flutter build apk \
+  ///     --dart-define=AI_API_KEY=... \
+  ///     --dart-define=AI_BASE_URL=https://api.example.com/v1 \
+  ///     --dart-define=AI_MODEL=some/model
+  static const String aiApiKey =
+      String.fromEnvironment('AI_API_KEY', defaultValue: '');
+  static const String aiBaseUrl =
+      String.fromEnvironment('AI_BASE_URL', defaultValue: '');
+  static const String aiModel = String.fromEnvironment(
+    'AI_MODEL',
+    defaultValue: 'meta-llama/llama-3.1-8b-instruct',
+  );
+
+  /// True when any direct AI transport (NVIDIA or generic) is compiled in.
+  static bool get aiDirectEnabled =>
+      nvidiaApiKey.isNotEmpty || (aiApiKey.isNotEmpty && aiBaseUrl.isNotEmpty);
+
+  /// Resolved direct-AI settings: prefer NVIDIA, otherwise the generic
+  /// OpenAI-compatible provider.
+  static String get aiResolvedBaseUrl =>
+      nvidiaApiKey.isNotEmpty ? nvidiaBaseUrl : aiBaseUrl;
+  static String get aiResolvedApiKey =>
+      nvidiaApiKey.isNotEmpty ? nvidiaApiKey : aiApiKey;
+  static String get aiResolvedModel =>
+      nvidiaApiKey.isNotEmpty ? nvidiaModel : aiModel;
+
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 
