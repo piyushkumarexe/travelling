@@ -223,7 +223,6 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
   }
 
   Widget _resultCard(DigitalId id, {required bool active}) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(

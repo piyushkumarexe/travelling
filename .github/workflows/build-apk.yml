@@ -49,8 +49,8 @@ jobs:
       - name: Surface analyze errors as annotations
         if: failure()
         run: |
-          echo "::warning title=analyze shape::lines=$(wc -l < analyze.log) errors=$(grep -a -c ' error ' analyze.log || true) warnings=$(grep -a -c ' warning ' analyze.log || true)"
-          grep -a -E " (error|warning) | info .| hint ." analyze.log > /tmp/issues.txt || true
+          echo "::warning title=analyze shape::lines=$(wc -l < analyze.log) errors=$(grep -a -c -E '^ *error . ' analyze.log || true) warnings=$(grep -a -c -E '^ *warning . ' analyze.log || true)"
+          grep -a -E "^ *(error|warning|info|hint) . " analyze.log > /tmp/issues.txt || true
           if [ -s /tmp/issues.txt ]; then
             sed -E 's/^ *(error|warning|info|hint) . .* . ([^ ]+) . ([A-Za-z_0-9]+) *$/\1 \2 \3/' /tmp/issues.txt | paste -d'|' - - - - - | head -n 12 | while IFS= read -r line; do
               echo "::error title=analyze issues::$line"
