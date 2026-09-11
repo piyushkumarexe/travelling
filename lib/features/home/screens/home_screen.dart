@@ -443,7 +443,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _safetyCard() {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = _nearHighRisk ? AppTheme.danger : AppTheme.success;
     return AppCard(
       onTap: () => context.push('/safety'),

@@ -10,7 +10,6 @@ class RiskBadge extends StatelessWidget {
   final String risk;
 
   static Color colorFor(BuildContext context, String risk) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return switch (risk) {
       'low' => AppTheme.success,
       'medium' => AppTheme.warning,
