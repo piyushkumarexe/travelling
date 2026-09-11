@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:roamio/data/models/weather.dart';
+import 'package:yatrawise/data/models/weather.dart';
 
 WeatherCurrent w({
   double temp = 25,

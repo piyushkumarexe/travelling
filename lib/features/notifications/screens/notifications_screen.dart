@@ -91,7 +91,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _ => '/home',
     };
     if (!mounted) return;
-    context.go(destination);
+    context.push(destination);
   }
 
   @override

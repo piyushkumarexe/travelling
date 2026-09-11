@@ -178,7 +178,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
           TextButton.icon(
             icon: const Icon(Icons.qr_code_scanner, size: 20),
             label: const Text('Verify'),
-            onPressed: () => context.go('/digital-id/verify'),
+            onPressed: () => context.push('/digital-id/verify'),
           ),
         ],
       ),
@@ -220,7 +220,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     'The QR code contains only a random verification token — '
                     'no name, phone or other personal data. First responders '
                     'scan it (or type the token) and the app verifies it '
-                    'against Roamio\'s secure records.',
+                    'against YatraWise\'s secure records.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -255,7 +255,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      'ROAMIO EMERGENCY ID',
+                      'YATRAWISE EMERGENCY ID',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.8),
                         fontSize: 12,

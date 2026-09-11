@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:roamio/core/utils/geo.dart';
+import 'package:yatrawise/core/utils/geo.dart';
 
 void main() {
   group('GeoUtils.distanceMeters', () {

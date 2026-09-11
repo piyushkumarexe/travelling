@@ -1,6 +1,6 @@
 {
-  "name": "roamio-functions",
-  "description": "Roamio secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
+  "name": "yatrawise-functions",
+  "description": "YatraWise secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
   "private": true,
   "main": "index.js",
   "engines": {

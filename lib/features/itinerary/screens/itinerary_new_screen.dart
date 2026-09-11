@@ -108,7 +108,7 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
       );
       final String id = await _c.itinerariesRepository.create(uid, itinerary);
       if (!mounted) return;
-      context.go('/itineraries/$id');
+      context.pushReplacement('/itineraries/$id');
     } catch (e) {
       if (!mounted) return;
       setState(() {

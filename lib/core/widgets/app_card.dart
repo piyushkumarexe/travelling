@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Consistent elevated card container used across the app.
+/// Consistent minimal card used across the app: clean surface, hairline
+/// border and a soft drop shadow (uiverse-inspired "soft UI" look).
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
@@ -21,17 +22,27 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Widget box = Material(
-      color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
-      borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      border: Border.all(color: scheme.outlineVariant.withOpacity(0.6)),
-      child: Padding(padding: padding, child: child),
-    );
-    if (onTap == null) return box;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-      onTap: onTap,
-      child: box,
+    final BorderRadius radius = BorderRadius.circular(AppTheme.cardRadius);
+    final Widget content = Padding(padding: padding, child: child);
+    return Container(
+      decoration: BoxDecoration(
+        color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
+        borderRadius: radius,
+        border:
+            Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+        boxShadow: AppTheme.softShadow(context),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: radius,
+        child: onTap == null
+            ? content
+            : InkWell(
+                borderRadius: radius,
+                onTap: onTap,
+                child: content,
+              ),
+      ),
     );
   }
 }
@@ -58,7 +69,7 @@ class SectionHeader extends StatelessWidget {
             child: Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
             ),
           ),

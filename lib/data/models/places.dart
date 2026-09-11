@@ -1,6 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// A place returned by the Roamio backend (Google Places proxy).
+/// A place returned by the YatraWise backend (Google Places proxy).
 library;
 
 class Place {

@@ -154,7 +154,11 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Zone saved.')),
         );
-        context.go('/admin');
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/admin');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -190,7 +194,13 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
     if (ok != true) return;
     try {
       await _c.zonesRepository.remove(z.id);
-      if (mounted) context.go('/admin');
+      if (mounted) {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/admin');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

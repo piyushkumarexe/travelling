@@ -1,4 +1,4 @@
-/// OpenWeather data (proxied through the Roamio backend).
+/// OpenWeather data (proxied through the YatraWise backend).
 library;
 
 class WeatherCurrent {

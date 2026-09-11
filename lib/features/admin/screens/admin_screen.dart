@@ -143,7 +143,7 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.go('/admin/zone/new'),
+          onPressed: () => context.push('/admin/zone/new'),
           icon: const Icon(Icons.add),
           label: const Text('New zone'),
         ),
@@ -182,7 +182,7 @@ class _AdminScreenState extends State<AdminScreen> {
           padding: const EdgeInsets.only(bottom: 10),
           child: AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            onTap: () => context.go('/incidents/${inc.id}'),
+            onTap: () => context.push('/incidents/${inc.id}'),
             child: Row(
               children: <Widget>[
                 Expanded(
@@ -330,7 +330,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 IconButton(
                   icon: const Icon(Icons.edit, size: 18),
                   tooltip: 'Edit zone',
-                  onPressed: () => context.go('/admin/zone/${z.id}'),
+                  onPressed: () => context.push('/admin/zone/${z.id}'),
                 ),
               ],
             ),

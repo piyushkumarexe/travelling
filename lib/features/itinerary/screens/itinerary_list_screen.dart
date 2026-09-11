@@ -101,7 +101,7 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My itineraries')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/itineraries/new'),
+        onPressed: () => context.push('/itineraries/new'),
         icon: const Icon(Icons.travel_explore),
         label: const Text('New itinerary'),
       ),
@@ -119,7 +119,7 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
                       message:
                           'Generate your first AI itinerary — destination, days, interests, budget and style.',
                       actionLabel: 'Create itinerary',
-                      onAction: () => context.go('/itineraries/new'),
+                      onAction: () => context.push('/itineraries/new'),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
@@ -129,7 +129,7 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: AppCard(
-                            onTap: () => context.go('/itineraries/${it.id}'),
+                            onTap: () => context.push('/itineraries/${it.id}'),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[

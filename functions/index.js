@@ -1,4 +1,4 @@
-/* Roamio secure backend — all third-party secrets stay server-side.
+/* YatraWise secure backend — all third-party secrets stay server-side.
  * Each endpoint is a v2 onRequest export; the export name is the URL path. */
 'use strict';
 
@@ -190,7 +190,7 @@ function makeHandler(fn) {
       if (e instanceof HttpError) {
         res.status(e.status).json({ error: e.message, kind: e.kind });
       } else {
-        console.error('[roamio] unexpected error:', e);
+        console.error('[yatrawise] unexpected error:', e);
         res.status(500).json({
           error: 'Internal server error.',
           kind: 'internal',
@@ -352,7 +352,7 @@ exports.chat = onRequest(
     }
 
     let system =
-      'You are Roamio, a smart tourism and personal-safety assistant. ' +
+      'You are YatraWise, a smart tourism and personal-safety assistant. ' +
       'Answer travel questions (attractions, food, transport, itineraries, local tips) ' +
       'with practical, current, location-aware advice. Keep replies under 250 words, ' +
       'friendly and specific. If safety is at stake, advise calling local emergency services. ' +

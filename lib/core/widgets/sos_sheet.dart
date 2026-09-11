@@ -284,13 +284,13 @@ class _SosSheetViewState extends State<_SosSheetView> {
         ),
         const SizedBox(height: 12),
         Text(
-          'Roamio will:\n'
+          'YatraWise will:\n'
           '• Capture your current GPS location\n'
           '• Create an emergency event (visible to you and authorized '
           'administrators)\n'
           '• Show an on-device alert and nearby emergency services\n'
           '• Let you call police / hospital / fire directly\n\n'
-          'Roamio does not automatically contact authorities. If you are in '
+          'YatraWise does not automatically contact authorities. If you are in '
           'immediate danger, call your local emergency number first.',
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,

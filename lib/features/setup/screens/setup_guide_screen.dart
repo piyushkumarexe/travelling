@@ -33,7 +33,7 @@ class SetupGuideScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const Text(
-                'Roamio',
+                'YatraWise',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 20),
@@ -48,7 +48,7 @@ class SetupGuideScreen extends StatelessWidget {
       (
         '1. Create a Firebase project',
         'Console → create project → add an Android app with package name '
-        'com.roamio.app → download google-services.json (not required for '
+        'app.roamio.tourism → download google-services.json (not required for '
         'this codebase, but keep it handy) and copy the web/config values.',
       ),
       (
@@ -59,7 +59,7 @@ class SetupGuideScreen extends StatelessWidget {
         'manually (apiKey, appId, messagingSenderId, projectId, bucket).',
       ),
       (
-        '3. Deploy the Roamio backend',
+        '3. Deploy the YatraWise backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
         'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
         '(see functions/.env.example).',
@@ -73,7 +73,7 @@ class SetupGuideScreen extends StatelessWidget {
         '5. Google Maps key',
         'In android/app/src/main/AndroidManifest.xml replace '
         'REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY with an Android-restricted '
-        'Maps SDK key for com.roamio.app.',
+        'Maps SDK key for app.roamio.tourism.',
       ),
       (
         '6. Restart the app',
@@ -83,7 +83,7 @@ class SetupGuideScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Roamio setup')),
+      appBar: AppBar(title: const Text('YatraWise setup')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: <Widget>[

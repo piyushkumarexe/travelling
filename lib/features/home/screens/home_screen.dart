@@ -264,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Hello, ${_greetingName} 👋',
+              'Hello, ${_greetingName}',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             Text(
@@ -338,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      onPressed: () => context.go('/notifications'),
+      onPressed: () => context.push('/notifications'),
     );
   }
 
@@ -386,10 +386,22 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     return AppCard(
-      onTap: () => context.go('/weather'),
+      onTap: () => context.push('/weather'),
       child: Row(
         children: <Widget>[
-          Icon(_weatherIcon(w.icon), size: 40, color: scheme.primary),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(_weatherIcon(w.icon), size: 30, color: Colors.white),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -434,7 +446,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = _nearHighRisk ? AppTheme.danger : AppTheme.success;
     return AppCard(
-      onTap: () => context.go('/safety'),
+      onTap: () => context.push('/safety'),
       child: Row(
         children: <Widget>[
           Container(
@@ -538,10 +550,10 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             children: <Widget>[
               _whiteTextButton(Icons.campaign, 'Report incident',
-                  () => context.go('/incidents/report')),
+                  () => context.push('/incidents/report')),
               const SizedBox(width: 16),
               _whiteTextButton(Icons.qr_code_2, 'Emergency ID',
-                  () => context.go('/digital-id')),
+                  () => context.push('/digital-id')),
             ],
           ),
         ],
@@ -602,11 +614,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _actionTile(String label, IconData icon, String route) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return AppCard(
-      onTap: () => context.go(route),
+      onTap: () => context.push(route),
       padding: const EdgeInsets.all(12),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: scheme.primary),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: scheme.primary, size: 20),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -691,7 +711,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final Color color =
         a.type == 'emergency' ? AppTheme.danger : AppTheme.warning;
     return AppCard(
-      onTap: () => context.go('/notifications'),
+      onTap: () => context.push('/notifications'),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: <Widget>[

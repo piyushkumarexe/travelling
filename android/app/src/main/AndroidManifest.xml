@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Location: core Roamio features (current location, routes, geofencing) -->
+    <!-- Location: core YatraWise features (current location, routes, geofencing) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Background safety-zone monitoring (only used by the Geofence service).
@@ -47,7 +47,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="Roamio"
+        android:label="YatraWise"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
@@ -57,12 +57,12 @@
         <!--
             Google Maps SDK for Android API key.
             REPLACE the placeholder with your key and restrict it in Google Cloud
-            Console to this applicationId (com.roamio.app) + the Maps SDK.
+            Console to this applicationId (app.roamio.tourism) + the Maps SDK.
             See README > "Google Maps SDK setup".
         -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY" />
+            android:value="${MAPS_API_KEY}" />
 
         <activity
             android:name=".MainActivity"

@@ -43,93 +43,58 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
+        child: Center(
+          child: SingleChildScrollView(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black
+                            .withOpacity(dark ? 0.35 : 0.10),
+                        blurRadius: 28,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
                   ),
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: const Icon(Icons.explore, size: 52, color: Colors.white),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Roamio',
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/images/yatrawise-logo.jpg',
+                      fit: BoxFit.cover,
                     ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Your smart tourism & safety companion',
-                style: Theme.of(context).textTheme.bodyLarge
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  _featureChip(Icons.map, 'Real Google Maps'),
-                  const SizedBox(width: 8),
-                  _featureChip(Icons.sos, 'SOS & geofencing'),
-                  const SizedBox(width: 8),
-                  _featureChip(Icons.auto_awesome, 'AI assistant'),
-                ],
-              ),
-              const Spacer(),
-              PrimaryButton(
-                label: _loading ? 'Signing in…' : 'Continue with Google',
-                icon: _loading ? null : Icons.account_circle,
-                loading: _loading,
-                onPressed: _signIn,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Sign in to save itineraries, incidents, your digital '
-                'emergency ID and eco progress. Your data is private — '
-                'only you (and authorized administrators for safety '
-                'features) can access it.',
-                style: Theme.of(context).textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-            ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+                PrimaryButton(
+                  label:
+                      _loading ? 'Signing in…' : 'Continue with Google',
+                  icon: _loading ? null : Icons.account_circle,
+                  loading: _loading,
+                  onPressed: _signIn,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Sign in to save itineraries, incidents, your digital '
+                  'emergency ID and eco progress. Your data is private — '
+                  'only you (and authorized administrators for safety '
+                  'features) can access it.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _featureChip(IconData icon, String label) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, size: 14, color: scheme.primary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-          ),
-        ],
       ),
     );
   }

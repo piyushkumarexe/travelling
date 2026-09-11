@@ -30,7 +30,7 @@ class AppContainer {
   final bool firebaseReady;
   final FirebaseApp? app;
 
-  /// Base URL of the Roamio Cloud Functions backend, derived at runtime
+  /// Base URL of the YatraWise Cloud Functions backend, derived at runtime
   /// from the Firebase project id (no hardcoded secrets/hosts).
   String? get functionsBaseUrl {
     final FirebaseApp? a = app;

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:roamio/data/models/digital_id.dart';
-import 'package:roamio/data/models/places.dart';
-import 'package:roamio/data/models/weather.dart';
+import 'package:yatrawise/data/models/digital_id.dart';
+import 'package:yatrawise/data/models/places.dart';
+import 'package:yatrawise/data/models/weather.dart';
 
 void main() {
   group('DigitalId token', () {
