@@ -451,7 +451,7 @@ class _LuxuryHotelCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      HotelEstimates.rangeLabel(place.rating),
+                      HotelEstimates.rangeLabel(place.rating?.round()),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.primary,
                             fontWeight: FontWeight.w700,
@@ -545,7 +545,7 @@ class _LuxuryHotelCard extends StatelessWidget {
     final Uri uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    } else if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open link.')),
       );

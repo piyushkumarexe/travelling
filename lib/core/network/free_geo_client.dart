@@ -427,9 +427,9 @@ class FreeGeoClient {
     if (out.isEmpty) {
       final String query =
           '[out:json][timeout:20];('
-          'node[\"tourism\"~\"hotel|guest_house|hostel|motel\"]'
+          'node["tourism"~"hotel|guest_house|hostel|motel"]'
           '(around:$radius,${near.latitude},${near.longitude});'
-          'way[\"tourism\"~\"hotel|guest_house|hostel|motel\"]'
+          'way["tourism"~"hotel|guest_house|hostel|motel"]'
           '(around:$radius,${near.latitude},${near.longitude});'
           ');out center 40;';
       try {
