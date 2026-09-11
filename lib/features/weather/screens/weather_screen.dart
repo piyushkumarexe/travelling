@@ -119,7 +119,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     final Widget fallback =
         Icon(_fallbackIcon(icon), size: size, color: color);
     return Image.network(
-      'https://openweathermap.org/img/wn/${icon}@2x.png',
+      'https://openweathermap.org/img/wn/$icon@2x.png',
       width: size,
       height: size,
       loadingBuilder: (BuildContext context, Widget child,

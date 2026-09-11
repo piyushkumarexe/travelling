@@ -61,7 +61,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         _loading = false;
       });
       if (p != null) {
-        _loadPositionAndPhoto();
+        unawaited(_loadPositionAndPhoto());
       }
     } catch (e) {
       if (!mounted) return;

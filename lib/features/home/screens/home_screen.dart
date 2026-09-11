@@ -123,8 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() => _locationLabel = label);
         }
       }).catchError((Object _) {}));
-      _loadWeather();
-      _loadAttractions();
+      unawaited(_loadWeather());
+      unawaited(_loadAttractions());
     } catch (_) {
       if (mounted) {
         setState(() => _locationDone = true);
@@ -264,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Hello, ${_greetingName}',
+              'Hello, $_greetingName',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             Text(
