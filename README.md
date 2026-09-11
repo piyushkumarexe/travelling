@@ -155,19 +155,24 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 2. Set it as the `GOOGLE_MAPS_API_KEY` function environment variable
    (see step 7). It never ships in the APK.
 
-### 5. OpenWeather + NVIDIA keys
+### 5. AI keys (free) + OpenWeather
 
-1. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
-2. NVIDIA: create an API key (build.nvidia.com) → set as `NVIDIA_API_KEY`
-   (optionally override `NVIDIA_MODEL`).
-3. Optional client-side AI fallback — if the backend isn't deployed yet,
-   compile a key into the APK so the AI works without the backend:
-   `flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...`
-   or, for any OpenAI-compatible provider (Groq / OpenRouter / Hack Club AI /
-   Mistral / …):
-   `--dart-define=AI_API_KEY=... --dart-define=AI_BASE_URL=https://.../v1 --dart-define=AI_MODEL=...`.
-   In CI these map to the `NVIDIA_API_KEY`, `AI_API_KEY`, `AI_BASE_URL` and
-   `AI_MODEL` GitHub secrets.
+> In 2026 every keyless AI provider shut down anonymous access (Pollinations,
+> Hack Club AI, DuckDuckGo AI all did), so the assistant needs ONE free key.
+> Easiest is Google Gemini (Google account, no credit card); NVIDIA is also
+> free (phone verification). Both work as a single GitHub secret.
+
+1. **Google Gemini (recommended)**: get a free key at
+   https://aistudio.google.com/apikey → set it as the `GEMINI_API_KEY` GitHub
+   secret (or build with `--dart-define=GEMINI_API_KEY=AIza...`). Default
+   model `gemini-2.5-flash`; override with `GEMINI_MODEL`.
+2. **NVIDIA**: create a free key (build.nvidia.com) → set it as the
+   `NVIDIA_API_KEY` GitHub secret (or
+   `--dart-define=NVIDIA_API_KEY=nvapi-...`; optionally override
+   `NVIDIA_MODEL`).
+3. **Any OpenAI-compatible provider** (Groq / OpenRouter / Mistral / …):
+   `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` GitHub secrets / dart-defines.
+4. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
 
 ### 6. Deploy the secure backend
 

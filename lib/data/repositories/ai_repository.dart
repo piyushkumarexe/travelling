@@ -46,15 +46,14 @@ class AiRepository {
   /// Thrown when neither the backend nor a direct AI key is available.
   ApiException _notConfigured() => ApiException(
         ApiErrorKind.server,
-        'The AI assistant is not enabled yet.\n\n'
-        'Option 1 — deploy the backend and set an NVIDIA key there:\n'
-        '`firebase deploy --only functions`\n\n'
-        'Option 2 — build the app with a free AI key:\n'
-        '`flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...`\n'
-        '(free key at build.nvidia.com)\n\n'
-        'Option 3 — any OpenAI-compatible provider:\n'
-        '`--dart-define=AI_API_KEY=... --dart-define=AI_BASE_URL=https://.../v1 '
-        '--dart-define=AI_MODEL=...`',
+        'AI needs a free key to start.\n\n'
+        'Easiest — Google Gemini (free, no credit card): get a key at '
+        'aistudio.google.com/apikey and set it as the GitHub secret '
+        'GEMINI_API_KEY (or build with '
+        '--dart-define=GEMINI_API_KEY=AIza...).\n\n'
+        'Or NVIDIA (free): set NVIDIA_API_KEY (--dart-define=NVIDIA_API_KEY='
+        'nvapi-...).\n\n'
+        'Or deploy the backend: `firebase deploy --only functions`.',
         retryable: false,
       );
 

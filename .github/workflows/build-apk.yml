@@ -122,6 +122,12 @@ jobs:
           if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
             DEFINES="$DEFINES --dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
           fi
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GEMINI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}"
+          fi
           if [ -n "${{ secrets.AI_API_KEY }}" ]; then
             DEFINES="$DEFINES --dart-define=AI_API_KEY=${{ secrets.AI_API_KEY }}"
           fi
