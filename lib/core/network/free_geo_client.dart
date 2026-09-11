@@ -78,7 +78,12 @@ class FreeGeoClient {
     'hotel': <(String, String)>[('tourism', 'hotel|hostel|guest_house|motel')],
     'park': <(String, String)>[('leisure', 'park')],
     'museum': <(String, String)>[('tourism', 'museum')],
-    'tourist_attraction': <(String, String)>[('tourism', 'attraction')],
+    'tourist_attraction': <(String, String)>[
+      ('tourism', 'attraction|museum|viewpoint|zoo|gallery|theme_park|aquarium'),
+      ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
+      ('leisure', 'park|garden|nature_reserve'),
+      ('amenity', 'place_of_worship'),
+    ],
     'shopping_mall': <(String, String)>[('shop', 'mall')],
     'atm': <(String, String)>[('amenity', 'atm')],
   };
@@ -107,6 +112,21 @@ class FreeGeoClient {
       }
     }
 
+    // A category search (types != null) must stay in the requested category:
+    // free-text geocoding would return far-away or unrelated matches, so if
+    // Overpass has nothing mapped nearby we return empty (the UI shows an
+    // honest "No X found near you") instead of another city's results.
+    if (types != null) {
+      if (filters != null && near != null) {
+        try {
+          return await _overpass(filters, near, radiusMeters);
+        } catch (_) {
+          return const <Place>[];
+        }
+      }
+      return const <Place>[];
+    }
+
     // "Famous places near me" in data-sparse towns: Wikipedia geosearch has
     // real articles with coordinates where OSM has almost no POIs.
     if (_isAttractionQuery(q, types) && near != null) {
@@ -132,7 +152,8 @@ class FreeGeoClient {
       // Fall through.
     }
 
-    // A category with no geocoding match still deserves Overpass results.
+    // A free-text attraction query with no geocoding match still deserves
+    // Overpass results.
     if (filters != null && near != null) {
       try {
         return await _overpass(filters, near, radiusMeters);
@@ -160,7 +181,12 @@ class FreeGeoClient {
         q.contains('gem') ||
         q.contains('things to do') ||
         q.contains('near me')) {
-      return const <(String, String)>[('tourism', 'attraction')];
+      return const <(String, String)>[
+        ('tourism', 'attraction|museum|viewpoint|zoo|gallery|theme_park|aquarium'),
+        ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
+        ('leisure', 'park|garden|nature_reserve'),
+        ('amenity', 'place_of_worship'),
+      ];
     }
     return null;
   }
@@ -192,7 +218,7 @@ class FreeGeoClient {
         'list': 'geosearch',
         'gscoord': '${near.latitude}|${near.longitude}',
         'gsradius': radius,
-        'gslimit': 20,
+        'gslimit': 30,
         'format': 'json',
       },
     );
@@ -200,30 +226,40 @@ class FreeGeoClient {
     if (data is! Map) return const <Place>[];
     final Object? query = data['query'];
     if (query is! Map || query['geosearch'] is! List) return const <Place>[];
-    final List<Place> out = <Place>[];
+    final List<Map> candidates = <Map>[];
     for (final dynamic e in query['geosearch'] as List) {
       if (e is! Map) continue;
       final double? lat = (e['lat'] as num?)?.toDouble();
       final double? lon = (e['lon'] as num?)?.toDouble();
       final String title = (e['title'] as String?) ?? '';
-      final int pageid = (e['pageid'] as num?)?.toInt() ?? 0;
       if (lat == null || lon == null || title.isEmpty) continue;
-      // Drop clearly non-tourist administrative entries.
+      // Drop clearly non-tourist entries (administrative units, schools,
+      // hospitals, universities, train lines…).
       final String t = title.toLowerCase();
-      if (t.contains('constituency') ||
-          t.contains('lok sabha') ||
-          t.contains('vidhan sabha') ||
-          t.contains(' district') ||
-          t.contains('assembly')) {
-        continue;
-      }
-      final double dist = (e['dist'] as num?)?.toDouble() ?? 0;
+      if (_isNonTouristTitle(t)) continue;
+      candidates.add(<String, dynamic>{
+        'pageid': (e['pageid'] as num?)?.toInt() ?? 0,
+        'title': title,
+        'lat': lat,
+        'lon': lon,
+        'dist': (e['dist'] as num?)?.toDouble() ?? 0,
+      });
+    }
+    if (candidates.isEmpty) return const <Place>[];
+    // Fetch categories and keep only real sightseeing topics (a village or
+    // a medical university has no tourism category).
+    final Set<String> tourismTitles =
+        await _wikiTourismTitles(candidates.map((Map m) => m['title'] as String).toList());
+    final List<Place> out = <Place>[];
+    for (final Map m in candidates) {
+      final String title = m['title'] as String;
+      if (!tourismTitles.contains(title)) continue;
       out.add(Place(
-        placeId: 'wiki-$pageid',
+        placeId: 'wiki-${m['pageid']}',
         name: title,
-        lat: lat,
-        lng: lon,
-        address: 'Wikipedia · ${_distLabel(dist)}',
+        lat: m['lat'] as double,
+        lng: m['lon'] as double,
+        address: 'Wikipedia · ${_distLabel(m['dist'] as double)}',
         primaryType: 'tourist_attraction',
         types: const <String>['tourist_attraction', 'point_of_interest'],
         website:
@@ -231,6 +267,115 @@ class FreeGeoClient {
       ));
     }
     return out;
+  }
+
+  static bool _isNonTouristTitle(String t) {
+    return t.contains('constituency') ||
+        t.contains('lok sabha') ||
+        t.contains('vidhan sabha') ||
+        t.contains('assembly') ||
+        t.contains('district') ||
+        t.contains('division') ||
+        t.contains('subdivision') ||
+        t.contains('tehsil') ||
+        t.contains('block (') ||
+        t.contains('village') ||
+        t.contains('census') ||
+        t.contains('university') ||
+        t.contains('college') ||
+        t.contains('school') ||
+        t.contains('institute') ||
+        t.contains('institution') ||
+        t.contains('hospital') ||
+        t.contains('medical') ||
+        t.contains('railway station') ||
+        t.contains('railway line') ||
+        t.contains('station') ||
+        t.contains('airport') ||
+        t.contains('police') ||
+        t.contains('court') ||
+        t.contains('prison') ||
+        t.contains('post office');
+  }
+
+  /// Returns the subset of [titles] whose Wikipedia article belongs to a
+  /// tourism category (temples, forts, museums, lakes, national parks…).
+  Future<Set<String>> _wikiTourismTitles(List<String> titles) async {
+    final Set<String> kept = <String>{};
+    if (titles.isEmpty) return kept;
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://en.wikipedia.org/w/api.php',
+        queryParameters: <String, dynamic>{
+          'action': 'query',
+          'prop': 'categories',
+          'titles': titles.join('|'),
+          'cllimit': 'max',
+          'format': 'json',
+        },
+      );
+      final Object? data = resp.data;
+      if (data is! Map) return kept;
+      final Object? query = data['query'];
+      if (query is! Map || query['pages'] is! Map) return kept;
+      for (final dynamic page in (query['pages'] as Map).values) {
+        if (page is! Map) continue;
+        final String title = (page['title'] as String?) ?? '';
+        if (title.isEmpty) continue;
+        final Object? cats = page['categories'];
+        if (cats is! List) continue;
+        for (final dynamic c in cats) {
+          if (c is! Map) continue;
+          final String cat = (c['title'] as String?) ?? '';
+          if (_isTourismCategory(cat)) {
+            kept.add(title);
+            break;
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through with what we have.
+    }
+    return kept;
+  }
+
+  static bool _isTourismCategory(String cat) {
+    final String c = cat.toLowerCase();
+    const List<String> keywords = <String>[
+      'tourist attraction',
+      'temple',
+      'mosque',
+      'church',
+      'gurudwara',
+      'dargah',
+      'shrine',
+      'monastery',
+      'museum',
+      'fort',
+      'palace',
+      'monument',
+      'memorial',
+      'mausoleum',
+      'tomb',
+      'lake',
+      'waterfall',
+      'park',
+      'garden',
+      'zoo',
+      'cave',
+      'stupa',
+      'archaeological',
+      'heritage',
+      'sanctuary',
+      'national park',
+      'ghat',
+      'dam',
+      'beach',
+      'island',
+      'hill station',
+      'viewpoint',
+    ];
+    return keywords.any((String k) => c.contains(k));
   }
 
   static String _distLabel(double meters) {
@@ -587,8 +732,8 @@ class FreeGeoClient {
       if (feats.isEmpty) return null;
       final dynamic f = feats.first;
       if (f is Map) {
-        final Object? name = f['place_name'];
-        if (name is String && name.trim().isNotEmpty) return name.trim();
+        final String? label = _mapTilerReverseLabel(f);
+        if (label != null && label.trim().isNotEmpty) return label.trim();
       }
       return null;
     } on DioException {
@@ -603,13 +748,71 @@ class FreeGeoClient {
           },
         );
         final Object? data = resp.data;
-        if (data is Map && data['display_name'] is String) {
-          return data['display_name'] as String;
+        if (data is Map) {
+          final String? label = _nominatimReverseLabel(data);
+          if (label != null && label.trim().isNotEmpty) return label.trim();
         }
       } catch (_) {}
       throw ApiException(
           ApiErrorKind.server, 'Could not determine your location.');
     }
+  }
+
+  /// Builds a "City, State, Country" label from a MapTiler feature's context
+  /// (rural coordinates reverse-geocode to a road, which is useless as a
+  /// "you are here" label — so we prefer the admin-area context entries).
+  static String? _mapTilerReverseLabel(Map f) {
+    final Object? ctx = f['context'];
+    String? city;
+    String? state;
+    String? country;
+    if (ctx is List) {
+      for (final dynamic c in ctx) {
+        if (c is! Map) continue;
+        final String kind = (c['kind'] as String?) ?? '';
+        final String text = (c['text'] as String?) ?? '';
+        if (text.isEmpty) continue;
+        final String id = (c['id'] as String?) ?? '';
+        if (kind == 'country' && country == null) {
+          country = text;
+        } else if (kind == 'admin_area') {
+          if (id.startsWith('region.') && state == null) {
+            state = text;
+          } else if ((id.startsWith('county.') || id.startsWith('subregion.')) &&
+              city == null) {
+            city = text;
+          }
+        }
+      }
+    }
+    final List<String> parts = <String>[
+      if (city != null) city,
+      if (state != null) state,
+      if (country != null) country,
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    final String placeName = (f['place_name'] as String?) ?? '';
+    return placeName.trim().isEmpty ? null : placeName;
+  }
+
+  static String? _nominatimReverseLabel(Map data) {
+    final Object? address = data['address'];
+    if (address is! Map) {
+      final String? display = data['display_name'] as String?;
+      return display;
+    }
+    String? city = (address['city'] ?? address['town'] ?? address['village'] ??
+        address['county'] ?? address['state_district']) as String?;
+    final String? state = address['state'] as String?;
+    final String? country = address['country'] as String?;
+    final List<String> parts = <String>[
+      if (city != null && city.isNotEmpty) city,
+      if (state != null && state.isNotEmpty) state,
+      if (country != null && country.isNotEmpty) country,
+    ];
+    if (parts.isNotEmpty) return parts.join(', ');
+    final String? display = data['display_name'] as String?;
+    return display;
   }
 
   List<dynamic> _features(Object? data) {

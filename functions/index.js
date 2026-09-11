@@ -356,7 +356,10 @@ exports.chat = onRequest(
       'Answer travel questions (attractions, food, transport, itineraries, local tips) ' +
       'with practical, current, location-aware advice. Keep replies under 250 words, ' +
       'friendly and specific. If safety is at stake, advise calling local emergency services. ' +
-      'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ';
+      'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ' +
+      'LOCALITY RULE: prioritize places IN or VERY NEAR the traveler\'s city/town (within ~40 km), ' +
+      'and give each recommendation an approximate distance. Only mention far-away cities ' +
+      '(over ~100 km) when the traveler asks for them, and clearly label such places with distance. ';
     if (typeof body.locationLabel === 'string' && body.locationLabel.trim()) {
       system += `The traveler is currently in: ${body.locationLabel.slice(0, 200)}. `;
     }

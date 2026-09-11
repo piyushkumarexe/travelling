@@ -417,8 +417,14 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _effectiveOrigin() {
     if (_origin != null) return _origin;
     final Position? p = _position;
-    if (p == null) return null;
-    return LatLng(p.latitude, p.longitude);
+    if (p != null) return LatLng(p.latitude, p.longitude);
+    // No GPS fix yet — use the visible map center so a route always works
+    // (Google-style: what you see is where you start from).
+    try {
+      return _controller.camera.center;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _toggleSetOrigin() {
@@ -977,11 +983,14 @@ class _MapScreenState extends State<MapScreen> {
                 scrollDirection: Axis.horizontal,
                 children: <Widget>[
                   _chip('Attractions', () => _searchCategory(
-                      'Attractions', 'tourist attractions')),
+                      'Attractions', 'tourist attractions',
+                      types: const <String>['tourist_attraction'])),
                   const SizedBox(width: 8),
-                  _chip('Food', () => _searchCategory('Food', 'restaurants')),
+                  _chip('Food', () => _searchCategory('Food', 'restaurants',
+                      types: const <String>['restaurant'])),
                   const SizedBox(width: 8),
-                  _chip('Parks', () => _searchCategory('Parks', 'parks')),
+                  _chip('Parks', () => _searchCategory('Parks', 'parks',
+                      types: const <String>['park'])),
                   const SizedBox(width: 8),
                   _chip('Hospitals', () => _searchCategory(
                       'Hospitals', 'hospitals', types: const <String>['hospital'])),
@@ -1439,7 +1448,7 @@ class _MapScreenState extends State<MapScreen> {
                         _origin != null
                             ? (_originName ?? 'Start point')
                             : (_position == null
-                                ? 'My location (waiting for GPS…)'
+                                ? 'Map center (set your start)'
                                 : 'My location'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

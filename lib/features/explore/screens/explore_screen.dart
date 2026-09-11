@@ -78,7 +78,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _position = pos;
         _locationDone = true;
       });
-      if (!hadLocation) unawaited(_runSearch());
+      if (!hadLocation) unawaited(_runSearch(preserveOnEmpty: true));
     } catch (_) {
       if (mounted) setState(() => _locationDone = true);
       if (!_searchedOnce) _runDefaultSearch();
@@ -110,7 +110,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     _debounce?.cancel();
     if (q.isEmpty) return;
-    _debounce = Timer(const Duration(milliseconds: 550), () => _runSearch());
+    _debounce = Timer(const Duration(milliseconds: 550), () {
+      // A typed search is a brand-new query — clear stale results so the UI
+      // never keeps showing a previous category's list.
+      if (_results.isNotEmpty) setState(() => _results = const <Place>[]);
+      _runSearch();
+    });
   }
 
   void _setScope(String scope) {
@@ -118,6 +123,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _scope = scope;
       _activeCategory = null;
+      _results = const <Place>[];
+      _error = null;
     });
     if (scope == 'saved') {
       unawaited(_loadSaved());
@@ -148,7 +155,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _setCategory(String? category) {
     _debounce?.cancel();
-    setState(() => _activeCategory = category);
+    setState(() {
+      _activeCategory = category;
+      // Clear the previous list immediately so a slow category search never
+      // leaves the old results on screen (fixes "every chip shows the same
+      // list").
+      _results = const <Place>[];
+      _error = null;
+    });
     _runSearch();
   }
 
@@ -181,7 +195,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _runSearch();
   }
 
-  Future<void> _runSearch() async {
+  Future<void> _runSearch({bool preserveOnEmpty = false}) async {
     final String q = _effectiveQuery();
     if (_loading) return;
     setState(() {
@@ -230,10 +244,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
       if (!mounted) return;
       setState(() {
-        // A background refresh that comes back empty must never wipe out
-        // results the user is already looking at (prevents the flicker to
-        // "no places found" when a re-run races the first fix).
-        if (places.isEmpty && _results.isNotEmpty) {
+        // A background refresh (GPS re-run) that comes back empty must never
+        // wipe out results the user is already looking at. Explicit searches
+        // clear results up-front, so this only applies to that re-run.
+        if (places.isEmpty && preserveOnEmpty && _results.isNotEmpty) {
           _loading = false;
           return;
         }
@@ -394,6 +408,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
               'access — even offline.',
           actionLabel: 'Explore nearby',
           onAction: () => _setScope('nearby'),
+        );
+      }
+      // Category-specific empty state — honest about a sparse small town
+      // instead of silently reusing another category's list.
+      if (_activeCategory != null) {
+        final String label =
+            kExploreCategoryLabels[_activeCategory] ?? _activeCategory!;
+        return EmptyState(
+          icon: Icons.search_off,
+          title: 'No ${label.toLowerCase()} found near you',
+          message:
+              'Nothing in this category is mapped within 8 km yet. Try '
+              'widening to "Anywhere", or search a bigger nearby city.',
+          actionLabel: 'Search anywhere',
+          onAction: () => _setScope('anywhere'),
         );
       }
       return EmptyState(
