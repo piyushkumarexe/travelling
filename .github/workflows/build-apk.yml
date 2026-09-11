@@ -44,10 +44,22 @@ jobs:
           echo "::error::$MSG"
 
       - name: Analyze (fatal warnings)
-        run: flutter analyze
+        run: set -o pipefail; flutter analyze 2>&1 | tee analyze.log
+
+      - name: Surface analyze errors as annotations
+        if: failure()
+        run: |
+          MSG=$(grep -a -E "error|warning" analyze.log | head -n 25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | head -c 3500)
+          echo "::error::flutter analyze failed:%0A$MSG"
 
       - name: Run tests
-        run: flutter test
+        run: set -o pipefail; flutter test 2>&1 | tee test.log
+
+      - name: Surface test failures as annotations
+        if: failure()
+        run: |
+          MSG=$(grep -a -E "FAILED|failed|Expected|Actual|\[E\]" test.log | head -n 25 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | head -c 3500)
+          echo "::error::flutter test failed:%0A$MSG"
 
   build-apk:
     name: Build release APK
