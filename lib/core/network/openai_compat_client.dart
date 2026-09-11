@@ -179,7 +179,7 @@ class OpenAiCompatClient {
         return ApiException(
             ApiErrorKind.server,
             'The AI service returned an error (${code ?? 'unknown'}) '
-            'from ${_host} (model: $_model). '
+            'from $_host (model: $_model). '
             '${_bodySnippet(e.response?.data)}'
             'Please try again.',
             statusCode: code);
