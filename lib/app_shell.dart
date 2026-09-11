@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/services/geofence_service.dart';
@@ -38,7 +37,7 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
   bool _startedGeofence = false;
-  DateTime? _lastBackPress;
+  final List<String> _tabHistory = <String>[];
 
   @override
   void didChangeDependencies() {
@@ -125,21 +124,34 @@ class _AppShellState extends State<AppShell> {
     return 0;
   }
 
-  Future<void> _handleBack(String location) async {
+  void _openTab(int nextIndex, String currentLocation) {
+    final String next = _tabs[nextIndex];
+    if (next == currentLocation) return;
+    _tabHistory.remove(currentLocation);
+    _tabHistory.add(currentLocation);
+    context.go(next);
+  }
+
+  void _handleBack(String location) {
     if (location != '/home') {
+      while (_tabHistory.isNotEmpty) {
+        final String previous = _tabHistory.removeLast();
+        if (previous != location && _tabs.contains(previous)) {
+          context.go(previous);
+          return;
+        }
+      }
       context.go('/home');
       return;
     }
-    final DateTime now = DateTime.now();
-    if (_lastBackPress == null ||
-        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
-      _lastBackPress = now;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Press back again to exit Tourism')),
+
+    // Keep the root dashboard alive. Android's Home gesture/button remains
+    // available when the user intentionally wants to background Tourism.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('You are already on Tourism Home')),
       );
-      return;
-    }
-    await SystemNavigator.pop();
   }
 
   @override
@@ -151,7 +163,7 @@ class _AppShellState extends State<AppShell> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) unawaited(_handleBack(location));
+        if (!didPop) _handleBack(location);
       },
       child: Scaffold(
         body: widget.child,
@@ -166,7 +178,7 @@ class _AppShellState extends State<AppShell> {
                   ),
                   NavigationBar(
                     selectedIndex: index,
-                    onDestinationSelected: (int i) => context.go(_tabs[i]),
+                    onDestinationSelected: (int i) => _openTab(i, location),
                     destinations: const <NavigationDestination>[
                       NavigationDestination(
                         icon: Icon(Icons.home_outlined),

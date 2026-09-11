@@ -7,7 +7,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as google;
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
@@ -16,10 +15,9 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/safety_zone.dart';
 
-/// Interactive location-aware map with MapTiler satellite and OSM street
-/// layers. Live place search and traffic-aware road routes use the secured
-/// Firebase backend; the MapTiler public client token is injected at build
-/// time rather than committed to source.
+/// Interactive location-aware map with Esri World Imagery satellite and OSM
+/// street layers. Live GPS continuously updates the blue location marker;
+/// place search and traffic-aware road routes use the secured backend.
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -98,9 +96,10 @@ class _MapScreenState extends State<MapScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
   StreamSubscription<List<SafetyZone>>? _zonesSub;
+  StreamSubscription<Position>? _positionSub;
 
   bool _ready = false;
-  bool _satellite = AppConfig.mapTilerKey.isNotEmpty;
+  bool _satellite = true;
   bool _searching = false;
   bool _permissionDenied = false;
   String? _message;
@@ -156,6 +155,13 @@ class _MapScreenState extends State<MapScreen> {
             _initialZoom = 14;
           }
         }
+        _positionSub =
+            _c.locationService.watchPosition(distanceFilter: 5).listen(
+          (Position livePosition) {
+            if (mounted) setState(() => _position = livePosition);
+          },
+          onError: (Object _) {},
+        );
       }
     } catch (_) {
       // Lucknow remains a useful default when GPS is unavailable.
@@ -372,6 +378,7 @@ class _MapScreenState extends State<MapScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _zonesSub?.cancel();
+    _positionSub?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -396,10 +403,10 @@ class _MapScreenState extends State<MapScreen> {
             children: <Widget>[
               osm.TileLayer(
                 urlTemplate: _satellite
-                    ? 'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${AppConfig.mapTilerKey}'
+                    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'app.roamio.tourism',
-                maxNativeZoom: _satellite ? 20 : 19,
+                maxNativeZoom: 19,
               ),
               osm.CircleLayer(circles: _zoneCircles()),
               osm.PolylineLayer(polylines: _routeLines()),
@@ -408,19 +415,20 @@ class _MapScreenState extends State<MapScreen> {
                 attributions: <osm.SourceAttribution>[
                   if (_satellite)
                     osm.TextSourceAttribution(
-                      'MapTiler',
+                      'Esri, Maxar, Earthstar Geographics',
                       onTap: () => launchUrl(
-                        Uri.parse('https://www.maptiler.com/copyright/'),
+                        Uri.parse('https://www.esri.com/en-us/legal/overview'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    )
+                  else
+                    osm.TextSourceAttribution(
+                      'OpenStreetMap contributors',
+                      onTap: () => launchUrl(
+                        Uri.parse('https://www.openstreetmap.org/copyright'),
                         mode: LaunchMode.externalApplication,
                       ),
                     ),
-                  osm.TextSourceAttribution(
-                    'OpenStreetMap contributors',
-                    onTap: () => launchUrl(
-                      Uri.parse('https://www.openstreetmap.org/copyright'),
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -428,18 +436,18 @@ class _MapScreenState extends State<MapScreen> {
           _searchPanel(),
           if (_permissionDenied) _locationBanner(),
           if (_selected != null) _placeCard(_selected!),
-          if (AppConfig.mapTilerKey.isNotEmpty)
-            Positioned(
-              right: 16,
-              top: MediaQuery.paddingOf(context).top + 118,
-              child: FloatingActionButton.small(
-                heroTag: 'map-layer',
-                tooltip: _satellite ? 'Use street map' : 'Use satellite map',
-                onPressed: () => setState(() => _satellite = !_satellite),
-                child:
-                    Icon(_satellite ? Icons.map_outlined : Icons.satellite_alt),
+          Positioned(
+            right: 16,
+            top: MediaQuery.paddingOf(context).top + 118,
+            child: FloatingActionButton.small(
+              heroTag: 'map-layer',
+              tooltip: _satellite ? 'Use street map' : 'Use satellite map',
+              onPressed: () => setState(() => _satellite = !_satellite),
+              child: Icon(
+                _satellite ? Icons.map_outlined : Icons.satellite_alt,
               ),
             ),
+          ),
           Positioned(
             right: 16,
             bottom: _selected == null ? 32 : 220,
