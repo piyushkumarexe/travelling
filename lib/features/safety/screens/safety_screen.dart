@@ -157,7 +157,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
     if (nearestDist != null && nearestDist <= 3000) {
       return (
         'Nearest zone: ${nearest.name} · '
-        '${GeoUtils.formatDistance(nearestDist!)}',
+        '${GeoUtils.formatDistance(nearestDist)}',
         nearest.isHighRisk ? AppTheme.danger : AppTheme.warning,
       );
     }
