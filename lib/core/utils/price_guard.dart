@@ -1,9 +1,9 @@
-/// Deterministic, transparent reference-price engine for the Tourism
-/// "Payment Guardian".
-///
-/// This intentionally NEVER accuses anyone of fraud. Every range is an
-/// honest, clearly-labelled *estimate* of what a service commonly costs in
-/// India, used only to flag prices that may be worth double-checking.
+// Deterministic, transparent reference-price engine for the Tourism
+// "Payment Guardian".
+//
+// This intentionally NEVER accuses anyone of fraud. Every range is an honest,
+// clearly-labelled *estimate* of what a service commonly costs in India, used
+// only to flag prices that may be worth double-checking.
 
 /// Broad service categories a tourist can check.
 enum PriceCategory {

@@ -28,25 +28,30 @@ class PrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = onPressed != null && !loading;
-    final Widget child = loading
-        ? const SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (icon != null) ...<Widget>[
-                Icon(icon, size: 18),
-                const SizedBox(width: 8),
-              ],
-              Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+
+    final Color outlineColor =
+        danger ? AppTheme.danger : scheme.primary;
+
+    Widget contentRow(Color color) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (icon != null) ...<Widget>[
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
             ],
-          );
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        );
 
     if (outlined) {
       return SizedBox(
@@ -56,16 +61,25 @@ class PrimaryButton extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
             side: BorderSide(
-              color: danger
-                  ? AppTheme.danger
-                  : scheme.primary.withValues(alpha: 0.7),
+              color: outlineColor.withValues(alpha: 0.7),
             ),
-            foregroundColor: danger ? AppTheme.danger : scheme.primary,
+            foregroundColor: outlineColor,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
           ),
-          child: Center(child: child),
+          child: Center(
+            child: loading
+                ? SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: outlineColor,
+                    ),
+                  )
+                : contentRow(outlineColor),
+          ),
         ),
       );
     }
@@ -103,14 +117,16 @@ class PrimaryButton extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 52),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Center(
-              child: DefaultTextStyle(
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                ),
-                child: child,
-              ),
+              child: loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : contentRow(Colors.white),
             ),
           ),
         ),
