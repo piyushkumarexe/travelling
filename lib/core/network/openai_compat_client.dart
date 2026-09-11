@@ -59,6 +59,40 @@ class OpenAiCompatClient {
   /// True when a direct key was compiled into the app.
   bool get enabled => _apiKey.isNotEmpty && _baseUrl.isNotEmpty;
 
+  /// Full chat-completions URL, built explicitly so a trailing slash (or any
+  /// base-path quirk) can never drop a path segment.
+  String get _chatUrl {
+    final String base = _baseUrl.trim();
+    final String clean =
+        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    return '$clean/chat/completions';
+  }
+
+  /// Host of the configured base URL (shown in errors so it's obvious which
+  /// provider is being called). Never includes the key.
+  String get _host {
+    final Uri? uri = Uri.tryParse(_baseUrl.trim());
+    if (uri != null && uri.host.isNotEmpty) return uri.host;
+    return _baseUrl.trim();
+  }
+
+  /// Short, human-readable error body (Gemini/OpenAI return a JSON or HTML
+  /// error that pinpoints the problem, e.g. "model not found").
+  String _bodySnippet(Object? data) {
+    String raw = '';
+    if (data is String) {
+      raw = data.trim();
+    } else if (data is Map) {
+      raw = jsonEncode(data);
+    }
+    if (raw.isEmpty) return '';
+    final String clean =
+        raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String snippet =
+        clean.length > 220 ? '${clean.substring(0, 220)}…' : clean;
+    return '($snippet)\n';
+  }
+
   Future<String> _complete({
     required List<Map<String, String>> messages,
     bool jsonMode = false,
@@ -66,7 +100,7 @@ class OpenAiCompatClient {
   }) async {
     try {
       final Response<dynamic> resp = await _dio.post<dynamic>(
-        '/chat/completions',
+        _chatUrl,
         data: <String, dynamic>{
           'model': _model,
           'messages': messages,
@@ -141,7 +175,9 @@ class OpenAiCompatClient {
       case DioExceptionType.badResponse:
         return ApiException(
             ApiErrorKind.server,
-            'The AI service returned an error (${code ?? 'unknown'}). '
+            'The AI service returned an error (${code ?? 'unknown'}) '
+            'from ${_host} (model: $_model). '
+            '${_bodySnippet(e.response?.data)}'
             'Please try again.',
             statusCode: code);
       case DioExceptionType.unknown:
