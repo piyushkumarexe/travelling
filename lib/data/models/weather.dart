@@ -1,5 +1,4 @@
 /// OpenWeather data (proxied through the YatraWise backend).
-library;
 
 class WeatherCurrent {
   WeatherCurrent({

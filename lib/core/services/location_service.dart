@@ -2,7 +2,6 @@ import 'package:geolocator/geolocator.dart';
 
 /// Wraps Geolocator with proper permission + service-state handling.
 /// All denial paths are surfaced to the UI instead of silently failing.
-library;
 
 class LocationService {
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();

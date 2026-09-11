@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Small colored pill badges for risk levels and statuses.
-library;
 
 class RiskBadge extends StatelessWidget {
   const RiskBadge({super.key, required this.risk});

@@ -1,6 +1,5 @@
 /// Typed errors thrown by [ApiClient] so UI layers can render
 /// meaningful, honest error states (no fake "network hiccup" text).
-library;
 
 enum ApiErrorKind {
   network,

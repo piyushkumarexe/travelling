@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 /// Real Google Sign-In + Firebase Authentication.
-library;
 
 class AuthException implements Exception {
   AuthException(this.message);

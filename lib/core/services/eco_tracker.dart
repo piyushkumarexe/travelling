@@ -31,7 +31,7 @@ class EcoSession {
     _last = p;
   }
 
-  Duration get duration => DateTime.now().distance(startedAt);
+  Duration get duration => DateTime.now().difference(startedAt);
 }
 
 class EcoTrackerService extends ChangeNotifier {
