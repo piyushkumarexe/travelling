@@ -50,6 +50,18 @@ class AppConfig {
   /// True when a direct NVIDIA key was compiled into the app.
   static bool get nvidiaDirectEnabled => nvidiaApiKey.isNotEmpty;
 
+  /// Groq — very fast LPU inference (OpenAI-compatible), responses in ~1s.
+  /// Preferred transport when a key is compiled in. Build with:
+  ///   flutter build apk --dart-define=GROQ_API_KEY=gsk_...
+  /// Free key: https://console.groq.com/keys
+  static const String groqApiKey =
+      String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
+  static const String groqModel = String.fromEnvironment(
+    'GROQ_MODEL',
+    defaultValue: 'llama-3.3-70b-versatile',
+  );
+  static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
+
   /// Google Gemini — easiest free option (Google account, no credit card).
   /// Uses Gemini's OpenAI-compatible endpoint so the app only needs ONE
   /// build-time value:
@@ -80,28 +92,32 @@ class AppConfig {
     defaultValue: 'meta-llama/llama-3.1-8b-instruct',
   );
 
-  /// True when any direct AI transport (NVIDIA, Gemini or generic) is
+  /// True when any direct AI transport (Groq, NVIDIA, Gemini or generic) is
   /// compiled in.
   static bool get aiDirectEnabled =>
+      groqApiKey.isNotEmpty ||
       nvidiaApiKey.isNotEmpty ||
       geminiApiKey.isNotEmpty ||
       (aiApiKey.isNotEmpty && aiBaseUrl.isNotEmpty);
 
-  /// Resolved direct-AI settings: prefer NVIDIA, then Gemini, then the
-  /// generic OpenAI-compatible provider.
+  /// Resolved direct-AI settings: prefer Groq, then NVIDIA, then Gemini,
+  /// then the generic OpenAI-compatible provider.
   static String get aiResolvedBaseUrl {
+    if (groqApiKey.isNotEmpty) return groqBaseUrl;
     if (nvidiaApiKey.isNotEmpty) return nvidiaBaseUrl;
     if (geminiApiKey.isNotEmpty) return geminiBaseUrl;
     return aiBaseUrl;
   }
 
   static String get aiResolvedApiKey {
+    if (groqApiKey.isNotEmpty) return groqApiKey;
     if (nvidiaApiKey.isNotEmpty) return nvidiaApiKey;
     if (geminiApiKey.isNotEmpty) return geminiApiKey;
     return aiApiKey;
   }
 
   static String get aiResolvedModel {
+    if (groqApiKey.isNotEmpty) return groqModel;
     if (nvidiaApiKey.isNotEmpty) return nvidiaModel;
     if (geminiApiKey.isNotEmpty) return geminiModel;
     return aiModel;

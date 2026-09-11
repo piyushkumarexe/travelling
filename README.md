@@ -159,20 +159,23 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 
 > In 2026 every keyless AI provider shut down anonymous access (Pollinations,
 > Hack Club AI, DuckDuckGo AI all did), so the assistant needs ONE free key.
-> Easiest is Google Gemini (Google account, no credit card); NVIDIA is also
-> free (phone verification). Both work as a single GitHub secret.
+> All of these work as a single GitHub secret; the app auto-prefers Groq →
+> NVIDIA → Gemini → generic.
 
-1. **Google Gemini (recommended)**: get a free key at
-   https://aistudio.google.com/apikey → set it as the `GEMINI_API_KEY` GitHub
-   secret (or build with `--dart-define=GEMINI_API_KEY=AIza...`). Default
-   model `gemini-2.5-flash`; override with `GEMINI_MODEL`.
-2. **NVIDIA**: create a free key (build.nvidia.com) → set it as the
+1. **Groq (fastest, recommended)**: get a free key at https://console.groq.com/keys
+   → set it as the `GROQ_API_KEY` GitHub secret (or build with
+   `--dart-define=GROQ_API_KEY=gsk_...`). Default model
+   `llama-3.3-70b-versatile`; override with `GROQ_MODEL`.
+2. **Google Gemini**: get a free key at https://aistudio.google.com/apikey →
+   set it as the `GEMINI_API_KEY` GitHub secret (or build with
+   `--dart-define=GEMINI_API_KEY=AIza...`). Default model `gemini-2.5-flash`.
+3. **NVIDIA**: create a free key (build.nvidia.com) → set it as the
    `NVIDIA_API_KEY` GitHub secret (or
    `--dart-define=NVIDIA_API_KEY=nvapi-...`; optionally override
    `NVIDIA_MODEL`).
-3. **Any OpenAI-compatible provider** (Groq / OpenRouter / Mistral / …):
+4. **Any OpenAI-compatible provider** (OpenRouter / Mistral / …):
    `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` GitHub secrets / dart-defines.
-4. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
+5. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
 
 ### 6. Deploy the secure backend
 

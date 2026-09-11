@@ -47,11 +47,11 @@ class AiRepository {
   ApiException _notConfigured() => ApiException(
         ApiErrorKind.server,
         'AI needs a free key to start.\n\n'
-        'Easiest — Google Gemini (free, no credit card): get a key at '
-        'aistudio.google.com/apikey and set it as the GitHub secret '
-        'GEMINI_API_KEY (or build with '
-        '--dart-define=GEMINI_API_KEY=AIza...).\n\n'
-        'Or NVIDIA (free): set NVIDIA_API_KEY (--dart-define=NVIDIA_API_KEY='
+        'Easiest — Groq (fast, free): get a key at console.groq.com/keys and '
+        'set it as the GitHub secret GROQ_API_KEY (or build with '
+        '--dart-define=GROQ_API_KEY=gsk_...).\n\n'
+        'Or Google Gemini: aistudio.google.com/apikey → GEMINI_API_KEY.\n\n'
+        'Or NVIDIA: set NVIDIA_API_KEY (--dart-define=NVIDIA_API_KEY='
         'nvapi-...).\n\n'
         'Or deploy the backend: `firebase deploy --only functions`.',
         retryable: false,
