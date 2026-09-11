@@ -107,6 +107,17 @@ class FreeGeoClient {
       }
     }
 
+    // "Famous places near me" in data-sparse towns: Wikipedia geosearch has
+    // real articles with coordinates where OSM has almost no POIs.
+    if (_isAttractionQuery(q, types) && near != null) {
+      try {
+        final List<Place> wiki = await _wikipediaNearby(near, radiusMeters);
+        if (wiki.isNotEmpty) return wiki;
+      } catch (_) {
+        // Fall through to geocoding.
+      }
+    }
+
     try {
       final List<Place> r = await _maptilerSearch(q, near);
       if (r.isNotEmpty) return r;
@@ -152,6 +163,79 @@ class FreeGeoClient {
       return const <(String, String)>[('tourism', 'attraction')];
     }
     return null;
+  }
+
+  bool _isAttractionQuery(String q, List<String>? types) {
+    if (types != null) return types.contains('tourist_attraction');
+    final String s = q.toLowerCase();
+    return s.contains('attraction') ||
+        s.contains('famous') ||
+        s.contains('things to do') ||
+        s.contains('near me') ||
+        s.contains('hidden') ||
+        s.contains('gem') ||
+        s.contains('tourist') ||
+        s.contains('landmark') ||
+        s.contains('sightsee');
+  }
+
+  /// Wikipedia GeoSearch: real encyclopaedia articles with coordinates near
+  /// the user — the best free "famous places near me" source for towns where
+  /// OSM tourism data is thin. Returns 0–20 results.
+  Future<List<Place>> _wikipediaNearby(LatLng near, double radiusMeters) async {
+    final int radius =
+        (radiusMeters <= 0 ? 5000 : radiusMeters).round().clamp(10, 10000).toInt();
+    final Response<dynamic> resp = await _dio.get<dynamic>(
+      'https://en.wikipedia.org/w/api.php',
+      queryParameters: <String, dynamic>{
+        'action': 'query',
+        'list': 'geosearch',
+        'gscoord': '${near.latitude}|${near.longitude}',
+        'gsradius': radius,
+        'gslimit': 20,
+        'format': 'json',
+      },
+    );
+    final Object? data = resp.data;
+    if (data is! Map) return const <Place>[];
+    final Object? query = data['query'];
+    if (query is! Map || query['geosearch'] is! List) return const <Place>[];
+    final List<Place> out = <Place>[];
+    for (final dynamic e in query['geosearch'] as List) {
+      if (e is! Map) continue;
+      final double? lat = (e['lat'] as num?)?.toDouble();
+      final double? lon = (e['lon'] as num?)?.toDouble();
+      final String title = (e['title'] as String?) ?? '';
+      final int pageid = (e['pageid'] as num?)?.toInt() ?? 0;
+      if (lat == null || lon == null || title.isEmpty) continue;
+      // Drop clearly non-tourist administrative entries.
+      final String t = title.toLowerCase();
+      if (t.contains('constituency') ||
+          t.contains('lok sabha') ||
+          t.contains('vidhan sabha') ||
+          t.contains(' district') ||
+          t.contains('assembly')) {
+        continue;
+      }
+      final double dist = (e['dist'] as num?)?.toDouble() ?? 0;
+      out.add(Place(
+        placeId: 'wiki-$pageid',
+        name: title,
+        lat: lat,
+        lng: lon,
+        address: 'Wikipedia · ${_distLabel(dist)}',
+        primaryType: 'tourist_attraction',
+        types: const <String>['tourist_attraction', 'point_of_interest'],
+        website:
+            'https://en.wikipedia.org/wiki/${Uri.encodeComponent(title.replaceAll(' ', '_'))}',
+      ));
+    }
+    return out;
+  }
+
+  static String _distLabel(double meters) {
+    if (meters < 1000) return '${meters.round()} m away';
+    return '${(meters / 1000).toStringAsFixed(1)} km away';
   }
 
   Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
@@ -241,20 +325,33 @@ class FreeGeoClient {
         if (data is! Map || data['elements'] is! List) continue;
         for (final dynamic e in data['elements'] as List) {
           if (e is! Map) continue;
-          final double? lat = (e['lat'] as num?)?.toDouble();
-          final double? lon = (e['lon'] as num?)?.toDouble();
-          if (lat == null || lon == null) continue;
+          final (double?, double?) coords = _coordsOf(e);
+          if (coords.$1 == null || coords.$2 == null) continue;
           final Object? tags = e['tags'];
           String name = '';
-          if (tags is Map && tags['name'] is String) {
-            name = tags['name'] as String;
+          String phone = '';
+          String website = '';
+          String address = '';
+          if (tags is Map) {
+            name = _tagOf(tags, 'name');
+            phone = _tagOf(tags, 'phone') + _tagOf(tags, 'contact:phone');
+            if (phone.isEmpty) phone = _tagOf(tags, 'contact:mobile');
+            website = _tagOf(tags, 'website');
+            if (website.isEmpty) website = _tagOf(tags, 'contact:website');
+            final String street = _tagOf(tags, 'addr:street');
+            final String city = _tagOf(tags, 'addr:city');
+            address = <String>[street, city].where((String s) => s.isNotEmpty).join(', ');
           }
           if (name.trim().isEmpty) continue;
           out.add(Place(
-            placeId: 'osm-${e['type'] ?? 'node'}-${e['id'] ?? '$lat,$lon'}',
+            placeId:
+                'osm-${e['type'] ?? 'node'}-${e['id'] ?? '${coords.$1},${coords.$2}'}',
             name: name,
-            lat: lat,
-            lng: lon,
+            lat: coords.$1!,
+            lng: coords.$2!,
+            address: address.isEmpty ? null : address,
+            phone: phone.isEmpty ? null : phone,
+            website: website.isEmpty ? null : website,
             primaryType: 'poi',
             types: const <String>['point_of_interest'],
           ));
@@ -266,6 +363,24 @@ class FreeGeoClient {
     }
     return out;
   }
+
+  /// Overpass returns nodes with `lat`/`lon` but ways with `center` — read
+  /// both so building-shaped POIs (hotels, museums) are never dropped.
+  static (double?, double?) _coordsOf(Map e) {
+    double? lat = (e['lat'] as num?)?.toDouble();
+    double? lon = (e['lon'] as num?)?.toDouble();
+    if (lat == null || lon == null) {
+      final Object? c = e['center'];
+      if (c is Map) {
+        lat = (c['lat'] as num?)?.toDouble();
+        lon = (c['lon'] as num?)?.toDouble();
+      }
+    }
+    return (lat, lon);
+  }
+
+  static String _tagOf(Map tags, String key) =>
+      tags[key] is String ? tags[key] as String : '';
 
   /// Best-rated hotels nearby (4–5★) with their star rating and distance.
   /// Overpass gives the real stars tag; price is estimated on-device since no
@@ -295,22 +410,48 @@ class FreeGeoClient {
           if (data is! Map || data['elements'] is! List) continue;
           for (final dynamic e in data['elements'] as List) {
             if (e is! Map) continue;
-            final double? lat = (e['lat'] as num?)?.toDouble();
-            final double? lon = (e['lon'] as num?)?.toDouble();
-            if (lat == null || lon == null) continue;
+            final (double?, double?) coords = _coordsOf(e);
+            if (coords.$1 == null || coords.$2 == null) continue;
             final Object? tags = e['tags'];
             String name = '';
-            if (tags is Map && tags['name'] is String) name = tags['name'] as String;
+            if (tags is Map) name = _tagOf(tags, 'name');
             if (name.trim().isEmpty) continue;
-            out.add(Place(
-              placeId: 'osm-hotel-${e['id'] ?? '$lat,$lon'}',
-              name: name,
-              lat: lat,
-              lng: lon,
-              rating: stars.toDouble(),
-              primaryType: 'hotel',
-              types: const <String>['hotel', 'lodging'],
-            ));
+            out.add(_hotelPlace(e, tags, coords.$1!, coords.$2!, stars.toDouble()));
+          }
+          break;
+        }
+      } catch (_) {}
+    }
+    // Small towns rarely tag stars — fall back to any real hotel so the
+    // "hotels with prices" feature still returns places to book.
+    if (out.isEmpty) {
+      final String query =
+          '[out:json][timeout:20];('
+          'node[\"tourism\"~\"hotel|guest_house|hostel|motel\"]'
+          '(around:$radius,${near.latitude},${near.longitude});'
+          'way[\"tourism\"~\"hotel|guest_house|hostel|motel\"]'
+          '(around:$radius,${near.latitude},${near.longitude});'
+          ');out center 40;';
+      try {
+        for (final String host in const <String>[
+          'https://overpass-api.de/api/interpreter',
+          'https://overpass.kumi.systems/api/interpreter',
+        ]) {
+          final Response<dynamic> resp = await _dio.get<dynamic>(
+            host,
+            queryParameters: <String, dynamic>{'data': query},
+          );
+          final Object? data = resp.data;
+          if (data is! Map || data['elements'] is! List) continue;
+          for (final dynamic e in data['elements'] as List) {
+            if (e is! Map) continue;
+            final (double?, double?) coords = _coordsOf(e);
+            if (coords.$1 == null || coords.$2 == null) continue;
+            final Object? tags = e['tags'];
+            String name = '';
+            if (tags is Map) name = _tagOf(tags, 'name');
+            if (name.trim().isEmpty) continue;
+            out.add(_hotelPlace(e, tags, coords.$1!, coords.$2!, null));
           }
           break;
         }
@@ -325,6 +466,40 @@ class FreeGeoClient {
     });
     return out;
   }
+
+  /// Builds a hotel [Place] from an Overpass element, keeping the real
+  /// phone/website/address so the UI can offer booking actions.
+  Place _hotelPlace(
+      Map e, Object? tags, double lat, double lng, double? stars) {
+    String phone = '';
+    String website = '';
+    String address = '';
+    if (tags is Map) {
+      phone = _tagOf(tags, 'phone') + _tagOf(tags, 'contact:phone');
+      if (phone.isEmpty) phone = _tagOf(tags, 'contact:mobile');
+      website = _tagOf(tags, 'website');
+      if (website.isEmpty) website = _tagOf(tags, 'contact:website');
+      final String street = _tagOf(tags, 'addr:street');
+      final String city = _tagOf(tags, 'addr:city');
+      address =
+          <String>[street, city].where((String s) => s.isNotEmpty).join(', ');
+    }
+    return Place(
+      placeId: 'osm-hotel-${e['id'] ?? '$lat,$lng'}',
+      name: nameOf(tags),
+      lat: lat,
+      lng: lng,
+      address: address.isEmpty ? null : address,
+      phone: phone.isEmpty ? null : phone,
+      website: website.isEmpty ? null : website,
+      rating: stars,
+      primaryType: 'hotel',
+      types: const <String>['hotel', 'lodging'],
+    );
+  }
+
+  static String nameOf(Object? tags) =>
+      tags is Map ? _tagOf(tags, 'name') : '';
 
   Future<String?> reverseGeocode(double lat, double lng) async {
     try {

@@ -16,7 +16,9 @@ class HotelEstimates {
 
   static String rangeLabel(int? stars) {
     final (int, int)? r = nightlyRangeByStars(stars);
-    if (r == null) return 'Price varies';
+    // Unstarred hotels (common in small towns) get a typical-mid-range
+    // estimate rather than "price varies".
+    if (r == null) return '₹${_inr(1000)} – ₹${_inr(4000)} / night (est.)';
     return '₹${_inr(r.$1)} – ₹${_inr(r.$2)} / night (est.)';
   }
 
