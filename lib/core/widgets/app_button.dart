@@ -4,8 +4,8 @@ import '../theme/app_theme.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
 ///
-/// Primary buttons use the uiverse-style signature gradient + neon glow.
-
+/// Clean shadcn-style: solid primary, hairline outlined variant, no gradients
+/// or glow.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -29,10 +29,11 @@ class PrimaryButton extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = onPressed != null && !loading;
 
-    final Color outlineColor =
-        danger ? AppTheme.danger : scheme.primary;
+    final Color fg = danger
+        ? AppTheme.danger
+        : (outlined ? scheme.onSurface : scheme.primary);
 
-    Widget contentRow(Color color) => Row(
+    Widget content(Color color) => Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (icon != null) ...<Widget>[
@@ -45,7 +46,7 @@ class PrimaryButton extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: color,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   fontSize: 15,
                 ),
               ),
@@ -60,12 +61,12 @@ class PrimaryButton extends StatelessWidget {
           onPressed: enabled ? onPressed : null,
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
+            foregroundColor: fg,
             side: BorderSide(
-              color: outlineColor.withValues(alpha: 0.7),
+              color: danger ? AppTheme.danger : scheme.outline,
             ),
-            foregroundColor: outlineColor,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
           child: Center(
@@ -75,60 +76,40 @@ class PrimaryButton extends StatelessWidget {
                     width: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: outlineColor,
+                      color: fg,
                     ),
                   )
-                : contentRow(outlineColor),
+                : content(fg),
           ),
         ),
       );
     }
 
-    final List<Color> gradientColors = !enabled
-        ? <Color>[
-            scheme.onSurface.withValues(alpha: 0.12),
-            scheme.onSurface.withValues(alpha: 0.12),
-          ]
-        : danger
-            ? const <Color>[Color(0xFFFF5A79), AppTheme.danger]
-            : const <Color>[AppTheme.brandStart, AppTheme.brandEnd];
-    final List<BoxShadow> shadows = !enabled
-        ? const <BoxShadow>[]
-        : AppTheme.glow(danger ? AppTheme.danger : AppTheme.brandStart);
-
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradientColors,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: shadows,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: enabled ? onPressed : null,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : contentRow(Colors.white),
-            ),
+      child: FilledButton(
+        onPressed: enabled ? onPressed : null,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          backgroundColor: danger ? AppTheme.danger : scheme.primary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
+          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
+        ),
+        child: Center(
+          child: loading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : content(Colors.white),
         ),
       ),
     );

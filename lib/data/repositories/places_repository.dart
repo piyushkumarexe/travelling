@@ -5,14 +5,20 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/network/free_geo_client.dart';
 import '../models/places.dart';
 
-/// Places / routes / geocoding — all proxied through the Tourism backend so
-/// the Google API key never ships in the app.
+/// Places / routes / geocoding.
+///
+/// Primary transport is the Tourism backend (Google Places proxy, server-side
+/// key). When the backend is not deployed/unreachable, everything falls back
+/// to free, real providers so Explore and the map keep working on-device:
+/// MapTiler geocoding (search + reverse) and the OSRM public router.
 class PlacesRepository {
   PlacesRepository(this._api);
 
   final ApiClient _api;
+  final FreeGeoClient _free = FreeGeoClient();
 
   List<Place> _decode(Map<String, dynamic> data) {
     final List<dynamic> raw =
@@ -38,54 +44,86 @@ class PlacesRepository {
     }
     if (radiusMeters != null) body['radiusMeters'] = radiusMeters;
     if (types != null && types.isNotEmpty) body['types'] = types;
-    final Map<String, dynamic> data = await _api.post('/placesSearch', body);
-    return _decode(data);
+    try {
+      final Map<String, dynamic> data = await _api.post('/placesSearch', body);
+      return _decode(data);
+    } on ApiException {
+      return _free.searchPlaces(query.trim(), near: location);
+    }
   }
 
   Future<Place?> details(String placeId) async {
-    final Map<String, dynamic> data =
-        await _api.post('/placesDetails', <String, dynamic>{
-      'placeId': placeId,
-    });
-    final dynamic p = data['place'];
-    if (p is Map<String, dynamic>) return Place.fromJson(p);
-    return null;
+    try {
+      final Map<String, dynamic> data =
+          await _api.post('/placesDetails', <String, dynamic>{
+        'placeId': placeId,
+      });
+      final dynamic p = data['place'];
+      if (p is Map<String, dynamic>) return Place.fromJson(p);
+      return null;
+    } on ApiException {
+      // Details need the backend (ratings/photos). Return null so the UI can
+      // fall back to the summary it already has.
+      return null;
+    }
   }
 
   Future<List<Place>> emergencyNearby(LatLng location,
       {double radiusMeters = 5000}) async {
-    final Map<String, dynamic> data =
-        await _api.post('/emergencyNearby', <String, dynamic>{
-      'location': <String, double>{
-        'lat': location.latitude,
-        'lng': location.longitude,
-      },
-      'radiusMeters': radiusMeters,
-    });
-    return _decode(data);
+    try {
+      final Map<String, dynamic> data =
+          await _api.post('/emergencyNearby', <String, dynamic>{
+        'location': <String, double>{
+          'lat': location.latitude,
+          'lng': location.longitude,
+        },
+        'radiusMeters': radiusMeters,
+      });
+      return _decode(data);
+    } on ApiException {
+      final List<Place> all = <Place>[];
+      for (final String q in <String>['hospital', 'police station', 'pharmacy']) {
+        try {
+          final List<Place> found = await _free.searchPlaces(q, near: location);
+          for (final Place p in found) {
+            if (all.length >= 20) break;
+            if (!all.any((Place e) => e.placeId == p.placeId)) all.add(p);
+          }
+        } catch (_) {}
+      }
+      return all;
+    }
   }
 
   Future<RouteInfo> route(LatLng from, LatLng to) async {
-    final Map<String, dynamic> data =
-        await _api.post('/route', <String, dynamic>{
-      'origin': <String, double>{'lat': from.latitude, 'lng': from.longitude},
-      'destination': <String, double>{
-        'lat': to.latitude,
-        'lng': to.longitude,
-      },
-    });
-    return RouteInfo.fromJson(data);
+    try {
+      final Map<String, dynamic> data =
+          await _api.post('/route', <String, dynamic>{
+        'origin': <String, double>{'lat': from.latitude, 'lng': from.longitude},
+        'destination': <String, double>{
+          'lat': to.latitude,
+          'lng': to.longitude,
+        },
+      });
+      return RouteInfo.fromJson(data);
+    } on ApiException {
+      return _free.route(from, to);
+    }
   }
 
   Future<String?> reverseGeocode(LatLng location) async {
-    final Map<String, dynamic> data =
-        await _api.post('/geocodeReverse', <String, dynamic>{
-      'lat': location.latitude,
-      'lng': location.longitude,
-    });
-    final String? label = data['label'] as String?;
-    if (label != null && label.trim().isNotEmpty) return label.trim();
-    return null;
+    try {
+      final Map<String, dynamic> data =
+          await _api.post('/geocodeReverse', <String, dynamic>{
+        'lat': location.latitude,
+        'lng': location.longitude,
+      });
+      final String? label = data['label'] as String?;
+      if (label != null && label.trim().isNotEmpty) return label.trim();
+      return null;
+    } on ApiException {
+      return _free.reverseGeocode(location.latitude, location.longitude);
+    }
   }
 
   /// Fetches a Places photo through the backend proxy (keeps the Google key

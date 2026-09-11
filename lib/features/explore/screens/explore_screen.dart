@@ -264,7 +264,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         return PlaceCard(
           place: p,
           distance: _distanceFor(p),
-          onTap: () => context.push('/explore/place/${p.placeId}'),
+          onTap: () => context.push('/explore/place/${p.placeId}', extra: p),
         );
       },
     );

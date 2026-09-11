@@ -701,8 +701,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 12),
         itemBuilder: (BuildContext context, int i) => _MiniPlaceCard(
               place: _attractions[i],
-              onTap: () => context
-                  .push('/explore/place/${_attractions[i].placeId}'),
+              onTap: () => context.push(
+                  '/explore/place/${_attractions[i].placeId}',
+                  extra: _attractions[i]),
             ),
       ),
     );

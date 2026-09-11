@@ -84,10 +84,10 @@ class RouteInfo {
   final double durationSeconds;
   final List<LatLng> polyline;
 
-  /// google (Directions API) | fallback (straight line estimate)
+  /// google (Directions API) | osrm (OSRM router) | fallback (straight line)
   final String provider;
 
-  bool get isApproximate => provider != 'google';
+  bool get isApproximate => provider == 'fallback';
 
   factory RouteInfo.fromJson(Map<String, dynamic> m) {
     final List<dynamic> raw = (m['polyline'] is List) ? m['polyline'] as List : <dynamic>[];

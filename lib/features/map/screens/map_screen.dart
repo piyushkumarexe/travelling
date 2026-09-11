@@ -91,6 +91,7 @@ class _MapScreenState extends State<MapScreen> {
       },
       onError: (Object _) {},
         );
+    _startPositionWatch();
     _resolveInitial();
   }
 
@@ -131,8 +132,12 @@ class _MapScreenState extends State<MapScreen> {
     } catch (_) {
       if (mounted) setState(() => _ready = true);
     }
-    // Live position for distance, the moving marker and (optionally) camera
-    // following — real-time location data as the traveler moves.
+  }
+
+  /// Always start live position tracking (even when the map opens focused on
+  /// a specific place, so the blue dot, distance and follow-mode work).
+  void _startPositionWatch() {
+    if (_posSub != null) return;
     _posSub = _c.locationService.watchPosition(distanceFilter: 20).listen(
           (Position p) {
         if (mounted) {
@@ -154,7 +159,7 @@ class _MapScreenState extends State<MapScreen> {
         }
       },
       onError: (Object _) {},
-        );
+    );
   }
 
   void _onSearchChanged() {
@@ -372,8 +377,54 @@ class _MapScreenState extends State<MapScreen> {
 
   void _toggleStyle() {
     setState(() {
-      _mapStyle = _mapStyle == 'satellite' ? 'streets-v2' : 'satellite';
+      _mapStyle = switch (_mapStyle) {
+        'satellite' => 'hybrid',
+        'hybrid' => 'streets-v2',
+        _ => 'satellite',
+      };
     });
+  }
+
+  String get _styleLabel => switch (_mapStyle) {
+        'satellite' => 'Satellite',
+        'hybrid' => 'Hybrid (satellite + labels)',
+        _ => 'Streets',
+      };
+
+  IconData get _styleIcon => switch (_mapStyle) {
+        'satellite' => Icons.satellite_alt,
+        'hybrid' => Icons.layers,
+        _ => Icons.map,
+      };
+
+  /// Long-press anywhere to drop a pin, then get the distance, a route and
+  /// real turn-by-turn navigation from your location to that point.
+  void _dropPin(TapPosition tap, LatLng point) {
+    final Place pin = Place(
+      placeId: 'pin-${DateTime.now().millisecondsSinceEpoch}',
+      name: 'Dropped pin',
+      lat: point.latitude,
+      lng: point.longitude,
+      address: '${point.latitude.toStringAsFixed(5)}, '
+          '${point.longitude.toStringAsFixed(5)}',
+    );
+    setState(() {
+      _selected = pin;
+      _route = null;
+      _polylines = <Polyline>[];
+      _distanceToSelected = _distanceTo(point.latitude, point.longitude);
+      _resultsVisible = false;
+      _markers = <Marker>[
+        Marker(
+          point: point,
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.location_pin,
+              color: Color(0xFFDC2626), size: 40),
+        ),
+      ];
+    });
+    _controller.move(point, _controller.camera.zoom < 15 ? 15 : _controller.camera.zoom);
   }
 
   void _toggleFollow() {
@@ -427,13 +478,17 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _initialCenter,
               initialZoom: _initialZoom,
+              maxZoom: 19,
               onTap: (TapPosition _, LatLng __) => _clearSelection(),
+              onLongPress: _dropPin,
             ),
             children: <Widget>[
               TileLayer(
                 key: ValueKey<String>(_mapStyle),
                 urlTemplate: AppConfig.mapTilerTileUrl(_mapStyle),
                 userAgentPackageName: 'app.roamio.tourism',
+                retinaMode: RetinaMode.isHighDensity(context),
+                maxNativeZoom: 19,
               ),
               MarkerLayer(
                 markers: <Marker>[
@@ -480,15 +535,9 @@ class _MapScreenState extends State<MapScreen> {
               children: <Widget>[
                 FloatingActionButton.small(
                   heroTag: 'map-layer-toggle',
-                  tooltip: _mapStyle == 'satellite'
-                      ? 'Switch to streets map'
-                      : 'Switch to satellite map',
+                  tooltip: '$_styleLabel — tap to switch style',
                   onPressed: _toggleStyle,
-                  child: Icon(
-                    _mapStyle == 'satellite'
-                        ? Icons.map
-                        : Icons.satellite_alt,
-                  ),
+                  child: Icon(_styleIcon),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
@@ -646,6 +695,28 @@ class _MapScreenState extends State<MapScreen> {
                     active: _showZones,
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Long-press the map to drop a pin',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 11),
+                ),
               ),
             ),
           ],

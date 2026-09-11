@@ -19,9 +19,13 @@ import '../../../data/models/places.dart';
 /// Full place details: photo (via backend proxy), info, distance,
 /// phone/website actions and real route + Google Maps navigation.
 class PlaceDetailScreen extends StatefulWidget {
-  const PlaceDetailScreen({super.key, required this.placeId});
+  const PlaceDetailScreen({super.key, required this.placeId, this.place});
 
   final String placeId;
+
+  /// Full place passed from a list (Explore/Home) — used directly so the
+  /// screen works even when the backend (details/ratings/photos) is offline.
+  final Place? place;
 
   @override
   State<PlaceDetailScreen> createState() => _PlaceDetailScreenState();
@@ -47,6 +51,15 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   }
 
   Future<void> _load() async {
+    final Place? preset = widget.place;
+    if (preset != null) {
+      setState(() {
+        _place = preset;
+        _loading = false;
+      });
+      unawaited(_loadPositionAndPhoto());
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;

@@ -58,7 +58,7 @@ class AppConfig {
       String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
   static const String groqModel = String.fromEnvironment(
     'GROQ_MODEL',
-    defaultValue: 'llama-3.3-70b-versatile',
+    defaultValue: 'openai/gpt-oss-120b',
   );
   static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
 
@@ -135,9 +135,10 @@ class AppConfig {
     defaultValue: 'udi5P84vPD7vdzptwwAN',
   );
 
-  /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite').
+  /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite',
+  /// 'hybrid'). `{r}` becomes `@2x` on high-DPI screens so tiles stay sharp.
   static String mapTilerTileUrl(String style) =>
-      'https://api.maptiler.com/maps/$style/{z}/{x}/{y}.png?key=$mapTilerApiKey';
+      'https://api.maptiler.com/maps/$style/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey';
 
   /// Maximum file sizes accepted for user uploads (bytes).
   static const int maxImageBytes = 10 * 1024 * 1024; // 10 MB

@@ -165,7 +165,7 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 1. **Groq (fastest, recommended)**: get a free key at https://console.groq.com/keys
    → set it as the `GROQ_API_KEY` GitHub secret (or build with
    `--dart-define=GROQ_API_KEY=gsk_...`). Default model
-   `llama-3.3-70b-versatile`; override with `GROQ_MODEL`.
+   `openai/gpt-oss-120b`; override with `GROQ_MODEL`.
 2. **Google Gemini**: get a free key at https://aistudio.google.com/apikey →
    set it as the `GEMINI_API_KEY` GitHub secret (or build with
    `--dart-define=GEMINI_API_KEY=AIza...`). Default model `gemini-2.5-flash`.

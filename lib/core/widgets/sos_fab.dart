@@ -12,18 +12,12 @@ class SosFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: AppTheme.glow(AppTheme.danger, alpha: 0.55),
-      ),
-      child: FloatingActionButton(
-        onPressed: () => showSOSSheet(context),
-        tooltip: 'SOS emergency',
-        backgroundColor: AppTheme.danger,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.call, size: 26),
-      ),
+    return FloatingActionButton(
+      onPressed: () => showSOSSheet(context),
+      tooltip: 'SOS emergency',
+      backgroundColor: AppTheme.danger,
+      foregroundColor: Colors.white,
+      child: const Icon(Icons.call, size: 26),
     );
   }
 }

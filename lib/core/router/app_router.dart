@@ -25,6 +25,7 @@ import '../../features/profile/screens/profile_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
+import '../../data/models/places.dart';
 import '../state/app_container.dart';
 import '../state/auth_state.dart';
 
@@ -104,7 +105,10 @@ class AppRouter {
       GoRoute(
         path: '/explore/place/:placeId',
         builder: (BuildContext context, GoRouterState state) =>
-            PlaceDetailScreen(placeId: state.pathParameters['placeId'] ?? ''),
+            PlaceDetailScreen(
+          placeId: state.pathParameters['placeId'] ?? '',
+          place: state.extra is Place ? state.extra as Place : null,
+        ),
       ),
       GoRoute(
         path: '/assistant',
