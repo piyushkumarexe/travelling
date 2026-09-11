@@ -16,7 +16,7 @@ void main() {
     test('a typical 5 km taxi fare is normal', () {
       final PriceCheckResult r = PriceGuard.check(
         category: PriceCategory.taxi,
-        amount: 140,
+        amount: 75,
         distanceKm: 5,
       );
       expect(r.verdict, PriceVerdict.normal);
@@ -36,6 +36,20 @@ void main() {
         amount: 100,
       );
       expect(r.verdict, PriceVerdict.needsMoreInfo);
+    });
+  });
+
+  group('PriceGuard local fare estimates', () {
+    test('2 km auto ≈ ₹10, taxi ≈ ₹15/km', () {
+      expect(PriceGuard.estimateAuto(2), 10); // 2 km ≈ ₹10 (user anchor)
+      expect(PriceGuard.estimateTaxi(2), 40); // minimum applies
+      expect(PriceGuard.estimateAuto(5), 25);
+      expect(PriceGuard.estimateTaxi(5), 75);
+    });
+
+    test('minimum fares apply for short trips', () {
+      expect(PriceGuard.estimateAuto(0.5), 10);
+      expect(PriceGuard.estimateTaxi(1), 40);
     });
   });
 

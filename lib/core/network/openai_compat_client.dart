@@ -101,40 +101,93 @@ class OpenAiCompatClient {
     bool jsonMode = false,
     int maxTokens = 1200,
   }) async {
-    try {
-      final Response<dynamic> resp = await _dio.post<dynamic>(
-        _chatUrl,
-        data: <String, dynamic>{
-          'model': _model,
-          'messages': messages,
-          'temperature': 0.6,
-          'top_p': 0.9,
-          'max_tokens': maxTokens,
-          if (jsonMode)
-            'response_format': <String, String>{'type': 'json_object'},
-        },
-        options: Options(
-          headers: <String, Object?>{
-            'Authorization': 'Bearer $_apiKey',
-          },
-        ),
-      );
-      final dynamic data = resp.data;
-      final dynamic choices = data is Map ? data['choices'] : null;
-      String? content;
-      if (choices is List && choices.isNotEmpty) {
-        final dynamic first = choices[0];
-        final dynamic msg = first is Map ? first['message'] : null;
-        if (msg is Map) content = msg['content'] as String?;
+    // Try the primary model, then fall back to alternates when the provider
+    // reports the model was retired/renamed (404/400/410 "model not found"),
+    // so the assistant keeps working as providers rotate their catalogues.
+    final List<String> models = <String>{
+      _model,
+      ..._fallbackModelsFor(_baseUrl),
+    }.toList();
+    DioException? last;
+    for (final String m in models) {
+      try {
+        return await _post(messages, jsonMode, maxTokens, m);
+      } on DioException catch (e) {
+        last = e;
+        if (!_isModelNotFound(e) || m == models.last) throw _map(e);
       }
-      if (content == null || content.trim().isEmpty) {
-        throw ApiException(ApiErrorKind.server,
-            'The AI model returned an empty response. Please try again.');
-      }
-      return content;
-    } on DioException catch (e) {
-      throw _map(e);
     }
+    throw _map(last ??
+        DioException(requestOptions: RequestOptions(path: _chatUrl)));
+  }
+
+  Future<String> _post(
+    List<Map<String, String>> messages,
+    bool jsonMode,
+    int maxTokens,
+    String model,
+  ) async {
+    final Response<dynamic> resp = await _dio.post<dynamic>(
+      _chatUrl,
+      data: <String, dynamic>{
+        'model': model,
+        'messages': messages,
+        'temperature': 0.6,
+        'top_p': 0.9,
+        'max_tokens': maxTokens,
+        if (jsonMode)
+          'response_format': <String, String>{'type': 'json_object'},
+      },
+      options: Options(
+        headers: <String, Object?>{
+          'Authorization': 'Bearer $_apiKey',
+        },
+      ),
+    );
+    final dynamic data = resp.data;
+    final dynamic choices = data is Map ? data['choices'] : null;
+    String? content;
+    if (choices is List && choices.isNotEmpty) {
+      final dynamic first = choices[0];
+      final dynamic msg = first is Map ? first['message'] : null;
+      if (msg is Map) content = msg['content'] as String?;
+    }
+    if (content == null || content.trim().isEmpty) {
+      throw ApiException(ApiErrorKind.server,
+          'The AI model returned an empty response. Please try again.');
+    }
+    return content;
+  }
+
+  /// True when the provider says the model no longer exists (retired,
+  /// renamed, end-of-life) — worth retrying with the next candidate.
+  bool _isModelNotFound(DioException e) {
+    final int? code = e.response?.statusCode;
+    if (code != 400 && code != 404 && code != 410) return false;
+    final Object? d = e.response?.data;
+    final String s = d is String ? d : (d is Map ? d.toString() : '');
+    final String l = s.toLowerCase();
+    return l.contains('model') &&
+        (l.contains('not found') ||
+            l.contains('not_found') ||
+            l.contains('does not exist') ||
+            l.contains('end of life') ||
+            l.contains('deprecated') ||
+            l.contains('invalid_request'));
+  }
+
+  /// Alternate model ids per provider, tried in order when the primary is
+  /// retired. Verified against each provider's current catalogue.
+  List<String> _fallbackModelsFor(String baseUrl) {
+    final Uri? uri = Uri.tryParse(baseUrl.trim());
+    final String host = uri?.host ?? '';
+    if (host.contains('groq.com')) {
+      return const <String>['openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+    }
+    if (host.contains('nvidia.com')) {
+      return const <String>['nvidia/nemotron-3-super-120b-a12b'];
+    }
+    return const <String>[];
   }
 
   ApiException _map(DioException e) {

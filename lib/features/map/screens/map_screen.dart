@@ -450,6 +450,10 @@ class _MapScreenState extends State<MapScreen> {
       if (pos != null) {
         _recenter();
       }
+      // Restart the live position watch now that permission is granted.
+      _posSub?.cancel();
+      _posSub = null;
+      _startPositionWatch();
     }
   }
 
@@ -660,6 +664,8 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ),
                 ),
+                // Space for the profile avatar pinned top-right by the shell.
+                const SizedBox(width: 52),
               ],
             ),
             const SizedBox(height: 8),

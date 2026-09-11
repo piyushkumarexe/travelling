@@ -103,13 +103,14 @@ class _EcoScreenState extends State<EcoScreen> {
     );
     if (mode == null) return;
     try {
-      await _c.ecoTracker.start(mode: mode);
+      final bool started = await _c.ecoTracker.start(mode: mode);
       if (!mounted) return;
-      if (!_c.ecoTracker.isTracking) {
+      if (!started) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text(
-                  'Location permission denied — enable location access in system settings to track eco sessions.')),
+                  'Location permission denied — enable location access in '
+                  'system settings to track eco sessions.')),
         );
       }
     } catch (e) {
@@ -401,7 +402,7 @@ class _EcoScreenState extends State<EcoScreen> {
                   Text(
                     'Distance: ${GeoUtils.formatDistance(session.distanceMeters)}'
                     ' · Time: ${GeoUtils.formatDuration(session.duration.inSeconds.toDouble())}'
-                    '${session.hasFixes ? '' : ' · waiting for GPS fixes…'}',
+                    '${session.hasFixes ? (session.lastAccuracyMeters != null ? ' · GPS ±${session.lastAccuracyMeters!.round()} m' : '') : ' · waiting for GPS fixes…'}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),

@@ -200,37 +200,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          // Preferred vehicle (Bike / Car / Auto) — first, as requested.
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Your vehicle',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Choose how you usually travel',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: <Widget>[
-                    _vehicleTile(Icons.two_wheeler, 'Bike'),
-                    const SizedBox(width: 10),
-                    _vehicleTile(Icons.directions_car, 'Car'),
-                    const SizedBox(width: 10),
-                    _vehicleTile(Icons.electric_rickshaw, 'Auto'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
           // Identity header
           Container(
             padding: const EdgeInsets.all(20),
@@ -462,44 +431,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _vehicleTile(IconData icon, String label) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: Material(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$label — coming soon!')),
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-            child: Column(
-              children: <Widget>[
-                Icon(icon, size: 28, color: scheme.primary),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

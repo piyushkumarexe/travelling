@@ -277,10 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        actions: <Widget>[
-          _notificationsButton(),
-          const SizedBox(width: 4),
-        ],
+        // Space reserved for the profile avatar shown by the app shell.
+        actions: const <Widget>[SizedBox(width: 52)],
       ),
       body: !_locationDone
           ? const LoadingView(message: 'Preparing your dashboard…')
@@ -312,33 +310,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _notificationsButton() {
-    final bool hasUnread = _alerts.isNotEmpty;
-    return IconButton(
-      tooltip: 'Notifications',
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          const Icon(Icons.notifications_outlined, size: 24),
-          if (hasUnread)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: const BoxDecoration(
-                  color: AppTheme.danger,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-        ],
-      ),
-      onPressed: () => context.push('/notifications'),
     );
   }
 

@@ -40,4 +40,16 @@ class ProfileRepository {
       'updatedAt': Timestamp.now(),
     });
   }
+
+  /// Persists only the preferred vehicle (bike / car / auto) — used by the
+  /// dedicated Vehicle tab.
+  Future<void> setVehicle(String uid, String vehicle) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'vehicle': vehicle,
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
 }

@@ -84,17 +84,32 @@ class PriceCheckResult {
 class PriceGuard {
   PriceGuard._();
 
-  /// Common-rate estimates (INR, 2026, clearly-labelled estimates):
-  /// base fare + per-km for metered rides, daily/per-night references for
-  /// the rest. Values are intentionally generous ranges so the guardian
-  /// only flags clearly-outside amounts.
-  static const double _taxiBase = 50;
-  static const double _taxiPerKm = 16;
-  static const double _autoBase = 30;
-  static const double _autoPerKm = 11;
+  /// Local (non-app) street rates in INR — clearly-labelled estimates:
+  ///   Auto (local auto / e-rickshaw): ₹5 per km (minimum ₹10 → 2 km ≈ ₹10)
+  ///   Taxi: ₹15 per km (minimum ₹40)
+  static const double autoPerKm = 5;
+  static const double autoMinimum = 10;
+  static const double taxiPerKm = 15;
+  static const double taxiMinimum = 40;
 
   static const double _loFactor = 0.7;
   static const double _hiFactor = 1.3;
+
+  /// Expected local auto fare for a trip of [km] kilometres.
+  static double estimateAuto(double km) {
+    if (km <= 0) return 0;
+    final double fare = autoPerKm * km;
+    return _roundTo5(fare < autoMinimum ? autoMinimum : fare);
+  }
+
+  /// Expected local taxi fare for a trip of [km] kilometres.
+  static double estimateTaxi(double km) {
+    if (km <= 0) return 0;
+    final double fare = taxiPerKm * km;
+    return _roundTo5(fare < taxiMinimum ? taxiMinimum : fare);
+  }
+
+  static double _roundTo5(double v) => (v / 5).round() * 5.0;
 
   static PriceCheckResult check({
     required PriceCategory category,
@@ -109,16 +124,15 @@ class PriceGuard {
         headline: 'Add the distance',
         explanation:
             '${category.label} fares are metered per kilometre. Enter the '
-            'trip distance so Tourism can estimate the expected range.',
+            'trip distance (or estimate it from your locations) so Tourism '
+            'can show the expected range.',
       );
     }
 
     if (category.distanceBased) {
-      final double base =
-          category == PriceCategory.taxi ? _taxiBase : _autoBase;
-      final double perKm =
-          category == PriceCategory.taxi ? _taxiPerKm : _autoPerKm;
-      final double expected = base + perKm * distanceKm!;
+      final double expected = category == PriceCategory.taxi
+          ? estimateTaxi(distanceKm!)
+          : estimateAuto(distanceKm!);
       return _judge(category, amount, expected * _loFactor, expected * _hiFactor);
     }
 
