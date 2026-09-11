@@ -37,7 +37,7 @@ Cloud Functions backend; the Android app ships with zero API keys.
 ## Tech stack
 
 - **Flutter 3.32 / Dart 3.8** — Material 3, GoRouter, DI-free service container.
-- **Firebase** — Authentication (Google sign-in), Cloud Firestore, Storage,
+- **Firebase** — Authentication (Google + email/password sign-in), Cloud Firestore, Storage,
   Cloud Functions v2 (Node 20, CommonJS) as the secure API gateway.
 - **Google** — Maps SDK for Flutter (client key), Places/Directions/Geocoding
   APIs (server key, proxied).
@@ -97,7 +97,9 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 ### 2. Firebase project
 
 1. Create the project in the Firebase console.
-2. **Authentication → Sign-in method → Google**: enable it.
+2. **Authentication → Sign-in method**:
+   - **Google**: enable it (see step 3 for the OAuth client).
+   - **Email/Password**: enable it to allow email sign-up/sign-in.
 3. **Project settings → Your apps → Add app (Android)** with
    package name `app.roamio.tourism`.
 4. Run `flutterfire configure` (or paste the downloaded config into
@@ -175,7 +177,8 @@ flutter run          # on a connected device / emulator
 ```
 
 First launch shows a short setup guide; sign in with Google (an account
-that has access to the OAuth client) and you land on the dashboard.
+that has access to the OAuth client) or create an account with your email
+and password, and you land on the dashboard.
 
 ## Building the APK
 

@@ -54,11 +54,26 @@ class AuthRepository {
       case 'invalid-firebase-credential':
         return 'Google credential was not accepted. Try signing in again.';
       case 'account-exists-with-different-credential':
-        return 'This Google account is already linked to another YatraWise account.';
+        return 'An account already exists with this email. Sign in with the '
+            'method you used before.';
       case 'too-many-requests':
         return 'Too many attempts. Wait a minute and try again.';
       case 'network-request-failed':
         return 'Network error during sign-in. Check your connection.';
+      case 'invalid-email':
+        return 'That email address looks invalid.';
+      case 'user-not-found':
+      case 'user-disabled':
+        return 'No account found for this email. Create one first.';
+      case 'wrong-password':
+      case 'invalid-password':
+        return 'Incorrect password. Try again or reset it.';
+      case 'email-already-in-use':
+        return 'This email is already registered. Sign in instead.';
+      case 'weak-password':
+        return 'Password is too weak. Use at least 6 characters.';
+      case 'operation-not-allowed':
+        return 'Email/password sign-in is not enabled for this project yet.';
       default:
         return 'Sign-in failed (${e.code}). Please try again.';
     }
@@ -74,6 +89,50 @@ class AuthRepository {
       await _auth.signOut();
     } catch (_) {
       // ignore
+    }
+  }
+
+  /// Email + password sign-in.
+  Future<User?> signInWithEmailAndPassword(
+      String email, String password) async {
+    try {
+      final UserCredential result = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    } catch (_) {
+      throw AuthException('Sign-in failed. Please try again.');
+    }
+  }
+
+  /// Email + password sign-up (creates the account and signs the user in).
+  Future<User?> registerWithEmailAndPassword(
+      String email, String password) async {
+    try {
+      final UserCredential result =
+          await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    } catch (_) {
+      throw AuthException('Could not create your account. Please try again.');
+    }
+  }
+
+  /// Sends a password-reset email.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    } catch (_) {
+      throw AuthException('Could not send the reset email. Please try again.');
     }
   }
 
