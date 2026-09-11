@@ -57,6 +57,12 @@ class PlacesRepository {
     }
   }
 
+  /// Best-rated hotels (4–5★) nearby, with star rating + estimated price
+  /// computed on-device. Uses OpenStreetMap (Overpass) directly — no backend
+  /// needed, so it works even when Cloud Functions are not deployed.
+  Future<List<Place>> luxuryHotels(LatLng near, {int radiusMeters = 8000}) =>
+      _free.luxuryHotels(near, radiusMeters: radiusMeters);
+
   Future<Place?> details(String placeId) async {
     try {
       final Map<String, dynamic> data =

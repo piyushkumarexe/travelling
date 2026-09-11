@@ -6,7 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/state/app_container.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
+import '../../../core/utils/hotel_estimates.dart';
+import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
@@ -141,6 +144,37 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _loading = true;
       _error = null;
     });
+    // Special "5★ hotels" mode: real OSM hotel data + on-device price estimate.
+    if (_activeCategory == 'luxury_hotels') {
+      try {
+        final Position? pos = _position;
+        if (pos == null) {
+          setState(() {
+            _loading = false;
+            _error = 'Enable location to find 5★ hotels near you.';
+          });
+          return;
+        }
+        final List<Place> hotels = await _c.placesRepository.luxuryHotels(
+          LatLng(pos.latitude, pos.longitude),
+        );
+        if (!mounted) return;
+        setState(() {
+          _results = hotels;
+          _loading = false;
+          _searchedOnce = true;
+        });
+        return;
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+          _searchedOnce = true;
+        });
+        return;
+      }
+    }
     try {
       final List<Place> places = await _c.placesRepository.search(
         q,
@@ -233,6 +267,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 const SizedBox(width: 8),
                 _scopeChip('Hidden gems', _scope == 'hidden', () => _setScope('hidden')),
                 const SizedBox(width: 16),
+                ChoiceChip(
+                  label: const Text('⭐ 5★ Hotels'),
+                  selected: _activeCategory == 'luxury_hotels',
+                  onSelected: (bool _) => _setCategory(
+                      _activeCategory == 'luxury_hotels' ? null : 'luxury_hotels'),
+                ),
+                const SizedBox(width: 8),
                 for (final String cat in kExploreCategories) ...<Widget>[
                   ChoiceChip(
                     label: Text(kExploreCategoryLabels[cat] ?? cat),
@@ -303,12 +344,114 @@ class _ExploreScreenState extends State<ExploreScreen> {
           const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int i) {
         final Place p = _results[i];
+        if (_activeCategory == 'luxury_hotels') {
+          return _LuxuryHotelCard(
+            place: p,
+            distance: _distanceFor(p),
+            onTap: () => context.push('/explore/place/${p.placeId}', extra: p),
+          );
+        }
         return PlaceCard(
           place: p,
           distance: _distanceFor(p),
           onTap: () => context.push('/explore/place/${p.placeId}', extra: p),
         );
       },
+    );
+  }
+}
+
+/// Hotel card with star rating + estimated nightly price range.
+class _LuxuryHotelCard extends StatelessWidget {
+  const _LuxuryHotelCard({
+    required this.place,
+    required this.onTap,
+    this.distance,
+  });
+
+  final Place place;
+  final VoidCallback onTap;
+  final String? distance;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final int stars = (place.rating ?? 0).round();
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AppTheme.warning.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.hotel, color: AppTheme.warning),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  place.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: <Widget>[
+                    Text(
+                      '${'★' * stars}${'☆' * (5 - stars)}',
+                      style: const TextStyle(
+                          color: AppTheme.warning, fontSize: 14),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$stars-star',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  HotelEstimates.rangeLabel(stars),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          if (distance != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                distance!,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

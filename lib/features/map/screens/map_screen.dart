@@ -87,6 +87,15 @@ class _MapScreenState extends State<MapScreen> {
   Position? _position;
   bool _permissionDenied = false;
 
+  /// Optional start point; null means "my location" (default).
+  LatLng? _origin;
+  String? _originName;
+  bool _settingOrigin = false;
+
+  /// Routes per mode for the "fastest way" comparison.
+  Map<String, RouteInfo> _routesByMode = <String, RouteInfo>{};
+  bool _comparingModes = false;
+
   /// When true the camera follows the live GPS position (real-time tracking).
   bool _follow = false;
   bool _autoCentered = false;
@@ -328,9 +337,29 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _select(Place p) async {
+    if (_settingOrigin) {
+      // This selection sets the START point (Google-style from/to).
+      setState(() {
+        _origin = p.coords;
+        _originName = p.name;
+        _settingOrigin = false;
+        _resultsVisible = false;
+        _results = const <Place>[];
+        _searchController.clear();
+        _activeChip = null;
+      });
+      if (_selected != null) {
+        _route = null;
+        _routesByMode = <String, RouteInfo>{};
+        _polylines = <Polyline>[];
+        _getRoute();
+      }
+      return;
+    }
     setState(() {
       _selected = p;
       _route = null;
+      _routesByMode = <String, RouteInfo>{};
       _polylines = <Polyline>[];
       _distanceToSelected = _distanceTo(p.lat, p.lng);
       _resultsVisible = false;
@@ -368,28 +397,84 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _selected = null;
       _route = null;
+      _routesByMode = <String, RouteInfo>{};
       _markers = <Marker>[];
       _polylines = <Polyline>[];
       _distanceToSelected = null;
     });
   }
 
+  LatLng? _effectiveOrigin() {
+    if (_origin != null) return _origin;
+    final Position? p = _position;
+    if (p == null) return null;
+    return LatLng(p.latitude, p.longitude);
+  }
+
+  void _toggleSetOrigin() {
+    setState(() {
+      _settingOrigin = !_settingOrigin;
+      _resultsVisible = false;
+      _results = const <Place>[];
+      _searchController.clear();
+      _activeChip = null;
+    });
+  }
+
+  void _clearOrigin() {
+    setState(() {
+      _origin = null;
+      _originName = null;
+    });
+    if (_selected != null) {
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      if (_position != null) _getRoute();
+    }
+  }
+
+  void _swapOriginDestination() {
+    final Place? dest = _selected;
+    if (dest == null) return;
+    setState(() {
+      final LatLng? oldOrigin = _effectiveOrigin();
+      final String? oldOriginName = _originName;
+      _origin = dest.coords;
+      _originName = dest.name;
+      _selected = null;
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      if (oldOrigin != null) {
+        _selected = Place(
+          placeId: 'swap-${DateTime.now().millisecondsSinceEpoch}',
+          name: oldOriginName ?? 'Dropped pin',
+          lat: oldOrigin.latitude,
+          lng: oldOrigin.longitude,
+        );
+        _distanceToSelected = _distanceTo(
+            oldOrigin.latitude, oldOrigin.longitude);
+      }
+    });
+  }
+
   Future<void> _getRoute() async {
     final Place? p = _selected;
     if (p == null) return;
-    final Position? pos = _position;
-    if (pos == null) {
+    final LatLng? from = _effectiveOrigin();
+    if (from == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content:
-                Text('Waiting for your GPS fix — try again in a second.')),
+                Text('Set your start point or enable GPS — then try again.')),
       );
       return;
     }
     setState(() => _routeLoading = true);
     try {
       final RouteInfo r = await _c.placesRepository.route(
-        gm.LatLng(pos.latitude, pos.longitude),
+        gm.LatLng(from.latitude, from.longitude),
         gm.LatLng(p.lat, p.lng),
         mode: _travelMode,
       );
@@ -409,6 +494,7 @@ class _MapScreenState extends State<MapScreen> {
               ]
             : <Polyline>[];
       });
+      unawaited(_compareAllModes(from, p));
     } catch (e) {
       if (!mounted) return;
       setState(() => _routeLoading = false);
@@ -416,6 +502,30 @@ class _MapScreenState extends State<MapScreen> {
         SnackBar(content: Text('Could not get a route: $e')),
       );
     }
+  }
+
+  /// Fetches routes for every mode in parallel and shows the fastest way,
+  /// so the traveler sees ETA options like a real navigation app.
+  Future<void> _compareAllModes(LatLng from, Place p) async {
+    setState(() => _comparingModes = true);
+    final Map<String, RouteInfo> results = <String, RouteInfo>{};
+    await Future.wait(<String>['walk', 'bike', 'car', 'auto'].map(
+      (String mode) async {
+        try {
+          final RouteInfo r = await _c.placesRepository.route(
+            gm.LatLng(from.latitude, from.longitude),
+            gm.LatLng(p.lat, p.lng),
+            mode: mode,
+          );
+          results[mode] = r;
+        } catch (_) {}
+      },
+    ));
+    if (!mounted) return;
+    setState(() {
+      _routesByMode = results;
+      _comparingModes = false;
+    });
   }
 
   /// Live traffic overlay needs a traffic-enabled map provider. This explains
@@ -480,6 +590,21 @@ class _MapScreenState extends State<MapScreen> {
   /// Long-press anywhere to drop a pin, then get the distance, a route and
   /// real turn-by-turn navigation from your location to that point.
   void _dropPin(TapPosition tap, LatLng point) {
+    if (_settingOrigin) {
+      setState(() {
+        _origin = point;
+        _originName = 'Dropped pin';
+        _settingOrigin = false;
+        _resultsVisible = false;
+      });
+      if (_selected != null) {
+        _route = null;
+        _routesByMode = <String, RouteInfo>{};
+        _polylines = <Polyline>[];
+        _getRoute();
+      }
+      return;
+    }
     final Place pin = Place(
       placeId: 'pin-${DateTime.now().millisecondsSinceEpoch}',
       name: 'Dropped pin',
@@ -491,6 +616,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _selected = pin;
       _route = null;
+      _routesByMode = <String, RouteInfo>{};
       _polylines = <Polyline>[];
       _distanceToSelected = _distanceTo(point.latitude, point.longitude);
       _resultsVisible = false;
@@ -577,6 +703,7 @@ class _MapScreenState extends State<MapScreen> {
               MarkerLayer(
                 markers: <Marker>[
                   ..._markers,
+                  if (_origin != null) _originMarker(),
                   if (_position != null) _userLocationMarker(),
                 ],
               ),
@@ -590,6 +717,41 @@ class _MapScreenState extends State<MapScreen> {
             right: 0,
             child: _topBar(),
           ),
+          if (_speedKmh >= 1)
+            Positioned(
+              left: 12,
+              bottom: _selected != null ? 300 : 96,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: scheme.outlineVariant),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 8),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.speed,
+                        size: 20, color: _modeColor(_travelMode)),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_speedKmh.round()} km/h',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: _modeColor(_travelMode),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_resultsVisible)
             Positioned(
               top: 148,
@@ -676,6 +838,24 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
+  }
+
+  Marker _originMarker() {
+    final LatLng o = _origin!;
+    return Marker(
+      point: o,
+      width: 40,
+      height: 40,
+      child: const Icon(Icons.trip_origin,
+          color: Color(0xFF16A34A), size: 32),
+    );
+  }
+
+  /// Live speedometer (km/h from the GPS stream).
+  double get _speedKmh {
+    final Position? p = _position;
+    if (p == null || p.speed <= 0) return 0;
+    return p.speed * 3.6;
   }
 
   Marker _userLocationMarker() {
@@ -793,6 +973,16 @@ class _MapScreenState extends State<MapScreen> {
                     }),
                     active: _showZones,
                   ),
+                  const SizedBox(width: 8),
+                  _chip(
+                    _origin == null ? 'Set start' : 'Start: ${_originName ?? 'Pin'}',
+                    _toggleSetOrigin,
+                    active: _settingOrigin || _origin != null,
+                  ),
+                  if (_origin != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    _chip('✕ start', _clearOrigin),
+                  ],
                 ],
               ),
             ),
@@ -810,7 +1000,9 @@ class _MapScreenState extends State<MapScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Search or long-press the map to set your destination',
+                  _settingOrigin
+                      ? 'Now choose your START point — search or long-press'
+                      : 'Search or long-press the map to set your destination',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -890,25 +1082,90 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _modeBadge() {
-    final Color color = _modeColor(_travelMode);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(_modeIcon(_travelMode), size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            _modeLabel(_travelMode),
-            style: TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w700, color: color),
-          ),
-        ],
+  String _arrivalTime(double seconds) {
+    final DateTime t = DateTime.now().add(Duration(seconds: seconds.round()));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}';
+  }
+
+  void _applyModeRoute(String mode) {
+    final RouteInfo? r = _routesByMode[mode];
+    if (r == null) return;
+    setState(() {
+      _travelMode = mode;
+      _route = r;
+      _polylines = r.polyline.length >= 2
+          ? <Polyline>[
+              Polyline(
+                points: r.polyline
+                    .map((gm.LatLng lp) => LatLng(lp.latitude, lp.longitude))
+                    .toList(),
+                color: _modeColor(mode),
+                strokeWidth: 5,
+              ),
+            ]
+          : <Polyline>[];
+    });
+  }
+
+  Widget _fastestRow() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    String fastest = 'car';
+    double fastestDur = double.infinity;
+    _routesByMode.forEach((String m, RouteInfo r) {
+      if (r.durationSeconds < fastestDur) {
+        fastestDur = r.durationSeconds;
+        fastest = m;
+      }
+    });
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final (String id, IconData icon, String label) in _modes)
+          if (_routesByMode[id] != null)
+            _modeTimeChip(id, icon, label,
+                _routesByMode[id]!.durationSeconds, id == fastest),
+      ],
+    );
+  }
+
+  Widget _modeTimeChip(
+    String mode,
+    IconData icon,
+    String label,
+    double seconds,
+    bool fastest,
+  ) {
+    final Color color = _modeColor(mode);
+    final bool selected = _travelMode == mode;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => _applyModeRoute(mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.16) : null,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+              color: selected ? color : Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '${GeoUtils.formatDuration(seconds)}'
+              '${fastest ? ' · fastest' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: fastest ? FontWeight.w800 : FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1138,16 +1395,23 @@ class _MapScreenState extends State<MapScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _position == null
-                            ? 'My location (waiting for GPS…)'
-                            : 'My location',
+                        _origin != null
+                            ? (_originName ?? 'Start point')
+                            : (_position == null
+                                ? 'My location (waiting for GPS…)'
+                                : 'My location'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context)
                             .textTheme
                             .bodyMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    _modeBadge(),
+                    TextButton(
+                      onPressed: _toggleSetOrigin,
+                      child: Text(_origin == null ? 'Set' : 'Change'),
+                    ),
                   ],
                 ),
                 const Padding(
@@ -1172,6 +1436,11 @@ class _MapScreenState extends State<MapScreen> {
                             ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.swap_vert, size: 20),
+                      tooltip: 'Swap start and destination',
+                      onPressed: _swapOriginDestination,
+                    ),
                   ],
                 ),
               ],
@@ -1187,7 +1456,8 @@ class _MapScreenState extends State<MapScreen> {
                   child: Text(
                     '${_modeLabel(_travelMode)} · '
                     '${GeoUtils.formatDistance(r.distanceMeters)} · '
-                    '${GeoUtils.formatDuration(r.durationSeconds)}'
+                    '${GeoUtils.formatDuration(r.durationSeconds)} · '
+                    'arrive ~${_arrivalTime(r.durationSeconds)}'
                     '${r.isApproximate ? ' (estimate)' : ''}',
                     style: Theme.of(context)
                         .textTheme
@@ -1197,6 +1467,25 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ],
             ),
+            if (_comparingModes)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Comparing all modes…'),
+                  ],
+                ),
+              )
+            else if (_routesByMode.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _fastestRow(),
+              ),
           ],
           const SizedBox(height: 12),
           Row(

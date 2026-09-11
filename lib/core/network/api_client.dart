@@ -17,11 +17,35 @@ class ApiClient {
   final String baseUrl;
   late final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 15),
-    sendTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 90),
+    connectTimeout: const Duration(seconds: 4),
+    sendTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 15),
     contentType: 'application/json',
   ));
+
+  // When the backend is unreachable (not deployed yet), remember it for a
+  // while so subsequent calls fail instantly instead of waiting on the
+  // connect timeout every time — this is what made the app feel slow.
+  bool _backendDown = false;
+  DateTime? _downSince;
+
+  static const Duration _retryAfter = Duration(seconds: 45);
+
+  bool get _skipBackend {
+    final DateTime? since = _downSince;
+    if (!_backendDown || since == null) return false;
+    return DateTime.now().difference(since) < _retryAfter;
+  }
+
+  void _markDown() {
+    _backendDown = true;
+    _downSince = DateTime.now();
+  }
+
+  void _markUp() {
+    _backendDown = false;
+    _downSince = null;
+  }
 
   Future<String?> _idToken() async {
     try {
@@ -38,6 +62,13 @@ class ApiClient {
     String path,
     Map<String, dynamic> body,
   ) async {
+    if (_skipBackend) {
+      throw ApiException(
+        ApiErrorKind.network,
+        'The Tourism backend is not reachable right now.',
+        retryable: true,
+      );
+    }
     final String? token = await _idToken();
     try {
       final Response<dynamic> resp = await _dio.post<dynamic>(
@@ -49,6 +80,7 @@ class ApiClient {
           },
         ),
       );
+      _markUp();
       final dynamic data = resp.data;
       if (data is Map<String, dynamic>) return data;
       if (data is Map) {
@@ -56,21 +88,33 @@ class ApiClient {
       }
       throw ApiException(ApiErrorKind.server, 'Unexpected response from backend.');
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        _markDown();
+      }
       throw _map(e);
     }
   }
 
   /// GET a binary response (used for Places photos proxied by the backend).
   Future<Uint8List> getBytes(String path) async {
+    if (_skipBackend) {
+      throw ApiException(ApiErrorKind.network, 'Backend unreachable.');
+    }
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(
         path,
         options: Options(responseType: ResponseType.bytes),
       );
+      _markUp();
       final dynamic data = resp.data;
       if (data is Uint8List) return data;
       throw ApiException(ApiErrorKind.server, 'Unexpected binary response.');
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        _markDown();
+      }
       throw _map(e);
     }
   }

@@ -61,9 +61,10 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         });
       }
     }, onError: (Object e) {
+      // Cloud unavailable — keep the screen usable (local creation still
+      // works), instead of blocking on a raw error.
       if (mounted) {
         setState(() {
-          _error = e.toString();
           _loading = false;
         });
       }
@@ -121,17 +122,57 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         emergencyContactName: _contactNameController.text.trim(),
         emergencyContactPhone: contactPhone,
       );
+      // The watchMine stream refreshes the list.
     } catch (e) {
+      // Cloud unavailable (rules not deployed / offline) — create a local ID
+      // so the QR code still works right now.
+      final DigitalId local = DigitalId(
+        id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+        uid: uid,
+        ownerName: name,
+        token: DigitalId.generateToken(),
+        status: 'active',
+        createdAt: DateTime.now(),
+        photoUrl: p?.photoUrl,
+        emergencyContactName: _contactNameController.text.trim(),
+        emergencyContactPhone: contactPhone,
+      );
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _ids.insert(0, local);
           _creating = false;
+          _error =
+              'Created on this device — cloud sync is unavailable right now.';
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Digital ID created (saved on this device).')),
+        );
       }
     }
   }
 
   Future<void> _setActive(DigitalId id, bool active) async {
+    if (id.id.startsWith('local-')) {
+      // On-device ID: just flip the in-memory status.
+      setState(() {
+        final int i = _ids.indexWhere((DigitalId d) => d.id == id.id);
+        if (i >= 0) {
+          _ids[i] = DigitalId(
+            id: id.id,
+            uid: id.uid,
+            ownerName: id.ownerName,
+            token: id.token,
+            status: active ? 'active' : 'revoked',
+            createdAt: id.createdAt,
+            photoUrl: id.photoUrl,
+            emergencyContactName: id.emergencyContactName,
+            emergencyContactPhone: id.emergencyContactPhone,
+          );
+        }
+      });
+      return;
+    }
     try {
       await _c.digitalIdRepository.setActive(id.id, active);
     } catch (e) {

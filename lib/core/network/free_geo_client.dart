@@ -267,6 +267,65 @@ class FreeGeoClient {
     return out;
   }
 
+  /// Best-rated hotels nearby (4–5★) with their star rating and distance.
+  /// Overpass gives the real stars tag; price is estimated on-device since no
+  /// free live-price source exists.
+  Future<List<Place>> luxuryHotels(LatLng near, {int radiusMeters = 8000}) async {
+    final int radius = radiusMeters <= 0 ? 8000 : radiusMeters;
+    final List<Place> out = <Place>[];
+    // Query 5★ then 4★ so 5★ results always come first.
+    for (final int stars in const <int>[5, 4]) {
+      final String query =
+          '[out:json][timeout:20];('
+          'node["tourism"="hotel"]["stars"="$stars"]'
+          '(around:$radius,${near.latitude},${near.longitude});'
+          'way["tourism"="hotel"]["stars"="$stars"]'
+          '(around:$radius,${near.latitude},${near.longitude});'
+          ');out center 40;';
+      try {
+        for (final String host in const <String>[
+          'https://overpass-api.de/api/interpreter',
+          'https://overpass.kumi.systems/api/interpreter',
+        ]) {
+          final Response<dynamic> resp = await _dio.get<dynamic>(
+            host,
+            queryParameters: <String, dynamic>{'data': query},
+          );
+          final Object? data = resp.data;
+          if (data is! Map || data['elements'] is! List) continue;
+          for (final dynamic e in data['elements'] as List) {
+            if (e is! Map) continue;
+            final double? lat = (e['lat'] as num?)?.toDouble();
+            final double? lon = (e['lon'] as num?)?.toDouble();
+            if (lat == null || lon == null) continue;
+            final Object? tags = e['tags'];
+            String name = '';
+            if (tags is Map && tags['name'] is String) name = tags['name'] as String;
+            if (name.trim().isEmpty) continue;
+            out.add(Place(
+              placeId: 'osm-hotel-${e['id'] ?? '$lat,$lon'}',
+              name: name,
+              lat: lat,
+              lng: lon,
+              rating: stars.toDouble(),
+              primaryType: 'hotel',
+              types: const <String>['hotel', 'lodging'],
+            ));
+          }
+          break;
+        }
+      } catch (_) {}
+    }
+    // Sort by stars desc, then distance.
+    out.sort((Place a, Place b) {
+      final int cmp = ((b.rating ?? 0) - (a.rating ?? 0)).round();
+      if (cmp != 0) return cmp;
+      return GeoUtils.distanceMeters(near, a.coords)
+          .compareTo(GeoUtils.distanceMeters(near, b.coords));
+    });
+    return out;
+  }
+
   Future<String?> reverseGeocode(double lat, double lng) async {
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(

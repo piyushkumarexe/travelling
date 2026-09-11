@@ -59,27 +59,30 @@ class _SosSheetViewState extends State<_SosSheetView> {
         return;
       }
       final user = _c.authRepository.currentUser;
-      if (user == null) {
-        setState(() {
-          _stage = _SosStage.confirm;
-          _error = 'You must be signed in to activate SOS.';
-        });
-        return;
-      }
-      final String uid = user.uid;
-      final String? profileName =
-          (await _c.profileRepository.get(uid))?.name;
-      final String name = (profileName == null || profileName.isEmpty)
-          ? (user.displayName ?? 'Unknown')
-          : profileName;
+      final String uid = user?.uid ?? 'guest';
+      String name = (user?.displayName?.isNotEmpty ?? false)
+          ? user!.displayName!
+          : 'Traveler';
+      try {
+        final String? profileName = (await _c.profileRepository.get(uid))?.name;
+        if (profileName != null && profileName.isNotEmpty) name = profileName;
+      } catch (_) {}
 
-      final String id = await _c.emergencyRepository.create(
-        uid: uid,
-        name: name,
-        lat: pos.latitude,
-        lng: pos.longitude,
-        accuracyMeters: pos.accuracy,
-      );
+      // Create the cloud event; if the cloud is unreachable (rules not
+      // deployed / offline), still proceed with a local id — the emergency
+      // flow (call services + share location) must never be blocked.
+      String id;
+      try {
+        id = await _c.emergencyRepository.create(
+          uid: uid,
+          name: name,
+          lat: pos.latitude,
+          lng: pos.longitude,
+          accuracyMeters: pos.accuracy,
+        );
+      } catch (_) {
+        id = 'local-${DateTime.now().millisecondsSinceEpoch}';
+      }
       if (!mounted) return;
 
       final EmergencyEvent event = EmergencyEvent(
