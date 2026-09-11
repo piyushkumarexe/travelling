@@ -43,31 +43,42 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
+              const SizedBox(height: 12),
               Container(
-                width: 96,
-                height: 96,
+                width: 92,
+                height: 92,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
+                    colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
                   ),
                   borderRadius: BorderRadius.circular(28),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: const Color(0xFF0D9488)
+                          .withOpacity(dark ? 0.45 : 0.30),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.explore, size: 52, color: Colors.white),
+                child: const Icon(Icons.explore, size: 48, color: Colors.white),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
               Text(
-                'Roamio',
+                'Yatrawise',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
                     ),
               ),
               const SizedBox(height: 8),
@@ -75,16 +86,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 'Your smart tourism & safety companion',
                 style: Theme.of(context).textTheme.bodyLarge
                     ?.copyWith(color: scheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: 18),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: <Widget>[
-                  _featureChip(Icons.map, 'Real Google Maps'),
-                  const SizedBox(width: 8),
-                  _featureChip(Icons.sos, 'SOS & geofencing'),
-                  const SizedBox(width: 8),
-                  _featureChip(Icons.auto_awesome, 'AI assistant'),
+                  _featureChip(
+                      context, Icons.map_outlined, 'Real Google Maps'),
+                  _featureChip(context, Icons.sos_outlined, 'SOS & geofencing'),
+                  _featureChip(
+                      context, Icons.auto_awesome_outlined, 'AI assistant'),
                 ],
               ),
               const Spacer(),
@@ -94,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 loading: _loading,
                 onPressed: _signIn,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Text(
                 'Sign in to save itineraries, incidents, your digital '
                 'emergency ID and eco progress. Your data is private — '
@@ -104,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: scheme.onSurfaceVariant),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
             ],
           ),
         ),
@@ -112,22 +126,35 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _featureChip(IconData icon, String label) {
+  Widget _featureChip(BuildContext context, IconData icon, String label) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.5),
+        color: dark ? scheme.surfaceContainerLow : Colors.white,
         borderRadius: BorderRadius.circular(999),
+        border:
+            Border.all(color: scheme.outlineVariant.withOpacity(0.6)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withOpacity(dark ? 0.25 : 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: scheme.primary),
+          Icon(icon, size: 15, color: scheme.primary),
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant),
           ),
         ],
       ),

@@ -418,7 +418,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'Roamio 1.0.0 · data encrypted in transit and at rest',
+              'Yatrawise 1.0.0 · data encrypted in transit and at rest',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall

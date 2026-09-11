@@ -25,7 +25,7 @@ class DefaultFirebaseOptions {
       return android;
     }
     throw UnsupportedError(
-      'Roamio currently only supports Android. '
+      'Yatrawise currently only supports Android. '
       'Run `flutterfire configure --platforms=android`.',
     );
   }

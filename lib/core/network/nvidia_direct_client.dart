@@ -7,7 +7,7 @@ import 'api_exception.dart';
 
 /// Direct NVIDIA chat-completions client (OpenAI-compatible API).
 ///
-/// Fallback path used ONLY when the Roamio Cloud Functions backend is
+/// Fallback path used ONLY when the Yatrawise Cloud Functions backend is
 /// unreachable (not deployed yet) AND a build-time NVIDIA key is present
 /// (`flutter build ... --dart-define=NVIDIA_API_KEY=nvapi-...`).
 ///
@@ -182,7 +182,7 @@ class NvidiaDirectClient {
     String? profileContext,
   }) async {
     String system =
-        'You are Roamio, a smart tourism and personal-safety assistant. '
+        'You are Yatrawise, a smart tourism and personal-safety assistant. '
         'Answer travel questions (attractions, food, transport, itineraries, local tips) '
         'with practical, current, location-aware advice. Keep replies under 250 words, '
         'friendly and specific. If safety is at stake, advise calling local emergency services. '

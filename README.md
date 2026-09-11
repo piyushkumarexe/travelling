@@ -1,6 +1,6 @@
-# Roamio — Smart Tourism & Safety Assistant (Android)
+# Yatrawise — Smart Tourism & Safety Assistant (Android)
 
-Roamio is a native Android app (Flutter) that combines a premium travel
+Yatrawise is a native Android app (Flutter) that combines a premium travel
 experience with real safety tooling: live Google Maps, real AI assistance
 (NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
 zones with Android notifications, a one-tap SOS flow, a Digital Emergency
@@ -92,7 +92,7 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 - Flutter 3.32.x (`flutter doctor` green for Android)
 - Firebase CLI (`npm i -g firebase-tools`)
 - An Android device or emulator with Google Play Services
-- A Firebase project (e.g. `roamio-prod`)
+- A Firebase project (e.g. `yatrawise-prod`)
 
 ### 2. Firebase project
 
@@ -186,7 +186,7 @@ that has access to the OAuth client) and you land on the dashboard.
 2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze
    --fatal-warnings`, `flutter test`) and **Build release APK**
    (JDK 17 + Android SDK + `flutter build apk --release`).
-3. Download the **`roamio-release-apk`** artifact from the job summary.
+3. Download the **`yatrawise-release-apk`** artifact from the job summary.
 
 The release APK is signed with the project's *debug* keystore (the same
 one CI always has). For public distribution you should create a proper

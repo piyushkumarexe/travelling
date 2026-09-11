@@ -8,7 +8,7 @@ import '../../../core/state/app_container.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/repositories/ai_repository.dart';
 
-/// Real AI tourism assistant (NVIDIA API via the Roamio backend).
+/// Real AI tourism assistant (NVIDIA API via the Yatrawise backend).
 /// No canned responses: every answer comes from the live model with the
 /// user's location and preferences as context.
 class AssistantScreen extends StatefulWidget {
@@ -122,7 +122,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             role: 'assistant',
             text:
                 'I could not reach the AI service: ${e.toString()}\n\n'
-                'Check your internet connection (and that the Roamio '
+                'Check your internet connection (and that the Yatrawise '
                 'backend is deployed) and try again.',
             isError: true,
           ),
@@ -271,10 +271,22 @@ class _AssistantScreenState extends State<AssistantScreen> {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: scheme.primaryContainer,
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
+                ),
                 shape: BoxShape.circle,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: const Color(0xFF0D9488).withOpacity(0.30),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-              child: Icon(Icons.auto_awesome, size: 34, color: scheme.primary),
+              child: const Icon(Icons.auto_awesome,
+                  size: 34, color: Colors.white),
             ),
             const SizedBox(height: 16),
             Text(
@@ -304,7 +316,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? scheme.surfaceContainerHighest
+              : Colors.white,
+          border: Border.all(
+              color: scheme.outlineVariant.withOpacity(0.6)),
           borderRadius:
               const BorderRadius.only(bottomLeft: Radius.circular(4),
                   topRight: Radius.circular(16),
@@ -326,9 +342,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   Widget _bubble(_ChatMessage m, ColorScheme scheme) {
     final bool isUser = m.role == 'user';
+    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color bg = isUser
         ? scheme.primary
-        : (m.isError ? scheme.errorContainer : scheme.surfaceContainerHighest);
+        : (m.isError
+            ? scheme.errorContainer
+            : (dark ? scheme.surfaceContainerHighest : Colors.white));
     final Color fg = isUser
         ? scheme.onPrimary
         : (m.isError ? scheme.onErrorContainer : scheme.onSurface);
@@ -349,6 +368,19 @@ class _AssistantScreenState extends State<AssistantScreen> {
               bottomLeft: Radius.circular(isUser ? 16 : 4),
               bottomRight: Radius.circular(isUser ? 4 : 16),
             ),
+            border: isUser || m.isError
+                ? null
+                : Border.all(
+                    color: scheme.outlineVariant.withOpacity(0.6)),
+            boxShadow: isUser || m.isError
+                ? null
+                : <BoxShadow>[
+                    BoxShadow(
+                      color: Colors.black.withOpacity(dark ? 0.25 : 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
           ),
           child: SelectableText(
             m.text,

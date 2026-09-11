@@ -69,7 +69,7 @@ class NotificationService {
       final AndroidNotificationDetails details = AndroidNotificationDetails(
         channel,
         _channelName(channel),
-        channelDescription: 'Roamio $_channelName(channel.toLowerCase())',
+        channelDescription: 'Yatrawise $_channelName(channel.toLowerCase())',
         importance: important ? Importance.max : Importance.high,
         priority: important ? Priority.high : Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',

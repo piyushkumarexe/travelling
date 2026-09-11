@@ -125,7 +125,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   const SizedBox(height: 6),
                   Text(
                     'Tokens are 64 hex characters, shown under the QR code '
-                    'on the person\'s Roamio Emergency ID card.',
+                    'on the person\'s Yatrawise Emergency ID card.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 14),
