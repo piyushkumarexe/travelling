@@ -1,3 +1,5 @@
+import 'dart:io' show File;
+
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -80,7 +82,7 @@ class StorageService {
         .child('incidents')
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_img.${_ext(file)}');
-    await ref.putFile(file, SettableMetadata(contentType: _contentType(file)));
+    await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
     return ref.getDownloadURL();
   }
 
@@ -91,7 +93,7 @@ class StorageService {
         .child('incidents')
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_vid.${_ext(file)}');
-    await ref.putFile(file, SettableMetadata(contentType: _contentType(file)));
+    await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
     return ref.getDownloadURL();
   }
 
@@ -102,7 +104,7 @@ class StorageService {
         .child('avatars')
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_avatar.${_ext(file)}');
-    await ref.putFile(file, SettableMetadata(contentType: _contentType(file)));
+    await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
     return ref.getDownloadURL();
   }
 

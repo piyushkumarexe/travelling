@@ -44,7 +44,7 @@ class DigitalIdRepository {
         .limit(1)
         .get();
     if (snap.docs.isEmpty) return null;
-    final DocumentSnapshot<Map<String, dynamic>> d = snap.docs.first;
+    final QueryDocumentSnapshot<Map<String, dynamic>> d = snap.docs.first;
     return DigitalId.fromMap(d.id, d.data());
   }
 
