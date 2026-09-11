@@ -25,7 +25,7 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: set -o pipefail; flutter pub get -v 2>&1 | tee pub-get.log
+        run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
 
       - name: Upload pub diagnostics (on failure)
         if: failure()
@@ -36,19 +36,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Push diagnostics branch (readable without log access)
+      - name: Surface pub error as annotations
         if: failure()
         run: |
-          git config user.name "yatrawise-ci"
-          git config user.email "yatrawise-ci@local"
-          tail -n 200 pub-get.log > /tmp/diag.log
-          (flutter --version >> /tmp/diag.log 2>&1 || true)
-          git checkout --orphan ci-diag
-          git rm -rf --cached . > /dev/null 2>&1 || true
-          cp /tmp/diag.log ./pub-diagnostics.log
-          git add pub-diagnostics.log
-          git commit -m "CI diagnostics for run $GITHUB_RUN_ID" > /dev/null
-          git push -f origin ci-diag 2>&1 | tail -n 2
+          (flutter --version 2>&1 | head -n 3; echo '---'; tail -n 25 pub-get.log) > /tmp/surf.txt
+          MSG=$(sed 's/%/%25/g' /tmp/surf.txt | awk '{printf "%s%%0A", $0}' | head -c 3500)
+          echo "::error::$MSG"
 
       - name: Analyze (fatal warnings)
         run: flutter analyze
