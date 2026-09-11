@@ -1,4 +1,4 @@
-/// Form validation helpers shared by all forms.
+// Form validation helpers shared by all forms.
 
 class Validators {
   Validators._();

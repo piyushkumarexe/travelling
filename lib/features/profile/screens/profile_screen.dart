@@ -29,7 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
-  bool _saving = false;
+  final bool _saving = false;
   bool _uploadingPhoto = false;
 
   @override
@@ -214,7 +214,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               p!.photoUrl!.isNotEmpty)
                           ? ClipOval(
                               child: Image.network(
-                                p!.photoUrl!,
+                                p.photoUrl!,
                                 width: 80,
                                 height: 80,
                                 fit: BoxFit.cover,
@@ -225,7 +225,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             )
                           : Text(
-                              (p?.name?.isNotEmpty == true)
+                              (p?.name.isNotEmpty == true)
                                   ? p!.name[0].toUpperCase()
                                   : '?',
                               style: const TextStyle(
@@ -261,7 +261,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  (p?.name?.isNotEmpty ?? false)
+                  (p?.name.isNotEmpty ?? false)
                       ? p!.name
                       : (user?.displayName ?? 'Traveler'),
                   style: const TextStyle(

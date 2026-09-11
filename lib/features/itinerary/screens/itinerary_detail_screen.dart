@@ -116,7 +116,7 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
         return;
       }
       final Place p = places.first;
-      context.push('/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}');
+      unawaited(context.push('/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}'));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

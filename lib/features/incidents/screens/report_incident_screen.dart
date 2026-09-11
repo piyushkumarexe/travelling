@@ -199,7 +199,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
             type: 'incident',
             payload: <String, dynamic>{'incidentId': id},
           )
-          .catchError((Object _) {}));
+          .catchError((Object _) => ''));
 
       if (!mounted) return;
       setState(() {

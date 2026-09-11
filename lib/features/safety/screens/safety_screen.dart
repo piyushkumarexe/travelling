@@ -80,7 +80,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
         _locationDone = true;
       });
       if (pos != null) {
-        final LatLng p = LatLng(pos.latitude, pos.longitude);
         _loadServices();
         _loadWeather();
       }

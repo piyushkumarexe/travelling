@@ -364,7 +364,7 @@ class _MapScreenState extends State<MapScreen> {
         _permissionDenied = false;
       });
       if (pos != null) {
-        _recenter();
+        unawaited(_recenter());
       }
     }
   }

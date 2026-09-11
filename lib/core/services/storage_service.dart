@@ -53,7 +53,7 @@ class StorageService {
   }
 
   Future<void> _validateAvatar(XFile file) async {
-    _validateImage(file);
+    await _validateImage(file);
     if (await file.length() > AppConfig.maxAvatarBytes) {
       throw StorageValidationException('Avatar is too large. Maximum 5 MB.');
     }
