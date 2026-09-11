@@ -48,7 +48,7 @@ class SetupGuideScreen extends StatelessWidget {
       (
         '1. Create a Firebase project',
         'Console → create project → add an Android app with package name '
-        'com.roamio.app → download google-services.json (not required for '
+        'app.roamio.tourism → download google-services.json (not required for '
         'this codebase, but keep it handy) and copy the web/config values.',
       ),
       (
@@ -73,7 +73,7 @@ class SetupGuideScreen extends StatelessWidget {
         '5. Google Maps key',
         'In android/app/src/main/AndroidManifest.xml replace '
         'REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY with an Android-restricted '
-        'Maps SDK key for com.roamio.app.',
+        'Maps SDK key for app.roamio.tourism.',
       ),
       (
         '6. Restart the app',

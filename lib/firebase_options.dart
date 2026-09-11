@@ -1,19 +1,16 @@
-// Firebase configuration template.
+// Firebase configuration for YatraWise.
 //
-// IMPORTANT
-// ---------
-// This file ships with PLACEHOLDER values so the project compiles out of the
-// box. It is NOT wired to a live Firebase project yet.
+// Project: tourism-39425 (project number 216165370573)
+// Android app: app.roamio.tourism
+// Values taken from the project's google-services.json. These are public
+// client identifiers (same as any FlutterFire-generated file) — access is
+// still enforced by Firebase Auth, Firestore/Storage rules and the
+// package-name + SHA restrictions configured in the Firebase console.
 //
-// To configure your real project (see README > "Firebase setup"):
-//   1. Create a Firebase project + Android app (com.roamio.app).
-//   2. Install the FlutterFire CLI:  dart pub global activate flutterfire_cli
-//   3. Run:  flutterfire configure --platforms=android
-//      (this rewrites this file with your real values)
-//   4. Or copy the values from Firebase Console > Project settings > Your
-//      apps > SDK setup and configuration into the constants below.
-//
-// NEVER commit real Firebase API keys or a real google-services.json.
+// If you ever re-register the Android app, run:
+//   dart pub global activate flutterfire_cli
+//   flutterfire configure --platforms=android
+// (this rewrites this file with the new values).
 
 import 'dart:io' show Platform;
 
@@ -31,11 +28,11 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
-    appId: 'REPLACE_WITH_FIREBASE_ANDROID_APP_ID',
-    messagingSenderId: 'REPLACE_WITH_MESSAGING_SENDER_ID',
-    projectId: 'REPLACE_WITH_FIREBASE_PROJECT_ID',
-    storageBucket: 'REPLACE_WITH_FIREBASE_PROJECT_ID.appspot.com',
+    apiKey: 'AIzaSyCjXD5ykiMulIXcb2VrzGLA8iBMkFTCt9M',
+    appId: '1:216165370573:android:fa5a4121d0e6fdfc077784',
+    messagingSenderId: '216165370573',
+    projectId: 'tourism-39425',
+    storageBucket: 'tourism-39425.firebasestorage.app',
   );
 }
 

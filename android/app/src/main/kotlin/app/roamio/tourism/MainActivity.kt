@@ -1,4 +1,4 @@
-package com.roamio.app
+package app.roamio.tourism
 
 import io.flutter.embedding.android.FlutterActivity
 
