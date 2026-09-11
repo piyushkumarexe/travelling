@@ -153,7 +153,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
       );
 
       if (mounted) setState(() => _submitPhase = 'Saving report…');
-      final String? reporter = (await _c.profileRepository.get(uid))?.name ??
+      final String reporter = (await _c.profileRepository.get(uid))?.name ??
           _c.authRepository.currentUser?.displayName ??
           'Unknown';
       final Incident incident = Incident(

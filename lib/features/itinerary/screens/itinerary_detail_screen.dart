@@ -35,8 +35,14 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
   @override
   void initState() {
     super.initState();
+    final String? uid = _uid();
+    if (uid == null) {
+      _error = 'You must be signed in to view itineraries.';
+      _loading = false;
+      return;
+    }
     _sub = _c.itinerariesRepository
-        .watchOne(_uid(), widget.id)
+        .watchOne(uid, widget.id)
         .listen((Itinerary? it) {
       if (!mounted) return;
       setState(() {
