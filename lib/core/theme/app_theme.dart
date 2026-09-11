@@ -25,6 +25,24 @@ class AppTheme {
       scaffoldBackgroundColor: scheme.surface,
       fontFamily: 'packages/shadcn_flutter/GeistSans',
       visualDensity: VisualDensity.standard,
+      navigationBarTheme: NavigationBarThemeData(
+        height: 70,
+        elevation: 0,
+        backgroundColor: scheme.surface,
+        indicatorColor: scheme.primaryContainer,
+        indicatorShape: const StadiumBorder(),
+        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
+          (Set<WidgetState> states) => TextStyle(
+            color: states.contains(WidgetState.selected)
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
+            fontSize: 11,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w800
+                : FontWeight.w600,
+          ),
+        ),
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,

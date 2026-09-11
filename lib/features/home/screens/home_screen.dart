@@ -296,17 +296,28 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 72,
+        leadingWidth: 64,
+        leading: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/branding/tourism_logo.png',
+              fit: BoxFit.cover,
+              semanticLabel: 'Tourism logo',
+            ),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Hello, ${_greetingName} 👋',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            const Text(
+              'Tourism',
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
             ),
             Text(
-              _locationDone
-                  ? (_locationLabel ?? 'Location unavailable')
-                  : 'Getting your location…',
+              'Hi, $_greetingName · ${_locationDone ? (_locationLabel ?? 'Location unavailable') : 'Locating…'}',
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

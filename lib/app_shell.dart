@@ -37,7 +37,6 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
   bool _startedGeofence = false;
-  final List<String> _tabHistory = <String>[];
 
   @override
   void didChangeDependencies() {
@@ -124,98 +123,62 @@ class _AppShellState extends State<AppShell> {
     return 0;
   }
 
-  void _openTab(int nextIndex, String currentLocation) {
-    final String next = _tabs[nextIndex];
-    if (next == currentLocation) return;
-    _tabHistory.remove(currentLocation);
-    _tabHistory.add(currentLocation);
-    context.go(next);
-  }
-
-  void _handleBack(String location) {
-    if (location != '/home') {
-      while (_tabHistory.isNotEmpty) {
-        final String previous = _tabHistory.removeLast();
-        if (previous != location && _tabs.contains(previous)) {
-          context.go(previous);
-          return;
-        }
-      }
-      context.go('/home');
-      return;
-    }
-
-    // Keep the root dashboard alive. Android's Home gesture/button remains
-    // available when the user intentionally wants to background Tourism.
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(content: Text('You are already on Tourism Home')),
-      );
-  }
-
   @override
   Widget build(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     final int index = _indexOf(location);
     final bool onTab = _tabs.contains(location);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) _handleBack(location);
-      },
-      child: Scaffold(
-        body: widget.child,
-        floatingActionButton: const SosFab(),
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        bottomNavigationBar: onTab
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const CreatorMark(
-                    padding: EdgeInsets.only(top: 5, bottom: 1),
-                  ),
-                  NavigationBar(
-                    selectedIndex: index,
-                    onDestinationSelected: (int i) => _openTab(i, location),
-                    destinations: const <NavigationDestination>[
-                      NavigationDestination(
-                        icon: Icon(Icons.home_outlined),
-                        selectedIcon: Icon(Icons.home),
-                        label: 'Home',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.explore_outlined),
-                        selectedIcon: Icon(Icons.explore),
-                        label: 'Explore',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.map_outlined),
-                        selectedIcon: Icon(Icons.map),
-                        label: 'Map',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.shield_outlined),
-                        selectedIcon: Icon(Icons.shield),
-                        label: 'Safety',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.directions_car_outlined),
-                        selectedIcon: Icon(Icons.directions_car),
-                        label: 'Vehicle',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.person_outline),
-                        selectedIcon: Icon(Icons.person),
-                        label: 'Profile',
-                      ),
-                    ],
-                  ),
-                ],
-              )
-            : null,
-      ),
+    return Scaffold(
+      body: widget.child,
+      floatingActionButton: const SosFab(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: onTab
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const CreatorMark(
+                  padding: EdgeInsets.only(top: 5, bottom: 1),
+                ),
+                NavigationBar(
+                  selectedIndex: index,
+                  onDestinationSelected: (int i) => context.go(_tabs[i]),
+                  destinations: const <NavigationDestination>[
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore),
+                      label: 'Explore',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.shield_outlined),
+                      selectedIcon: Icon(Icons.shield),
+                      label: 'Safety',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.directions_car_outlined),
+                      selectedIcon: Icon(Icons.directions_car),
+                      label: 'Vehicle',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.person_outline),
+                      selectedIcon: Icon(Icons.person),
+                      label: 'Profile',
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : null,
     );
   }
 }
