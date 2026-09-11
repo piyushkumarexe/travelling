@@ -4,8 +4,8 @@ import 'package:flutter/widgets.dart';
 import '../../data/repositories/ai_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/digital_id_repository.dart';
-import '../../data/repositories/emergency_repository.dart';
 import '../../data/repositories/eco_repository.dart';
+import '../../data/repositories/emergency_repository.dart';
 import '../../data/repositories/incidents_repository.dart';
 import '../../data/repositories/itineraries_repository.dart';
 import '../../data/repositories/notifications_repository.dart';
@@ -35,8 +35,8 @@ class AppContainer {
   String? get functionsBaseUrl {
     final FirebaseApp? a = app;
     if (a == null) return null;
-    final String? projectId = a.options.projectId;
-    if (projectId == null || projectId.startsWith('REPLACE_')) return null;
+    final String projectId = a.options.projectId;
+    if (projectId.startsWith('REPLACE_')) return null;
     return AppConfig.functionsBaseUrl(projectId);
   }
 

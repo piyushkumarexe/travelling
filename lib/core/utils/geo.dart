@@ -52,7 +52,7 @@ class GeoUtils {
     final int h = s ~/ 3600;
     final int m = (s % 3600) ~/ 60;
     if (h > 0) return '${h}h ${m}m';
-    if (m > 0) return '${m} min';
-    return '${s} s';
+    if (m > 0) return '$m min';
+    return '$s s';
   }
 }

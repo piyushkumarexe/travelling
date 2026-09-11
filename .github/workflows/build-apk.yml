@@ -50,14 +50,8 @@ jobs:
         if: failure()
         run: |
           echo "::warning title=analyze shape::lines=$(wc -l < analyze.log) errors=$(grep -a -c ' error ' analyze.log || true) warnings=$(grep -a -c ' warning ' analyze.log || true)"
-          grep -a -E " error | warning | info .| hint ." analyze.log | head -n 100 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
-            echo "::error title=flutter analyze::$MSG"
-          done
-          echo "=====TAIL====="
-          tail -n 15 analyze.log | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::warning title=analyze tail::$MSG"
+          grep -a -E " (error|warning) | info .| hint ." analyze.log | sed -E 's/^ *(error|warning|info|hint) . .* . ([^ ]+) . ([A-Za-z_0-9]+) *$/\1 \2 \3/' | paste -d'|' - - - - - | head -n 12 | while IFS= read -r line; do
+            echo "::error title=analyze issues::$line"
           done
 
       - name: Run tests

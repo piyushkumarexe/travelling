@@ -1,4 +1,4 @@
-/// Pure Eco Score math (unit-testable).
+// Pure Eco Score math (unit-testable).
 
 class EcoMath {
   EcoMath._();

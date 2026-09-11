@@ -32,7 +32,9 @@ class PlaceCard extends StatelessWidget {
       return Icons.hotel;
     }
     if (place.types.contains('shopping_mall') ||
-        place.types.contains('store')) return Icons.storefront;
+        place.types.contains('store')) {
+      return Icons.storefront;
+    }
     if (place.types.contains('cafe')) return Icons.coffee;
     return Icons.place;
   }
