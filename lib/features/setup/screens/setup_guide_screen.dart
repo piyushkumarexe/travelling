@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/loading_indicator.dart';
+
 /// Shown when Firebase is not configured yet (or on the splash route).
 /// This is a real, actionable state — the app never pretends to work
 /// without configuration.
@@ -37,7 +39,7 @@ class SetupGuideScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 20),
-              const CircularProgressIndicator(),
+              const LoadingIndicator(),
             ],
           ),
         ),

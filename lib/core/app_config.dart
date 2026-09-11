@@ -19,6 +19,20 @@ class AppConfig {
   static String functionsBaseUrl(String projectId) =>
       'https://$functionsRegion-$projectId.cloudfunctions.net';
 
+  /// Google Sign-In web OAuth client ID ("Web client" type), required on
+  /// Android when the app uses `firebase_options.dart` instead of a
+  /// `google-services.json`. Without it `google_sign_in` cannot produce a
+  /// usable ID token and Firebase rejects the credential.
+  ///
+  /// This is a public client identifier (safe to commit). Find it in the
+  /// Firebase console → Project settings → Your apps (Web app) → Web client ID,
+  /// or Google Cloud → APIs & Services → Credentials → the "Web client
+  /// (auto-created by Google Service)" entry (ends with
+  /// `.apps.googleusercontent.com`). Override at build time with:
+  ///   flutter build apk --dart-define=GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com
+  static const String googleWebClientId =
+      String.fromEnvironment('GOOGLE_WEB_CLIENT_ID', defaultValue: '');
+
   /// Direct NVIDIA access — fallback when the Cloud Functions backend is
   /// not deployed/reachable yet. Injected at build time:
   ///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...

@@ -500,7 +500,16 @@ class _HomeScreenState extends State<HomeScreen> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.sos, color: Colors.white, size: 34),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.call,
+                    color: Color(0xFFDC2626), size: 26),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

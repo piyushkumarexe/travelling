@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../core/app_config.dart';
+
 /// Real Google Sign-In + Firebase Authentication.
 
 class AuthException implements Exception {
@@ -14,7 +16,15 @@ class AuthException implements Exception {
 class AuthRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final GoogleSignIn _google = GoogleSignIn();
+
+  // `serverClientId` (the Google Sign-In *web* client ID) is required on
+  // Android when there is no google-services.json, otherwise the ID token is
+  // null and Firebase rejects the credential.
+  final GoogleSignIn _google = GoogleSignIn(
+    serverClientId: AppConfig.googleWebClientId.isEmpty
+        ? null
+        : AppConfig.googleWebClientId,
+  );
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
@@ -142,17 +152,21 @@ class AuthRepository {
     final DocumentReference<Map<String, dynamic>> userRef =
         _db.collection('users').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> userSnap = await userRef.get();
-    if (userSnap.exists) return;
+    if (!userSnap.exists) {
+      // Only write the fields the Firestore `users/{uid}` create rule allows
+      // (role, displayName, email, createdAt). Extra fields such as `uid` or
+      // `photoUrl` make the write fail permission-denied, which used to leave
+      // users WITHOUT a profile document.
+      await userRef.set(<String, dynamic>{
+        'displayName': user.displayName ?? '',
+        'email': user.email ?? '',
+        'role': 'user',
+        'createdAt': Timestamp.now(),
+      });
+    }
 
-    await userRef.set(<String, dynamic>{
-      'uid': user.uid,
-      'displayName': user.displayName ?? '',
-      'email': user.email ?? '',
-      'photoUrl': user.photoURL,
-      'role': 'user',
-      'createdAt': Timestamp.now(),
-    });
-
+    // Always make sure the profile document exists too (independent of the
+    // users doc, so a missing profile is repaired on next sign-in).
     final DocumentReference<Map<String, dynamic>> profileRef =
         _db.collection('profiles').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> profileSnap =

@@ -40,7 +40,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _listen() {
     final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      // No signed-in user yet — don't leave the screen stuck on the
+      // loading state; render the signed-out profile instead.
+      _loading = false;
+      return;
+    }
     _sub = _c.profileRepository
         .watch(uid)
         .listen((Profile? p) {
@@ -50,7 +55,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _loading = false;
         });
       }
-    }, onError: (Object _) {});
+    }, onError: (Object e) {
+      debugPrint('ProfileScreen watch error: $e');
+      if (mounted) setState(() => _loading = false);
+    });
   }
 
   Future<void> _signOut() async {

@@ -116,8 +116,19 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
    - SHA-1 fingerprint: for local debug builds use the debug keystore
      (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`);
      add your release fingerprint too if you sign your own builds.
-2. The Flutter app signs in with `google_sign_in` using this client —
-   no additional client-side keys are needed.
+   The SHA-1 of the exact APK you install must be registered here, otherwise
+   Google Sign-In fails instantly.
+2. Because this app uses `firebase_options.dart` (not `google-services.json`),
+   you must also provide the Google Sign-In **Web client ID** as the
+   `serverClientId`:
+   - Firebase console → **Project settings → Your apps → Web app** → copy the
+     `Web client ID` (ends with `.apps.googleusercontent.com`), or
+   - Google Cloud → **Credentials** → the "Web client (auto-created by Google
+     Service)" client.
+   Then either hardcode it in `lib/core/app_config.dart`
+   (`googleWebClientId`) or build with:
+   `flutter build apk --dart-define=GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com`
+   (in CI set the `GOOGLE_WEB_CLIENT_ID` secret).
 
 ### 4. Google Maps keys (two separate keys)
 
@@ -285,7 +296,7 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 
 | Symptom | Fix |
 | --- | --- |
-| Sign-in fails immediately | OAuth client missing the device's SHA-1, or account not allowed for the client. |
+| Sign-in fails immediately | OAuth client missing the device's SHA-1, Web client ID (`serverClientId`) not set, or account not allowed for the client. |
 | Map is blank | Client Maps key not set/restricted for the package + SHA-1. |
 | "Backend is missing the X configuration" | Set the function secret and redeploy functions. |
 | Places search 403 | Server key not restricted/allowed properly for Places (legacy) API. |
