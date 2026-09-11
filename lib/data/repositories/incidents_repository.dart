@@ -36,13 +36,16 @@ class IncidentsRepository {
       .collection('incidents')
       .doc(id)
       .snapshots()
-      .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-          d.exists ? Incident.fromMap(d.id, d.data()) : null);
+      .map((DocumentSnapshot<Map<String, dynamic>> d) {
+        final Map<String, dynamic>? data = d.data();
+        return data == null ? null : Incident.fromMap(d.id, data);
+      });
 
   Future<Incident?> get(String id) async {
     final DocumentSnapshot<Map<String, dynamic>> d =
         await _db.collection('incidents').doc(id).get();
-    return d.exists ? Incident.fromMap(d.id, d.data()) : null;
+    final Map<String, dynamic>? data = d.data();
+    return data == null ? null : Incident.fromMap(d.id, data);
   }
 
   /// Admin-only in practice (enforced by security rules).

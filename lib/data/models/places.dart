@@ -16,6 +16,7 @@ class Place {
     this.photoUrls = const <String>[],
     this.phone,
     this.website,
+    this.priceLevel,
     this.openNow,
   });
 
