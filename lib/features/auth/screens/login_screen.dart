@@ -320,7 +320,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       _isSignUp
                           ? 'Already have an account?'
-                          : 'New to YatraWise?',
+                          : 'New to Tourism?',
                       style: text.bodyMedium,
                     ),
                     TextButton(

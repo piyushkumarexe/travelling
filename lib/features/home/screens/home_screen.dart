@@ -608,6 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
       childAspectRatio: 1.9,
       children: <Widget>[
         _actionTile('AI Assistant', Icons.auto_awesome, '/assistant'),
+        _actionTile('Price check', Icons.price_check, '/guardian'),
         _actionTile('Explore', Icons.explore, '/explore'),
         _actionTile('Map & routes', Icons.map, '/map'),
         _actionTile('Report incident', Icons.campaign, '/incidents/report'),

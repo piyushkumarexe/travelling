@@ -35,7 +35,7 @@ class SetupGuideScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const Text(
-                'YatraWise',
+                'Tourism',
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 20),
@@ -61,7 +61,7 @@ class SetupGuideScreen extends StatelessWidget {
         'manually (apiKey, appId, messagingSenderId, projectId, bucket).',
       ),
       (
-        '3. Deploy the YatraWise backend',
+        '3. Deploy the Tourism backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
         'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
         '(see functions/.env.example).',
@@ -85,7 +85,7 @@ class SetupGuideScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('YatraWise setup')),
+      appBar: AppBar(title: const Text('Tourism setup')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: <Widget>[

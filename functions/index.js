@@ -1,4 +1,4 @@
-/* YatraWise secure backend — all third-party secrets stay server-side.
+/* Tourism secure backend — all third-party secrets stay server-side.
  * Each endpoint is a v2 onRequest export; the export name is the URL path. */
 'use strict';
 
@@ -352,7 +352,7 @@ exports.chat = onRequest(
     }
 
     let system =
-      'You are YatraWise, a smart tourism and personal-safety assistant. ' +
+      'You are Tourism, a smart tourism and personal-safety assistant. ' +
       'Answer travel questions (attractions, food, transport, itineraries, local tips) ' +
       'with practical, current, location-aware advice. Keep replies under 250 words, ' +
       'friendly and specific. If safety is at stake, advise calling local emergency services. ' +

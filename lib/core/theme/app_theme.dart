@@ -1,47 +1,87 @@
 import 'package:flutter/material.dart';
 
-/// YatraWise "Clean Minimal" theme (uiverse-inspired soft UI):
-/// fresh teal accent, hairline borders, soft shadows, pill-ish radii.
-
+/// Tourism "premium glass" theme — uiverse-inspired: gradient + glow buttons,
+/// translucent glass cards, deep violet/cyan signature and soft radii.
+///
+/// Palette:
+///   brand gradient  violet #7C4DFF → cyan #00E5FF
+///   danger           rosy red
+///   warning          amber
+///   success          emerald
 class AppTheme {
   AppTheme._();
 
-  static const Color seed = Color(0xFF0D9488);
-  static const Color seedBright = Color(0xFF14B8A6);
-  static const Color danger = Color(0xFFE11D48);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color success = Color(0xFF16A34A);
+  // Signature gradient endpoints (buttons, accents, glows).
+  static const Color brandStart = Color(0xFF7C4DFF);
+  static const Color brandEnd = Color(0xFF00E5FF);
 
-  static const double cardRadius = 18;
+  // Kept for backwards-compat with existing call sites.
+  static const Color seed = brandStart;
+  static const Color seedBright = brandEnd;
+
+  static const Color danger = Color(0xFFFF3B5C);
+  static const Color warning = Color(0xFFFFB020);
+  static const Color success = Color(0xFF2BD576);
+
+  static const double cardRadius = 20;
+
+  /// Signature violet→cyan gradient used for primary buttons and accents.
+  static const LinearGradient brandGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[brandStart, brandEnd],
+  );
 
   /// Soft "floating card" shadow used across the app.
   static List<BoxShadow> softShadow(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return <BoxShadow>[
       BoxShadow(
-        color: Colors.black.withValues(alpha: dark ? 0.28 : 0.06),
-        blurRadius: 18,
-        offset: const Offset(0, 6),
+        color: Colors.black.withValues(alpha: dark ? 0.45 : 0.08),
+        blurRadius: 24,
+        offset: const Offset(0, 10),
       ),
     ];
   }
+
+  /// Colored "neon glow" for primary actions (uiverse-style glow button).
+  static List<BoxShadow> glow(Color color, {double alpha = 0.45}) =>
+      <BoxShadow>[
+        BoxShadow(
+          color: color.withValues(alpha: alpha),
+          blurRadius: 18,
+          offset: const Offset(0, 6),
+        ),
+        BoxShadow(
+          color: color.withValues(alpha: alpha * 0.6),
+          blurRadius: 40,
+          offset: const Offset(0, 12),
+        ),
+      ];
 
   static ThemeData light() => _build(Brightness.light);
   static ThemeData dark() => _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
-    final ColorScheme scheme =
-        ColorScheme.fromSeed(seedColor: seed, brightness: brightness);
     final bool dark = brightness == Brightness.dark;
+    final ColorScheme scheme = ColorScheme.fromSeed(
+      seedColor: brandStart,
+      brightness: brightness,
+    ).copyWith(
+      primary: dark ? brandEnd : brandStart,
+      secondary: dark ? brandStart : brandEnd,
+      surface: dark ? const Color(0xFF16102C) : Colors.white,
+    );
+
+    final Color scaffold = dark ? const Color(0xFF0D0920) : const Color(0xFFF6F5FB);
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor:
-          dark ? scheme.surface : const Color(0xFFF6F8F7),
+      scaffoldBackgroundColor: scaffold,
       visualDensity: VisualDensity.adaptivePlatformDensity,
       appBarTheme: AppBarTheme(
-        backgroundColor: dark ? scheme.surface : const Color(0xFFF6F8F7),
+        backgroundColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -51,12 +91,14 @@ class AppTheme {
           color: scheme.onSurface,
           fontSize: 20,
           fontWeight: FontWeight.w800,
+          letterSpacing: -0.3,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: dark ? scheme.surfaceContainer : Colors.white,
-        indicatorColor: scheme.primary.withValues(alpha: 0.12),
-        elevation: 8,
+        backgroundColor:
+            dark ? const Color(0xFF120C28) : const Color(0xFFFFFFFF),
+        indicatorColor: brandStart.withValues(alpha: dark ? 0.30 : 0.14),
+        elevation: 10,
         labelTextStyle: WidgetStatePropertyAll<TextStyle>(
           TextStyle(
             fontSize: 12,
@@ -68,6 +110,7 @@ class AppTheme {
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: danger,
         foregroundColor: Colors.white,
+        elevation: 8,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
         ),
@@ -77,10 +120,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
-          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -88,6 +128,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+          side: BorderSide(color: scheme.outlineVariant),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
@@ -101,15 +142,18 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
+        fillColor: dark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF1EFFA),
         isDense: true,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.outlineVariant),
+          borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.primary, width: 1.6),
+          borderSide: const BorderSide(color: brandEnd, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -126,33 +170,46 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        backgroundColor: dark ? const Color(0xFF241A44) : const Color(0xFF2A2138),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         showDragHandle: true,
         backgroundColor: Colors.transparent,
       ),
-      progressIndicatorTheme:
-          const ProgressIndicatorThemeData(color: seed),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: brandEnd),
       dividerTheme: DividerThemeData(color: scheme.outlineVariant),
       listTileTheme: ListTileThemeData(iconColor: scheme.primary),
     );
   }
 
-  /// Filled "card" style used across the app (avoids global CardTheme which
-  /// changed type across Flutter versions).
+  /// Glassmorphism "card" style used across the app: translucent surface,
+  /// hairline border and a soft drop shadow.
   static BoxDecoration cardBox(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
-      color: dark ? scheme.surfaceContainerLow : Colors.white,
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: dark
+            ? <Color>[
+                Colors.white.withValues(alpha: 0.08),
+                Colors.white.withValues(alpha: 0.03),
+              ]
+            : <Color>[Colors.white, const Color(0xFFFBFBFF)],
+      ),
       borderRadius: BorderRadius.circular(cardRadius),
-      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      border: Border.all(
+        color: dark
+            ? Colors.white.withValues(alpha: 0.10)
+            : scheme.outlineVariant.withValues(alpha: 0.5),
+      ),
       boxShadow: <BoxShadow>[
         BoxShadow(
-          color: Colors.black.withValues(alpha: dark ? 0.28 : 0.06),
-          blurRadius: 18,
-          offset: const Offset(0, 6),
+          color: Colors.black.withValues(alpha: dark ? 0.35 : 0.06),
+          blurRadius: 22,
+          offset: const Offset(0, 10),
         ),
       ],
     );

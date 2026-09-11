@@ -11,6 +11,7 @@ import '../../features/digital_id/screens/verify_id_screen.dart';
 import '../../features/eco/screens/eco_screen.dart';
 import '../../features/explore/screens/explore_screen.dart';
 import '../../features/explore/screens/place_detail_screen.dart';
+import '../../features/guardian/screens/payment_guardian_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/incidents/screens/incident_detail_screen.dart';
 import '../../features/incidents/screens/incident_history_screen.dart';
@@ -159,6 +160,11 @@ class AppRouter {
         path: '/weather',
         builder: (BuildContext context, GoRouterState state) =>
             const WeatherScreen(),
+      ),
+      GoRoute(
+        path: '/guardian',
+        builder: (BuildContext context, GoRouterState state) =>
+            const PaymentGuardianScreen(),
       ),
       GoRoute(
         path: '/notifications',

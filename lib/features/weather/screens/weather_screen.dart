@@ -12,7 +12,7 @@ import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/weather.dart';
 
-/// Live weather (OpenWeather via the YatraWise backend) with practical
+/// Live weather (OpenWeather via the Tourism backend) with practical
 /// safety notes and a 5-day forecast for the current location.
 class WeatherScreen extends StatefulWidget {
   const WeatherScreen({super.key});

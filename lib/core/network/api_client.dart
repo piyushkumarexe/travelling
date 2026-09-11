@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_exception.dart';
 
-/// HTTP client for the YatraWise backend (Firebase Cloud Functions).
+/// HTTP client for the Tourism backend (Firebase Cloud Functions).
 ///
 /// The backend URL is derived from the Firebase project id; no secrets and
 /// no third-party endpoints are reachable from this client. Every request
@@ -91,7 +91,7 @@ class ApiClient {
       if (lower.contains('<html') || lower.contains('<!doctype html')) {
         return ApiException(
           ApiErrorKind.server,
-          'The YatraWise backend is not available yet (Cloud Functions are '
+          'The Tourism backend is not available yet (Cloud Functions are '
           'not deployed for this Firebase project). Deploy it with: '
           '`firebase deploy --only functions`.',
           statusCode: code,
@@ -121,7 +121,7 @@ class ApiClient {
       case DioExceptionType.receiveTimeout:
       case DioExceptionType.transformTimeout:
         return ApiException(ApiErrorKind.timeout,
-            'The YatraWise backend did not respond in time. Check your connection and try again.');
+            'The Tourism backend did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:
         return ApiException(ApiErrorKind.network,
             'No network connection. Check your internet connection and try again.');
@@ -132,7 +132,7 @@ class ApiClient {
         return ApiException(ApiErrorKind.unknown, 'Request cancelled.');
       case DioExceptionType.badResponse:
         return ApiException(ApiErrorKind.server,
-            msg ?? 'The YatraWise backend returned an error (${code ?? 'unknown'}).',
+            msg ?? 'The Tourism backend returned an error (${code ?? 'unknown'}).',
             statusCode: code,
             details: details);
       case DioExceptionType.unknown:

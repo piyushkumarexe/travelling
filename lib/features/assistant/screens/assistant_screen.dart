@@ -8,7 +8,7 @@ import '../../../core/state/app_container.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/repositories/ai_repository.dart';
 
-/// Real AI tourism assistant (NVIDIA API via the YatraWise backend).
+/// Real AI tourism assistant (NVIDIA API via the Tourism backend).
 /// No canned responses: every answer comes from the live model with the
 /// user's location and preferences as context.
 class AssistantScreen extends StatefulWidget {

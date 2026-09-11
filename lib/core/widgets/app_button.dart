@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
+///
+/// Primary buttons use the uiverse-style signature gradient + neon glow.
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
@@ -30,7 +32,10 @@ class PrimaryButton extends StatelessWidget {
         ? const SizedBox(
             height: 20,
             width: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
           )
         : Row(
             mainAxisSize: MainAxisSize.min,
@@ -42,38 +47,73 @@ class PrimaryButton extends StatelessWidget {
               Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
             ],
           );
+
     if (outlined) {
-      return OutlinedButton(
-        onPressed: enabled ? onPressed : null,
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(88, 48),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: enabled ? onPressed : null,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+            side: BorderSide(
+              color: danger
+                  ? AppTheme.danger
+                  : scheme.primary.withValues(alpha: 0.7),
+            ),
+            foregroundColor: danger ? AppTheme.danger : scheme.primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Center(child: child),
         ),
       );
     }
-    return SizedBox(
+
+    final List<Color> gradientColors = !enabled
+        ? <Color>[
+            scheme.onSurface.withValues(alpha: 0.12),
+            scheme.onSurface.withValues(alpha: 0.12),
+          ]
+        : danger
+            ? const <Color>[Color(0xFFFF5A79), AppTheme.danger]
+            : const <Color>[AppTheme.brandStart, AppTheme.brandEnd];
+    final List<BoxShadow> shadows = !enabled
+        ? const <BoxShadow>[]
+        : AppTheme.glow(danger ? AppTheme.danger : AppTheme.brandStart);
+
+    return Container(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: enabled ? onPressed : null,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          backgroundColor: danger ? AppTheme.danger : scheme.primary,
-          foregroundColor: Colors.white,
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradientColors,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: shadows,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: enabled ? onPressed : null,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 52),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Center(
+              child: DefaultTextStyle(
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+                child: child,
+              ),
+            ),
           ),
         ),
-        child: Center(child: child),
       ),
     );
   }
@@ -93,15 +133,16 @@ class IconButtonCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color c = color ?? Theme.of(context).colorScheme.primary;
     return Material(
-      color: (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.1),
+      color: c.withValues(alpha: 0.1),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(icon, color: color),
+          child: Icon(icon, color: c),
         ),
       ),
     );

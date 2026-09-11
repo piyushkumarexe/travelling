@@ -8,7 +8,7 @@ import 'api_exception.dart';
 /// Direct OpenAI-compatible chat-completions client (NVIDIA NIM or any
 /// provider that exposes `/chat/completions`).
 ///
-/// Fallback path used only when the YatraWise Cloud Functions backend is
+/// Fallback path used only when the Tourism Cloud Functions backend is
 /// unreachable (not deployed yet) AND a key was compiled into the app:
 ///
 ///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...        (NVIDIA)
@@ -239,7 +239,7 @@ class OpenAiCompatClient {
     String? profileContext,
   }) async {
     String system =
-        'You are YatraWise, a smart tourism and personal-safety assistant. '
+        'You are Tourism, a smart tourism and personal-safety assistant. '
         'Answer travel questions (attractions, food, transport, itineraries, local tips) '
         'with practical, current, location-aware advice. Keep replies under 250 words, '
         'friendly and specific. If safety is at stake, advise calling local emergency services. '

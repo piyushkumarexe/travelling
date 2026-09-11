@@ -4,7 +4,7 @@ import '../../core/network/openai_compat_client.dart';
 import '../models/itinerary.dart';
 
 /// AI calls with a two-step transport fallback:
-///   1. YatraWise Cloud Functions backend (server-side key, rate limits).
+///   1. Tourism Cloud Functions backend (server-side key, rate limits).
 ///   2. Direct OpenAI-compatible provider — NVIDIA NIM when a build-time
 ///      `NVIDIA_API_KEY` is present, otherwise a generic provider configured
 ///      via `AI_API_KEY` + `AI_BASE_URL` (+ `AI_MODEL`).
