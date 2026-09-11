@@ -275,7 +275,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
                 TextButton.icon(
                   icon: const Icon(Icons.map, size: 18),
                   label: const Text('Map'),
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                       '/map?lat=${inc.lat}&lng=${inc.lng}&name=incident'),
                 ),
               ],

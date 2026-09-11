@@ -66,7 +66,7 @@ class _IncidentHistoryScreenState extends State<IncidentHistoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Incident history')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/incidents/report'),
+        onPressed: () => context.push('/incidents/report'),
         icon: const Icon(Icons.add),
         label: const Text('Report incident'),
       ),
@@ -84,7 +84,7 @@ class _IncidentHistoryScreenState extends State<IncidentHistoryScreen> {
                       message:
                           'When you submit a report, it appears here with its status and AI analysis.',
                       actionLabel: 'Report an incident',
-                      onAction: () => context.go('/incidents/report'),
+                      onAction: () => context.push('/incidents/report'),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
@@ -94,7 +94,7 @@ class _IncidentHistoryScreenState extends State<IncidentHistoryScreen> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: AppCard(
-                            onTap: () => context.go('/incidents/${inc.id}'),
+                            onTap: () => context.push('/incidents/${inc.id}'),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[

@@ -58,13 +58,50 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Verify APK exists
+      - name: Restore upload keystore (permanent signing key)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
-          file build/app/outputs/flutter-apk/app-release.apk
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — the APK will be signed with a throwaway debug key (SHA changes every build, updates will NOT install over old versions). Add the 4 ANDROID_* secrets (see android/RELEASE_SIGNING_BACKUP.txt) to get a permanent SHA."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.p12
+          echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/app/upload-keystore.p12" >> "$GITHUB_ENV"
+          echo "### Permanent signing fingerprints" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null | grep -E "Alias name|SHA1:|SHA256:" >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          DEFINES=""
+          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
+            DEFINES="--dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
+          fi
+          # --build-number uses the (always increasing) workflow run number so
+          # every new APK installs directly over the previous version.
+          flutter build apk --release --build-number=${{ github.run_number }} $DEFINES
+
+      - name: Verify APK signature
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          ls -lh "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)"
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
+            echo "### APK signature" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            grep -E "SHA-256|SHA-1" /tmp/certs.txt | head -n 4 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            jarsigner -verify "$APK"
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -73,4 +110,3 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
-          

@@ -483,7 +483,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
             label: const Text('Show on map'),
             onPressed: () {
               Navigator.of(ctx).pop();
-              context.go('/map?lat=${z.lat}&lng=${z.lng}&name=zone');
+              context.push('/map?lat=${z.lat}&lng=${z.lng}&name=zone');
             },
           ),
         ],

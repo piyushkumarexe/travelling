@@ -45,3 +45,12 @@ firebase-debug.log
 !.env.example
 *.pem
 *.jks
+
+# Release signing (permanent upload key - NEVER commit)
+android/upload-keystore.p12
+android/upload-keystore.b64
+android/RELEASE_SIGNING_BACKUP.txt
+android/keystore.properties
+*.jks
+*.p12
+*.pfx

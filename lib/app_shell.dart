@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/services/geofence_service.dart';
@@ -15,6 +16,10 @@ import 'core/widgets/sos_sheet.dart';
 /// Also owns the geofence lifecycle: monitoring starts when signed in and
 /// stops on sign-out. Geofence alerts raise a modal in-app warning with
 /// direct access to safety info and SOS.
+///
+/// System back-button behavior: back from any tab returns to Home first
+/// (one step back, never an instant exit), and back on Home requires a
+/// double-press within 2 seconds to close the app.
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.child});
 
@@ -35,6 +40,7 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
   bool _startedGeofence = false;
+  DateTime? _lastBackPress;
 
   @override
   void didChangeDependencies() {
@@ -88,7 +94,7 @@ class _AppShellState extends State<AppShell> {
             TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                context.go('/safety');
+                context.push('/safety');
               },
               child: const Text('Safety info'),
             ),
@@ -121,48 +127,86 @@ class _AppShellState extends State<AppShell> {
     return 0;
   }
 
+  /// Handles the system back button when the shell route itself is on top
+  /// (dialogs, sheets and pushed pages above it pop on their own first).
+  void _handleSystemBack() {
+    final GoRouter router = GoRouter.of(context);
+    // Safety net: if anything is still above us, pop it.
+    if (router.canPop()) {
+      router.pop();
+      return;
+    }
+    final String location = GoRouterState.of(context).matchedLocation;
+    // One step back: any tab other than Home goes to Home first.
+    if (location != '/home') {
+      context.go('/home');
+      return;
+    }
+    // On Home: require a double-press within 2 seconds to exit.
+    final DateTime now = DateTime.now();
+    if (_lastBackPress == null ||
+        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+      _lastBackPress = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final String location = GoRouterState.of(context).matchedLocation;
     final int index = _indexOf(location);
     final bool onTab = _tabs.contains(location);
 
-    return Scaffold(
-      body: widget.child,
-      floatingActionButton: const SosFab(),
-      bottomNavigationBar: onTab
-          ? NavigationBar(
-              selectedIndex: index,
-              onDestinationSelected: (int i) => context.go(_tabs[i]),
-              destinations: const <NavigationDestination>[
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.explore_outlined),
-                  selectedIcon: Icon(Icons.explore),
-                  label: 'Explore',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.map_outlined),
-                  selectedIcon: Icon(Icons.map),
-                  label: 'Map',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.shield_outlined),
-                  selectedIcon: Icon(Icons.shield),
-                  label: 'Safety',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: 'Profile',
-                ),
-              ],
-            )
-          : null,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        _handleSystemBack();
+      },
+      child: Scaffold(
+        body: widget.child,
+        floatingActionButton: const SosFab(),
+        bottomNavigationBar: onTab
+            ? NavigationBar(
+                selectedIndex: index,
+                onDestinationSelected: (int i) => context.go(_tabs[i]),
+                destinations: const <NavigationDestination>[
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.explore_outlined),
+                    selectedIcon: Icon(Icons.explore),
+                    label: 'Explore',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.map_outlined),
+                    selectedIcon: Icon(Icons.map),
+                    label: 'Map',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.shield_outlined),
+                    selectedIcon: Icon(Icons.shield),
+                    label: 'Safety',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.person_outline),
+                    selectedIcon: Icon(Icons.person),
+                    label: 'Profile',
+                  ),
+                ],
+              )
+            : null,
+      ),
     );
   }
 }

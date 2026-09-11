@@ -531,7 +531,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                   label: 'Incident history',
                   icon: Icons.history,
                   outlined: true,
-                  onPressed: () => context.go('/incidents'),
+                  onPressed: () => context.pushReplacement('/incidents'),
                 ),
               ),
               const SizedBox(width: 10),

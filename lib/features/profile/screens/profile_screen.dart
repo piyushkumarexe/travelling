@@ -146,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _linkTile(
       IconData icon, String label, String subtitle, String route) {
     return AppCard(
-      onTap: () => context.go(route),
+      onTap: () => context.push(route),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: <Widget>[

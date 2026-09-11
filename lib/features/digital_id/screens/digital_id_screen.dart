@@ -178,7 +178,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
           TextButton.icon(
             icon: const Icon(Icons.qr_code_scanner, size: 20),
             label: const Text('Verify'),
-            onPressed: () => context.go('/digital-id/verify'),
+            onPressed: () => context.push('/digital-id/verify'),
           ),
         ],
       ),

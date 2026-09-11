@@ -78,7 +78,13 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
       final String? uid = _uid();
       if (uid == null) return;
       await _c.itinerariesRepository.remove(uid, widget.id);
-      if (mounted) context.go('/itineraries');
+      if (mounted) {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/itineraries');
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -104,7 +110,7 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
         return;
       }
       final Place p = places.first;
-      context.go('/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}');
+      context.push('/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

@@ -272,7 +272,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   void _viewOnMap() {
     final Place? p = _place;
     if (p == null) return;
-    context.go(
+    context.push(
       '/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
     );
   }

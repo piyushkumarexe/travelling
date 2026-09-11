@@ -338,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      onPressed: () => context.go('/notifications'),
+      onPressed: () => context.push('/notifications'),
     );
   }
 
@@ -386,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     return AppCard(
-      onTap: () => context.go('/weather'),
+      onTap: () => context.push('/weather'),
       child: Row(
         children: <Widget>[
           Icon(_weatherIcon(w.icon), size: 40, color: scheme.primary),
@@ -434,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = _nearHighRisk ? AppTheme.danger : AppTheme.success;
     return AppCard(
-      onTap: () => context.go('/safety'),
+      onTap: () => context.push('/safety'),
       child: Row(
         children: <Widget>[
           Container(
@@ -538,10 +538,10 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             children: <Widget>[
               _whiteTextButton(Icons.campaign, 'Report incident',
-                  () => context.go('/incidents/report')),
+                  () => context.push('/incidents/report')),
               const SizedBox(width: 16),
               _whiteTextButton(Icons.qr_code_2, 'Emergency ID',
-                  () => context.go('/digital-id')),
+                  () => context.push('/digital-id')),
             ],
           ),
         ],
@@ -602,7 +602,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _actionTile(String label, IconData icon, String route) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return AppCard(
-      onTap: () => context.go(route),
+      onTap: () => context.push(route),
       padding: const EdgeInsets.all(12),
       child: Row(
         children: <Widget>[
@@ -691,7 +691,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final Color color =
         a.type == 'emergency' ? AppTheme.danger : AppTheme.warning;
     return AppCard(
-      onTap: () => context.go('/notifications'),
+      onTap: () => context.push('/notifications'),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: <Widget>[

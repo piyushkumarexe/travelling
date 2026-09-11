@@ -20,6 +20,21 @@ class AppConfig {
   static String functionsBaseUrl(String projectId) =>
       'https://$functionsRegion-$projectId.cloudfunctions.net';
 
+  /// Direct NVIDIA access — fallback when the Cloud Functions backend is
+  /// not deployed/reachable yet. Injected at build time:
+  ///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...
+  /// Empty by default, in which case only the backend is used.
+  static const String nvidiaApiKey =
+      String.fromEnvironment('NVIDIA_API_KEY', defaultValue: '');
+  static const String nvidiaModel = String.fromEnvironment(
+    'NVIDIA_MODEL',
+    defaultValue: 'meta/llama3.1-70b-instruct',
+  );
+  static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
+
+  /// True when a direct NVIDIA key was compiled into the app.
+  static bool get nvidiaDirectEnabled => nvidiaApiKey.isNotEmpty;
+
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 
