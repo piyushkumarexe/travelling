@@ -18,7 +18,7 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 android {
     namespace = "app.roamio.tourism"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
