@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app_shell.dart';
+import '../../data/models/places.dart';
 import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
@@ -25,7 +26,6 @@ import '../../features/profile/screens/profile_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
-import '../../data/models/places.dart';
 import '../state/app_container.dart';
 import '../state/auth_state.dart';
 

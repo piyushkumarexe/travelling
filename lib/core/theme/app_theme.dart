@@ -162,7 +162,6 @@ class AppTheme {
 
   /// shadcn-style card: clean surface, hairline border, faint shadow.
   static BoxDecoration cardBox(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     return BoxDecoration(
       color: dark ? const Color(0xFF18181B) : Colors.white,
