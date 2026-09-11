@@ -266,7 +266,7 @@ async function nvidiaChat(messages, { jsonMode = false, maxTokens = 1200 } = {})
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: process.env.NVIDIA_MODEL || 'meta/llama3.1-70b-instruct',
+      model: process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct',
       messages,
       temperature: 0.6,
       top_p: 0.9,
