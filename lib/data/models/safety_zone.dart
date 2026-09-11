@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// A configured safety zone (admin-managed). Users only read these.
-library;
 
 class SafetyZone {
   SafetyZone({

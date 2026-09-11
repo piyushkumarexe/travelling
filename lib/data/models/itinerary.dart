@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// An AI-generated, saved travel itinerary.
-library;
 
 class ItineraryItem {
   ItineraryItem({

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// Small colored pill badges for risk levels and statuses.
-library;
 
 class RiskBadge extends StatelessWidget {
   const RiskBadge({super.key, required this.risk});
@@ -11,7 +10,6 @@ class RiskBadge extends StatelessWidget {
   final String risk;
 
   static Color colorFor(BuildContext context, String risk) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return switch (risk) {
       'low' => AppTheme.success,
       'medium' => AppTheme.warning,
@@ -56,8 +54,7 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color c = color ?? scheme.primary;
+    final Color c = color ?? Theme.of(context).colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(

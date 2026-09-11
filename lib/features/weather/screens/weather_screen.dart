@@ -12,7 +12,7 @@ import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/weather.dart';
 
-/// Live weather (OpenWeather via the Roamio backend) with practical
+/// Live weather (OpenWeather via the Tourism backend) with practical
 /// safety notes and a 5-day forecast for the current location.
 class WeatherScreen extends StatefulWidget {
   const WeatherScreen({super.key});
@@ -123,7 +123,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
       width: size,
       height: size,
       loadingBuilder: (BuildContext context, Widget child,
-          ProgressiveImageChunkEvent? _) =>
+          ImageChunkEvent? _) =>
           fallback,
       errorBuilder: (BuildContext context, Object e, StackTrace? s) =>
           fallback,
@@ -450,8 +450,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     width: 14,
                     height: 14,
                     child: Icon(Icons.circle,
-                        size: 6, color: AppTheme.warning,
-                        alignment: Alignment.center),
+                        size: 6, color: AppTheme.warning),
                   ),
                   const SizedBox(width: 8),
                   Expanded(

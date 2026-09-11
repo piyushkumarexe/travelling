@@ -37,9 +37,6 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   Position? _position;
   Uint8List? _photoBytes;
   bool _photoLoading = false;
-  bool _photoFailed = false;
-
-  RouteInfo? _route;
   bool _routeLoading = false;
 
   @override
@@ -94,7 +91,6 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         if (mounted) {
           setState(() {
             _photoLoading = false;
-            _photoFailed = true;
           });
         }
       }
@@ -139,7 +135,6 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       );
       if (mounted) {
         setState(() {
-          _route = r;
           _routeLoading = false;
         });
         _showRouteSheet(r, p);

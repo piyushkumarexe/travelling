@@ -8,7 +8,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// cryptographically random 64-hex-char identifier) — never the name,
 /// contact or other private data. Verification is done server-side against
 /// the `digitalIds` collection.
-library;
 
 class DigitalId {
   DigitalId({

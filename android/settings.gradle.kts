@@ -1,9 +1,15 @@
 pluginManagement {
     val flutterSdkPath = run {
-        val properties = java.util.Properties()
-        file("local.properties").inputStream().use { properties.load(it) }
-        val flutterSdkPath = properties.getProperty("flutter.sdk")
-        require(flutterSdkPath != null) { "flutter.sdk not set in local.properties" }
+        // Avoid java.util.Properties here: Gradle's Kotlin DSL exposes a
+        // `java` extension which can shadow the Java package in CI.
+        val flutterSdkPath = file("local.properties")
+            .readLines()
+            .firstOrNull { it.startsWith("flutter.sdk=") }
+            ?.substringAfter('=')
+            ?.trim()
+        require(!flutterSdkPath.isNullOrEmpty()) {
+            "flutter.sdk not set in local.properties"
+        }
         flutterSdkPath
     }
 

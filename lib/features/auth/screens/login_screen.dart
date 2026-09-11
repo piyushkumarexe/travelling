@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../data/repositories/auth_repository.dart'
+import '../../../core/widgets/creator_mark.dart';
+import '../../../data/repositories/auth_repository.dart'
     show AuthException;
+import '../../map/screens/map_screen.dart';
+import '../widgets/email_auth_sheet.dart';
 
 /// Real Google Sign-In screen (Firebase Authentication under the hood).
 class LoginScreen extends StatefulWidget {
@@ -40,6 +43,15 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _showEmailSignIn() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const EmailAuthSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -50,22 +62,19 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-                  ),
-                  borderRadius: BorderRadius.circular(28),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/branding/tourism_logo.png',
+                  width: 104,
+                  height: 104,
+                  fit: BoxFit.cover,
+                  semanticLabel: 'Tourism app logo',
                 ),
-                child: const Icon(Icons.explore, size: 52, color: Colors.white),
               ),
               const SizedBox(height: 24),
               Text(
-                'Roamio',
+                'Tourism',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -77,13 +86,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: <Widget>[
-                  _featureChip(Icons.map, 'Real Google Maps'),
-                  const SizedBox(width: 8),
+                  _featureChip(Icons.map, 'OpenStreetMap'),
                   _featureChip(Icons.sos, 'SOS & geofencing'),
-                  const SizedBox(width: 8),
                   _featureChip(Icons.auto_awesome, 'AI assistant'),
                 ],
               ),
@@ -93,6 +102,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 icon: _loading ? null : Icons.account_circle,
                 loading: _loading,
                 onPressed: _signIn,
+              ),
+              const SizedBox(height: 10),
+              PrimaryButton(
+                label: 'Continue with email',
+                icon: Icons.mail_outline,
+                outlined: true,
+                onPressed: _showEmailSignIn,
+              ),
+              const SizedBox(height: 10),
+              PrimaryButton(
+                label: 'Explore demo map',
+                icon: Icons.map_outlined,
+                outlined: true,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const MapScreen(),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
               Text(
@@ -104,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ?.copyWith(color: scheme.onSurfaceVariant),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const CreatorMark(padding: EdgeInsets.only(top: 16)),
             ],
           ),
         ),

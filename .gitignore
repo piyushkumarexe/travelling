@@ -24,7 +24,6 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
 
 # Android
 **/android/.gradle
@@ -40,6 +39,7 @@ firebase-debug.log
 .firebaserc.bak
 
 # Secrets / environment
+.private/
 .env
 .env.*
 !.env.example

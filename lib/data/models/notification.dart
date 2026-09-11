@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///
 /// Stored per user in the subcollection users/{uid}/notifications so each
 /// user can only ever read their own history (enforced by security rules).
-library;
 
 class AppNotification {
   AppNotification({

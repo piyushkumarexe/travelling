@@ -220,7 +220,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     'The QR code contains only a random verification token — '
                     'no name, phone or other personal data. First responders '
                     'scan it (or type the token) and the app verifies it '
-                    'against Roamio\'s secure records.',
+                    'against Tourism\'s secure records.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -351,7 +351,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                   size: 180,
                   backgroundColor: Colors.white,
                   eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeStyleShape.square,
+                      eyeShape: QrEyeShape.square,
                       color: Colors.black),
                   dataModuleStyle: const QrDataModuleStyle(
                       dataModuleShape: QrDataModuleShape.square,

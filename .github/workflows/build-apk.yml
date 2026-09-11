@@ -2,10 +2,19 @@ name: Build APK
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: Deploy Firebase Functions and rules after a successful build
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   analyze-test:
@@ -32,9 +41,16 @@ jobs:
         run: flutter test
 
   build-apk:
-    name: Build release APK
+    name: Build signed release APK
     runs-on: ubuntu-latest
     needs: analyze-test
+    env:
+      MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,8 +74,28 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Configure permanent Android signing
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/tourism-upload.jks
+          cat > android/key.properties <<EOF
+          storeFile=app/tourism-upload.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          storeType=${ANDROID_KEYSTORE_TYPE:-JKS}
+          EOF
+
       - name: Build release APK
-        run: flutter build apk --release
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER="$(date -u +%y%j%H%M)"
+          flutter build apk --release \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define=MAPTILER_API_KEY="$MAPTILER_API_KEY"
 
       - name: Verify APK exists
         run: |
@@ -69,8 +105,60 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: roamio-release-apk
+          name: tourism-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
-          
+
+  deploy-backend:
+    name: Deploy Firebase backend
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_backend
+    runs-on: ubuntu-latest
+    needs: [analyze-test, build-apk]
+    env:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate deployment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON" || { echo 'FIREBASE_SERVICE_ACCOUNT_JSON is required'; exit 1; }
+          test -n "$NVIDIA_API_KEY" || { echo 'NVIDIA_API_KEY is required'; exit 1; }
+
+      - name: Authenticate Firebase service account
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Install Firebase tools and Functions dependencies
+        run: |
+          npm install --global firebase-tools
+          npm install --prefix functions --omit=dev
+
+      - name: Sync backend secrets to Firebase Secret Manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$NVIDIA_API_KEY" | firebase functions:secrets:set NVIDIA_API_KEY --data-file=- --force --project tourism-39425
+          if [ -n "$OPENWEATHER_API_KEY" ]; then
+            printf '%s' "$OPENWEATHER_API_KEY" | firebase functions:secrets:set OPENWEATHER_API_KEY --data-file=- --force --project tourism-39425
+          fi
+          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+            printf '%s' "$GOOGLE_MAPS_API_KEY" | firebase functions:secrets:set GOOGLE_MAPS_API_KEY --data-file=- --force --project tourism-39425
+          fi
+
+      - name: Deploy Functions and security rules
+        run: firebase deploy --only functions,firestore:rules,storage:rules --project tourism-39425 --non-interactive

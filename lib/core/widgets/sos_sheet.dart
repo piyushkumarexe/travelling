@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -128,7 +129,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
           type: 'emergency',
           payload: <String, dynamic>{'eventId': id},
         )
-        .catchError((Object _) {});
+        .catchError((Object _) => '');
   }
 
   Future<void> _loadServices() async {
@@ -284,13 +285,13 @@ class _SosSheetViewState extends State<_SosSheetView> {
         ),
         const SizedBox(height: 12),
         Text(
-          'Roamio will:\n'
+          'Tourism will:\n'
           '• Capture your current GPS location\n'
           '• Create an emergency event (visible to you and authorized '
           'administrators)\n'
           '• Show an on-device alert and nearby emergency services\n'
           '• Let you call police / hospital / fire directly\n\n'
-          'Roamio does not automatically contact authorities. If you are in '
+          'Tourism does not automatically contact authorities. If you are in '
           'immediate danger, call your local emergency number first.',
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,
@@ -464,7 +465,10 @@ class _SosSheetViewState extends State<_SosSheetView> {
     return Material(
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: scheme.outlineVariant),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(

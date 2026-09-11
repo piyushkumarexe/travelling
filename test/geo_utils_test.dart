@@ -19,12 +19,13 @@ void main() {
       expect(d, lessThan(1050));
     });
 
-    test('Delhi–Jaipur is roughly 280 km', () {
+    test('Delhi–Jaipur straight-line distance is roughly 235 km', () {
       final LatLng delhi = LatLng(28.6139, 77.2090);
       final LatLng jaipur = LatLng(26.9124, 75.7873);
       final double d = GeoUtils.distanceMeters(delhi, jaipur);
-      expect(d, greaterThan(270000));
-      expect(d, lessThan(295000));
+      // GeoUtils calculates great-circle distance, not the longer road route.
+      expect(d, greaterThan(230000));
+      expect(d, lessThan(240000));
     });
   });
 

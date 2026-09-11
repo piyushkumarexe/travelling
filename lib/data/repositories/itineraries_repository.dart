@@ -25,7 +25,7 @@ class ItinerariesRepository {
       .doc(id)
       .snapshots()
       .map((DocumentSnapshot<Map<String, dynamic>> d) =>
-          d.exists ? Itinerary.fromMap(d.id, d.data()) : null);
+          d.exists ? Itinerary.fromMap(d.id, d.data()!) : null);
 
   Future<String> create(String uid, Itinerary itinerary) =>
       _col(uid).add(itinerary.toMap()).then((ref) => ref.id);

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:roamio/core/theme/app_theme.dart';
 import 'package:roamio/core/widgets/app_button.dart';
+import 'package:roamio/core/widgets/app_loader.dart';
 import 'package:roamio/core/widgets/state_views.dart';
 
 void main() {
@@ -37,7 +38,7 @@ void main() {
       const PrimaryButton(label: 'Working', loading: true),
     ));
     expect(find.text('Working'), findsNothing);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(TravelBallLoader), findsOneWidget);
   });
 
   testWidgets('EmptyState renders title and action',

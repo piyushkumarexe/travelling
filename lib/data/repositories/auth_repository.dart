@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../firebase_options.dart';
+
 /// Real Google Sign-In + Firebase Authentication.
-library;
 
 class AuthException implements Exception {
   AuthException(this.message);
@@ -15,7 +17,9 @@ class AuthException implements Exception {
 class AuthRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final GoogleSignIn _google = GoogleSignIn();
+  final GoogleSignIn _google = GoogleSignIn(
+    serverClientId: DefaultFirebaseOptions.googleWebClientId,
+  );
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
@@ -44,6 +48,27 @@ class AuthRepository {
       rethrow;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_friendlyAuthError(e));
+    } on PlatformException catch (e) {
+      // Google Play services reports ApiException status 10 when this app's
+      // package/signing certificate is not registered as an Android OAuth
+      // client. Keep this explicit: a retry cannot fix developer setup.
+      final String details = '${e.code} ${e.message} ${e.details}'.toLowerCase();
+      if (details.contains('api exception: 10') ||
+          details.contains('apiexception: 10') ||
+          details.contains('developer_error')) {
+        throw AuthException(
+          'Google sign-in is not configured for this APK signing certificate. '
+          'Register its SHA-1 and SHA-256 in Firebase, then try again.',
+        );
+      }
+      if (e.code == 'network_error') {
+        throw AuthException(
+          'Network error during Google sign-in. Check your connection.',
+        );
+      }
+      throw AuthException(
+        'Google sign-in failed (${e.code}). Please try again.',
+      );
     } catch (_) {
       throw AuthException('Google sign-in failed. Please try again.');
     }
@@ -55,13 +80,62 @@ class AuthRepository {
       case 'invalid-firebase-credential':
         return 'Google credential was not accepted. Try signing in again.';
       case 'account-exists-with-different-credential':
-        return 'This Google account is already linked to another Roamio account.';
+        return 'This Google account is already linked to another Tourism account.';
       case 'too-many-requests':
         return 'Too many attempts. Wait a minute and try again.';
       case 'network-request-failed':
         return 'Network error during sign-in. Check your connection.';
+      case 'invalid-email':
+        return 'Enter a valid email address.';
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'Email or password is incorrect.';
+      case 'email-already-in-use':
+        return 'An account already exists for this email.';
+      case 'weak-password':
+        return 'Use a stronger password with at least 8 characters.';
+      case 'operation-not-allowed':
+        return 'Email sign-in is not enabled in Firebase yet.';
       default:
         return 'Sign-in failed (${e.code}). Please try again.';
+    }
+  }
+
+  Future<User?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final UserCredential result = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    }
+  }
+
+  Future<User?> createAccountWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final UserCredential result = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      return result.user;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
+    }
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_friendlyAuthError(e));
     }
   }
 
@@ -84,17 +158,19 @@ class AuthRepository {
     final DocumentReference<Map<String, dynamic>> userRef =
         _db.collection('users').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> userSnap = await userRef.get();
-    if (userSnap.exists) return;
+    if (!userSnap.exists) {
+      // Keep this payload aligned with Firestore's users/{uid} create allowlist.
+      // Extended identity fields belong in profiles/{uid} below.
+      await userRef.set(<String, dynamic>{
+        'displayName': user.displayName ?? '',
+        'email': user.email ?? '',
+        'role': 'user',
+        'createdAt': Timestamp.now(),
+      });
+    }
 
-    await userRef.set(<String, dynamic>{
-      'uid': user.uid,
-      'displayName': user.displayName ?? '',
-      'email': user.email ?? '',
-      'photoUrl': user.photoURL,
-      'role': 'user',
-      'createdAt': Timestamp.now(),
-    });
-
+    // Always repair a missing profile, including accounts created by older
+    // builds where the users document succeeded but profile creation did not.
     final DocumentReference<Map<String, dynamic>> profileRef =
         _db.collection('profiles').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> profileSnap =

@@ -7,7 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../models/places.dart';
 
-/// Places / routes / geocoding — all proxied through the Roamio backend so
+/// Places / routes / geocoding — all proxied through the Tourism backend so
 /// the Google API key never ships in the app.
 class PlacesRepository {
   PlacesRepository(this._api);

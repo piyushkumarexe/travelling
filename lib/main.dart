@@ -1,4 +1,4 @@
-import 'package:firebase_core/firebase_core.dart' show FirebaseApp;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -24,7 +24,7 @@ Future<void> main() async {
       // Firebase exists but failed to initialize (bad key, offline first
       // start, ...). The app still opens in a guided setup state so the user
       // can fix the configuration.
-      debugPrint('Roamio: Firebase init failed: $e');
+      debugPrint('Tourism: Firebase init failed: $e');
       app = null;
     }
   }
@@ -40,5 +40,5 @@ Future<void> main() async {
     container.authState.start();
   }
 
-  runApp(RoamioApp(container: container));
+  runApp(TourismApp(container: container));
 }

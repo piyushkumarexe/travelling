@@ -4,7 +4,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// Android local notifications with dedicated channels per alert type.
 /// Handles notification permission (Android 13+) explicitly and never
 /// crashes when the permission is denied.
-library;
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
@@ -69,7 +68,7 @@ class NotificationService {
       final AndroidNotificationDetails details = AndroidNotificationDetails(
         channel,
         _channelName(channel),
-        channelDescription: 'Roamio $_channelName(channel.toLowerCase())',
+        channelDescription: 'Tourism $_channelName(channel.toLowerCase())',
         importance: important ? Importance.max : Importance.high,
         priority: important ? Priority.high : Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',

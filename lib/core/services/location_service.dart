@@ -2,7 +2,6 @@ import 'package:geolocator/geolocator.dart';
 
 /// Wraps Geolocator with proper permission + service-state handling.
 /// All denial paths are surfaced to the UI instead of silently failing.
-library;
 
 class LocationService {
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
@@ -33,7 +32,7 @@ class LocationService {
   /// Best-effort current fix; returns null when unavailable (UI decides how
   /// to present that — no fake coordinates are ever fabricated).
   Future<Position?> currentPosition({
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 4),
   }) async {
     try {
       final bool serviceOn = await Geolocator.isLocationServiceEnabled();
@@ -43,10 +42,19 @@ class LocationService {
           p == LocationPermission.deniedForever) {
         return null;
       }
+
+      // A cached GPS fix makes the dashboard and map available immediately.
+      // Refresh briefly in the background path when no cached fix exists.
+      final Position? cached = await Geolocator.getLastKnownPosition();
+      if (cached != null &&
+          DateTime.now().difference(cached.timestamp).abs() <
+              const Duration(minutes: 10)) {
+        return cached;
+      }
       return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          timeLimit: Duration(seconds: 15),
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: timeout,
         ),
       ).timeout(timeout);
     } catch (_) {

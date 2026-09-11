@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'core/router/app_router.dart';
 import 'core/state/app_container.dart';
+import 'core/state/auth_state.dart';
 import 'core/theme/app_theme.dart';
 import 'features/setup/screens/setup_guide_screen.dart';
 
-class RoamioApp extends StatelessWidget {
-  const RoamioApp({super.key, required this.container});
+class TourismApp extends StatelessWidget {
+  const TourismApp({super.key, required this.container});
 
   final AppContainer container;
 
@@ -15,13 +16,17 @@ class RoamioApp extends StatelessWidget {
     // When Firebase is not configured yet, show a guided setup screen
     // instead of a broken app (honest, actionable state).
     if (!container.firebaseReady) {
-      return MaterialApp(
-        title: 'Roamio',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: ThemeMode.system,
-        home: const SetupGuideScreen(),
+      // Keep the key-free demo map available even before Firebase is wired.
+      return AppScope(
+        container: container,
+        child: MaterialApp(
+          title: 'Tourism',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: ThemeMode.system,
+          home: const SetupGuideScreen(),
+        ),
       );
     }
 
@@ -29,12 +34,31 @@ class RoamioApp extends StatelessWidget {
     return AppScope(
       container: container,
       child: MaterialApp.router(
-        title: 'Roamio',
+        title: 'Tourism',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         routerConfig: appRouter.router,
+        builder: (BuildContext context, Widget? child) {
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (bool didPop, Object? result) {
+              if (didPop) return;
+              if (appRouter.router.canPop()) {
+                appRouter.router.pop();
+                return;
+              }
+              final String location = appRouter
+                  .router.routerDelegate.currentConfiguration.uri.path;
+              if (container.authState.status == AuthStatus.authenticated &&
+                  location != '/home') {
+                appRouter.router.go('/home');
+              }
+            },
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
       ),
     );
   }

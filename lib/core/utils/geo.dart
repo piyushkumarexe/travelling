@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Pure geometry helpers (unit-testable, no platform code).
-library;
 
 class GeoUtils {
   GeoUtils._();

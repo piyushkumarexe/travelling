@@ -80,7 +80,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
         _locationDone = true;
       });
       if (pos != null) {
-        final LatLng p = LatLng(pos.latitude, pos.longitude);
         _loadServices();
         _loadWeather();
       }
@@ -158,7 +157,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
     if (nearestDist != null && nearestDist <= 3000) {
       return (
         'Nearest zone: ${nearest.name} · '
-        '${GeoUtils.formatDistance(nearestDist!)}',
+        '${GeoUtils.formatDistance(nearestDist)}',
         nearest.isHighRisk ? AppTheme.danger : AppTheme.warning,
       );
     }
@@ -335,7 +334,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   icon: const Icon(Icons.pause_circle_outline),
                   label: const Text('Pause'),
                   onPressed: _c.geofenceService.pause,
-                ),
+                )
               else
                 TextButton.icon(
                   icon: const Icon(Icons.play_circle_outline),

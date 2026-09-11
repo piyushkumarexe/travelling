@@ -38,19 +38,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _listen();
   }
 
+  Profile? _localProfile() {
+    final User? user = _c.authRepository.currentUser;
+    if (user == null) return null;
+    final String emailName = (user.email ?? '').split('@').first;
+    return Profile(
+      uid: user.uid,
+      name: (user.displayName?.trim().isNotEmpty ?? false)
+          ? user.displayName!.trim()
+          : emailName,
+      photoUrl: user.photoURL,
+    );
+  }
+
   void _listen() {
     final String? uid = _c.authRepository.currentUser?.uid;
+    // Render Firebase Auth identity immediately. Firestore preferences update
+    // the same screen whenever they arrive, but never block navigation.
+    _profile = _localProfile();
+    _loading = false;
     if (uid == null) return;
-    _sub = _c.profileRepository
-        .watch(uid)
-        .listen((Profile? p) {
-      if (mounted) {
-        setState(() {
-          _profile = p;
-          _loading = false;
-        });
-      }
-    }, onError: (Object _) {});
+    _sub = _c.profileRepository.watch(uid).listen(
+      (Profile? p) {
+        if (!mounted || p == null) return;
+        setState(() => _profile = p);
+      },
+      onError: (Object _) {},
+    );
   }
 
   Future<void> _signOut() async {
@@ -187,6 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
     final Profile? p = _profile;
+    final String? photoUrl = p?.photoUrl;
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: ListView(
@@ -210,11 +225,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: Colors.white24,
-                      child: (p?.photoUrl != null &&
-                              p!.photoUrl!.isNotEmpty)
+                      child: (photoUrl != null && photoUrl.isNotEmpty)
                           ? ClipOval(
                               child: Image.network(
-                                p!.photoUrl!,
+                                photoUrl,
                                 width: 80,
                                 height: 80,
                                 fit: BoxFit.cover,
@@ -225,7 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             )
                           : Text(
-                              (p?.name?.isNotEmpty == true)
+                              (p?.name.isNotEmpty == true)
                                   ? p!.name[0].toUpperCase()
                                   : '?',
                               style: const TextStyle(
@@ -261,7 +275,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  (p?.name?.isNotEmpty ?? false)
+                  (p?.name.isNotEmpty ?? false)
                       ? p!.name
                       : (user?.displayName ?? 'Traveler'),
                   style: const TextStyle(
@@ -418,7 +432,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'Roamio 1.0.0 · data encrypted in transit and at rest',
+              'Tourism 1.0.0 · data encrypted in transit and at rest',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall

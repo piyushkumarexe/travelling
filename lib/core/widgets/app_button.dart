@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'app_loader.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
-library;
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
@@ -28,11 +28,7 @@ class PrimaryButton extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = onPressed != null && !loading;
     final Widget child = loading
-        ? const SizedBox(
-            height: 20,
-            width: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
+        ? const TravelBallLoader(size: 30)
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -49,7 +45,7 @@ class PrimaryButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(88, 48),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
         child: Padding(
@@ -58,19 +54,45 @@ class PrimaryButton extends StatelessWidget {
         ),
       );
     }
+    final Color base = danger ? AppTheme.danger : scheme.primary;
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: enabled ? onPressed : null,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[
+              Color.lerp(base, Colors.white, 0.12)!,
+              Color.lerp(base, Colors.black, 0.12)!,
+            ],
           ),
-          backgroundColor: danger ? AppTheme.danger : scheme.primary,
-          foregroundColor: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Color.lerp(base, Colors.white, 0.25)!),
+          boxShadow: enabled
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: base.withOpacity(0.28),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : const <BoxShadow>[],
         ),
-        child: Center(child: child),
+        child: FilledButton(
+          onPressed: enabled ? onPressed : null,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            backgroundColor: Colors.transparent,
+            disabledBackgroundColor: scheme.surfaceContainerHighest,
+            shadowColor: Colors.transparent,
+            foregroundColor: Colors.white,
+          ),
+          child: Center(child: child),
+        ),
       ),
     );
   }

@@ -28,7 +28,8 @@ class ProfileRepository {
     required String budget,
     required String travelStyle,
   }) {
-    return _db.collection('profiles').doc(uid).update(<String, dynamic>{
+    return _db.collection('profiles').doc(uid).set(<String, dynamic>{
+      'uid': uid,
       'name': name,
       'photoUrl': photoUrl,
       'language': language,

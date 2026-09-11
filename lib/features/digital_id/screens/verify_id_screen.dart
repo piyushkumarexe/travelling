@@ -103,7 +103,6 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Verify Emergency ID')),
       body: ListView(
@@ -125,7 +124,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   const SizedBox(height: 6),
                   Text(
                     'Tokens are 64 hex characters, shown under the QR code '
-                    'on the person\'s Roamio Emergency ID card.',
+                    'on the person\'s Tourism Emergency ID card.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 14),
@@ -140,7 +139,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   ),
                   if (_error != null) ...<Widget>[
                     const SizedBox(height: 10),
-                    Text(_error!, style: TextStyle(color: scheme.error)),
+                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   ],
                   const SizedBox(height: 16),
                   Row(
@@ -223,7 +222,6 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
   }
 
   Widget _resultCard(DigitalId id, {required bool active}) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -380,7 +378,7 @@ class _ScannerDialogState extends State<_ScannerDialog> {
   final MobileScannerController _controller = MobileScannerController();
   bool _handled = false;
 
-  void _onDetect(MobileScannerResult result) {
+  void _onDetect(BarcodeCapture result) {
     if (_handled) return;
     for (final Barcode barcode in result.barcodes) {
       final String? raw = barcode.rawValue;

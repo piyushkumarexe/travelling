@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_exception.dart';
 
-/// HTTP client for the Roamio backend (Firebase Cloud Functions).
+/// HTTP client for the Tourism backend (Firebase Cloud Functions).
 ///
 /// The backend URL is derived from the Firebase project id; no secrets and
 /// no third-party endpoints are reachable from this client. Every request
@@ -17,9 +17,9 @@ class ApiClient {
   final String baseUrl;
   late final Dio _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 15),
-    sendTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 90),
+    connectTimeout: const Duration(seconds: 5),
+    sendTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 30),
     contentType: 'application/json',
   ));
 
@@ -27,8 +27,7 @@ class ApiClient {
     try {
       final User? user = FirebaseAuth.instance.currentUser;
       if (user == null) return null;
-      final FirebaseIdTokenCredentials credentials = await user.getIdToken();
-      return credentials.token;
+      return user.getIdToken();
     } catch (_) {
       return null;
     }
@@ -85,7 +84,21 @@ class ApiClient {
       msg = (data['error'] ?? data['message']) as String?;
       details = data['code'] as String?;
     } else if (data is String && data.isNotEmpty) {
-      msg = data.length > 300 ? data.substring(0, 300) : data;
+      final String lower = data.toLowerCase();
+      // Reverse proxies commonly return HTML for missing/unavailable
+      // Functions. Never expose raw markup as an in-app error.
+      if (!lower.contains('<html') && !lower.contains('<!doctype')) {
+        msg = data.length > 200 ? data.substring(0, 200) : data;
+      }
+    }
+    if (code == 404) {
+      return ApiException(
+        ApiErrorKind.server,
+        'This live service is not deployed yet. Please try again after the backend update.',
+        statusCode: code,
+        retryable: false,
+        details: 'backend_not_deployed',
+      );
     }
     if (code == 401) {
       return ApiException(ApiErrorKind.unauthorized,
@@ -106,8 +119,9 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
         return ApiException(ApiErrorKind.timeout,
-            'The Roamio backend did not respond in time. Check your connection and try again.');
+            'The Tourism backend did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:
         return ApiException(ApiErrorKind.network,
             'No network connection. Check your internet connection and try again.');
@@ -118,7 +132,7 @@ class ApiClient {
         return ApiException(ApiErrorKind.unknown, 'Request cancelled.');
       case DioExceptionType.badResponse:
         return ApiException(ApiErrorKind.server,
-            msg ?? 'The Roamio backend returned an error (${code ?? 'unknown'}).',
+            msg ?? 'The Tourism backend returned an error (${code ?? 'unknown'}).',
             statusCode: code,
             details: details);
       case DioExceptionType.unknown:

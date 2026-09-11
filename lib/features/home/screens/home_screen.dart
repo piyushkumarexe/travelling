@@ -14,7 +14,6 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/sos_sheet.dart';
-import '../../../core/widgets/state_views.dart';
 import '../../../data/models/notification.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
@@ -45,6 +44,10 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Place> _attractions = const <Place>[];
   bool _attrLoading = false;
   String? _attrError;
+
+  List<Place> _hotels = const <Place>[];
+  bool _hotelsLoading = false;
+  String? _hotelsError;
 
   List<AppNotification> _alerts = const <AppNotification>[];
   List<SafetyZone> _zones = const <SafetyZone>[];
@@ -125,6 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }).catchError((Object _) {}));
       _loadWeather();
       _loadAttractions();
+      _loadHotels();
     } catch (_) {
       if (mounted) {
         setState(() => _locationDone = true);
@@ -183,6 +187,38 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _attrError = _friendly(e);
         _attrLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadHotels() async {
+    final Position? pos = _position;
+    if (pos == null) return;
+    setState(() {
+      _hotelsLoading = true;
+      _hotelsError = null;
+    });
+    try {
+      final List<Place> places = await _c.placesRepository.search(
+        '5 star hotels',
+        location: LatLng(pos.latitude, pos.longitude),
+        radiusMeters: 15000,
+      );
+      if (!mounted) return;
+      places.sort((Place a, Place b) {
+        final int rating = (b.rating ?? 0).compareTo(a.rating ?? 0);
+        if (rating != 0) return rating;
+        return (b.userRatingCount ?? 0).compareTo(a.userRatingCount ?? 0);
+      });
+      setState(() {
+        _hotels = places.take(5).toList();
+        _hotelsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hotelsError = _friendly(e);
+        _hotelsLoading = false;
       });
     }
   }
@@ -260,17 +296,28 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 72,
+        leadingWidth: 64,
+        leading: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/branding/tourism_logo.png',
+              fit: BoxFit.cover,
+              semanticLabel: 'Tourism logo',
+            ),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Hello, ${_greetingName} 👋',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            const Text(
+              'Tourism',
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
             ),
             Text(
-              _locationDone
-                  ? (_locationLabel ?? 'Location unavailable')
-                  : 'Getting your location…',
+              'Hi, $_greetingName · ${_locationDone ? (_locationLabel ?? 'Location unavailable') : 'Locating…'}',
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -282,36 +329,39 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: !_locationDone
-          ? const LoadingView(message: 'Preparing your dashboard…')
-          : RefreshIndicator(
-              onRefresh: _loadLocation,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                children: <Widget>[
-                  _weatherCard(),
-                  const SizedBox(height: 12),
-                  _safetyCard(),
-                  const SizedBox(height: 12),
-                  _sosCard(),
-                  const SectionHeader(title: 'Quick actions'),
-                  _quickActions(),
-                  const SectionHeader(
-                    title: 'Nearby attractions',
-                    actionLabel: 'See all',
-                  ),
-                  _attractionsRow(),
-                  if (_alerts.isNotEmpty) ...<Widget>[
-                    const SectionHeader(title: 'Active alerts'),
-                    for (final AppNotification a in _alerts.take(3))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _alertRow(a),
-                      ),
-                  ],
-                ],
-              ),
+      body: RefreshIndicator(
+        onRefresh: _loadLocation,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: <Widget>[
+            _weatherCard(),
+            const SizedBox(height: 12),
+            _safetyCard(),
+            const SizedBox(height: 12),
+            _sosCard(),
+            const SectionHeader(title: 'Quick actions'),
+            _quickActions(),
+            const SectionHeader(
+              title: 'Nearby attractions',
+              actionLabel: 'See all',
             ),
+            _attractionsRow(),
+            const SectionHeader(
+              title: 'Top-rated hotels nearby',
+              actionLabel: 'Explore',
+            ),
+            _hotelsRow(),
+            if (_alerts.isNotEmpty) ...<Widget>[
+              const SectionHeader(title: 'Active alerts'),
+              for (final AppNotification a in _alerts.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _alertRow(a),
+                ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -344,7 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _weatherCard() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    if (_weatherLoading) {
+    if (!_locationDone || _weatherLoading) {
       return const SkeletonRow(height: 92);
     }
     if (_weatherError != null) {
@@ -431,7 +481,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _safetyCard() {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = _nearHighRisk ? AppTheme.danger : AppTheme.success;
     return AppCard(
       onTap: () => context.go('/safety'),
@@ -624,7 +673,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _attractionsRow() {
-    if (_attrLoading) {
+    if (!_locationDone || _attrLoading) {
       return SizedBox(
         height: 104,
         child: Row(
@@ -676,6 +725,63 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () => context
                   .push('/explore/place/${_attractions[i].placeId}'),
             ),
+      ),
+    );
+  }
+
+  Widget _hotelsRow() {
+    if (!_locationDone || _hotelsLoading) {
+      return SizedBox(
+        height: 104,
+        child: Row(
+          children: <Widget>[
+            const Expanded(child: SkeletonCard(height: 104)),
+            const SizedBox(width: 12),
+            Expanded(child: SkeletonCard(height: 104)),
+          ],
+        ),
+      );
+    }
+    if (_hotelsError != null) {
+      return AppCard(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.hotel_outlined,
+                color: Theme.of(context).colorScheme.error),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _hotelsError!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            TextButton(onPressed: _loadHotels, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+    if (_hotels.isEmpty) {
+      return AppCard(
+        child: Text(
+          'No top-rated hotel results are available for this location.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
+    }
+    return SizedBox(
+      height: 104,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _hotels.length,
+        separatorBuilder: (BuildContext context, int index) =>
+            const SizedBox(width: 12),
+        itemBuilder: (BuildContext context, int i) => _MiniPlaceCard(
+          place: _hotels[i],
+          onTap: () => context.push('/explore/place/${_hotels[i].placeId}'),
+        ),
       ),
     );
   }

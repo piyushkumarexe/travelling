@@ -1,6 +1,6 @@
-# Roamio — Smart Tourism & Safety Assistant (Android)
+# Tourism — Smart Tourism & Safety Assistant (Android)
 
-Roamio is a native Android app (Flutter) that combines a premium travel
+Tourism is a native Android app (Flutter) that combines a premium travel
 experience with real safety tooling: live Google Maps, real AI assistance
 (NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
 zones with Android notifications, a one-tap SOS flow, a Digital Emergency
@@ -49,7 +49,7 @@ Cloud Functions backend; the Android app ships with zero API keys.
 ## Repository layout
 
 ```
-android/                  # native Android project (com.roamio.app)
+android/                  # native Android project (app.roamio.tourism)
 lib/
   main.dart               # entrypoint (Firebase init)
   app.dart                # MaterialApp + router wiring
@@ -99,7 +99,7 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 1. Create the project in the Firebase console.
 2. **Authentication → Sign-in method → Google**: enable it.
 3. **Project settings → Your apps → Add app (Android)** with
-   package name `com.roamio.app`.
+   package name `app.roamio.tourism`.
 4. Run `flutterfire configure` (or paste the downloaded config into
    `lib/firebase_options.dart`). The committed file is a placeholder
    template — replace `REPLACE_WITH_YOUR_...` values.
@@ -110,7 +110,7 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 
 1. In the **Google Cloud console** (linked to your Firebase project):
    **APIs & Services → Credentials → Create OAuth client ID → Android**.
-   - Package name: `com.roamio.app`
+   - Package name: `app.roamio.tourism`
    - SHA-1 fingerprint: for local debug builds use the debug keystore
      (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`);
      add your release fingerprint too if you sign your own builds.
@@ -270,7 +270,7 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 ## Manual configuration checklist (quick reference)
 
 - [ ] `lib/firebase_options.dart` replaced with real values
-- [ ] Google OAuth Android client created (`com.roamio.app` + SHA-1)
+- [ ] Google OAuth Android client created (`app.roamio.tourism` + SHA-1)
 - [ ] Maps **client** key in `android/app/src/main/AndroidManifest.xml`
 - [ ] Firestore database created; rules deployed
 - [ ] Storage bucket created; rules deployed
