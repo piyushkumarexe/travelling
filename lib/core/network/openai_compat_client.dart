@@ -235,7 +235,7 @@ class OpenAiCompatClient {
         'Traveler interests: ${interests.isNotEmpty ? interests.join(', ') : 'general sightseeing'}. '
         'Budget level: $budget. Pace: $travelStyle. '
         'Respond with ONLY JSON matching exactly this schema: '
-        '{\"plan\":[{\"day\":1,\"items\":[{\"time\":\"HH:MM\",\"title\":\"...\",\"description\":\"1-2 sentences\",\"cost\":\"e.g. free, \$15, ~\u20B9500\"}]}]}. '
+        '{"plan":[{"day":1,"items":[{"time":"HH:MM","title":"...","description":"1-2 sentences","cost":"e.g. free, \$15, ~\u20B9500"}]}]}. '
         'Include 3-6 items per day with times, covering $destination\u2019s real attractions, '
         'food and transport. No markdown, no extra keys.';
     final String raw = await _complete(
