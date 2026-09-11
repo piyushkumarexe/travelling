@@ -340,7 +340,7 @@ class _MapScreenState extends State<MapScreen> {
     if (_settingOrigin) {
       // This selection sets the START point (Google-style from/to).
       setState(() {
-        _origin = p.coords;
+        _origin = LatLng(p.lat, p.lng);
         _originName = p.name;
         _settingOrigin = false;
         _resultsVisible = false;
@@ -352,7 +352,7 @@ class _MapScreenState extends State<MapScreen> {
         _route = null;
         _routesByMode = <String, RouteInfo>{};
         _polylines = <Polyline>[];
-        _getRoute();
+        unawaited(_getRoute());
       }
       return;
     }
@@ -440,7 +440,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       final LatLng? oldOrigin = _effectiveOrigin();
       final String? oldOriginName = _originName;
-      _origin = dest.coords;
+      _origin = LatLng(dest.lat, dest.lng);
       _originName = dest.name;
       _selected = null;
       _route = null;
@@ -1109,7 +1109,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _fastestRow() {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     String fastest = 'car';
     double fastestDur = double.infinity;
     _routesByMode.forEach((String m, RouteInfo r) {
