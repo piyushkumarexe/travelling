@@ -29,15 +29,32 @@ class LocationService {
     return p;
   }
 
+  /// Requests location permission (without opening system settings — for
+  /// app-start warm-up). Returns the resulting permission.
+  Future<LocationPermission> requestPermission() async {
+    LocationPermission p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) {
+      p = await Geolocator.requestPermission();
+    }
+    return p;
+  }
+
   /// Best-effort current fix; returns null when unavailable (UI decides how
   /// to present that — no fake coordinates are ever fabricated).
+  ///
+  /// Auto-requests permission when it has never been asked yet, so the very
+  /// first GPS call (Explore nearby, map, AI context) triggers the system
+  /// prompt instead of silently returning null.
   Future<Position?> currentPosition({
     Duration timeout = const Duration(seconds: 15),
   }) async {
     try {
       final bool serviceOn = await Geolocator.isLocationServiceEnabled();
       if (!serviceOn) return null;
-      final LocationPermission p = await Geolocator.checkPermission();
+      LocationPermission p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
+      }
       if (p == LocationPermission.denied ||
           p == LocationPermission.deniedForever) {
         return null;

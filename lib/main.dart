@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +41,10 @@ Future<void> main() async {
     await container.notificationService.init();
     container.authState.start();
   }
+
+  // Warm up location permission up-front so Explore "nearby", the map and
+  // the AI assistant can auto-detect the user's location immediately.
+  unawaited(container.locationService.requestPermission());
 
   runApp(TourismApp(container: container));
 }

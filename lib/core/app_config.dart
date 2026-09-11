@@ -8,6 +8,10 @@
 class AppConfig {
   AppConfig._();
 
+  /// Human-readable app version, shown on the login screen so users can
+  /// confirm they are running the latest build. Keep in sync with pubspec.
+  static const String appVersion = '1.0.1';
+
   /// Region where the Tourism backend Cloud Functions are deployed.
   ///
   /// Must match the `region` setting in `functions/src/index.js` and the

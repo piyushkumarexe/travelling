@@ -64,6 +64,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  /// Prompts for location permission (and re-runs the search) — used when the
+  /// user lands on Explore with location unavailable.
+  Future<void> _enableLocation() async {
+    final LocationPermission p = await _c.locationService.ensurePermission();
+    if (p == LocationPermission.denied ||
+        p == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text(
+                  'Location permission is needed to show places near you.')),
+        );
+      }
+      return;
+    }
+    await _initLocation();
+  }
+
   void _onQueryChanged() {
     final String q = _queryController.text.trim();
     if (q != _query) {
@@ -255,6 +273,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     if (!_searchedOnce && !_locationDone) {
       return const LoadingView(message: 'Finding your location…');
+    }
+    if (_locationDone && _position == null && _scope == 'nearby') {
+      return EmptyState(
+        icon: Icons.location_off,
+        title: 'Location not available',
+        message:
+            'Enable location to see attractions, food and hotels near you.',
+        actionLabel: 'Enable location',
+        onAction: _enableLocation,
+      );
     }
     if (_results.isEmpty) {
       return EmptyState(

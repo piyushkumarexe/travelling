@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
@@ -342,6 +343,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   'features) can access it.',
                   style: text.bodySmall
                       ?.copyWith(color: scheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tourism v${AppConfig.appVersion}',
+                  style: text.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],

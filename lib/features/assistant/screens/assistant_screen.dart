@@ -51,18 +51,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   Future<void> _loadContext() async {
-    try {
-      final Position? pos = await _c.locationService.currentPosition();
-      if (pos != null) {
-        final String? label = await _c.placesRepository
-            .reverseGeocode(LatLng(pos.latitude, pos.longitude));
-        if (mounted && label != null) {
-          setState(() => _locationLabel = label);
-        }
-      }
-    } catch (_) {
-      // Location context is optional; the assistant still works without it.
-    }
+    await _refreshLocation();
     try {
       final String? uid = _c.authRepository.currentUser?.uid;
       if (uid != null) {
@@ -83,6 +72,23 @@ class _AssistantScreenState extends State<AssistantScreen> {
     }
   }
 
+  /// Auto-detects the traveler's location (prompting for permission on the
+  /// first call) and reverse-geocodes it so answers are location-aware.
+  Future<void> _refreshLocation() async {
+    try {
+      final Position? pos = await _c.locationService.currentPosition();
+      if (pos != null) {
+        final String? label = await _c.placesRepository
+            .reverseGeocode(LatLng(pos.latitude, pos.longitude));
+        if (mounted && label != null) {
+          setState(() => _locationLabel = label);
+        }
+      }
+    } catch (_) {
+      // Location context is optional; the assistant still works without it.
+    }
+  }
+
   Future<void> _send(String text) async {
     final String clean = text.trim();
     if (clean.isEmpty || _loading) return;
@@ -93,6 +99,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
     _input.clear();
     _scrollToBottom();
     try {
+      // Make sure location context is fresh so answers are location-aware
+      // (auto-detects instead of asking "where are you located?").
+      if (_locationLabel == null) await _refreshLocation();
       final List<AiChatMessage> apiMessages = _messages
           .where((_ChatMessage m) => !m.isError)
           .map((m) => AiChatMessage(role: m.role, content: m.text))
