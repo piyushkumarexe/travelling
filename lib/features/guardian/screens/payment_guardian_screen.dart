@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/network/api_exception.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
@@ -138,7 +139,9 @@ class _PaymentGuardianScreenState extends State<PaymentGuardianScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _searchError = e.toString();
+        _searchError = e is ApiException
+            ? e.message
+            : 'Could not search places right now. Please try again.';
         _searching = false;
       });
     }

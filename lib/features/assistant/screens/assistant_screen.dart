@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -337,6 +338,23 @@ class _AssistantScreenState extends State<AssistantScreen> {
     );
   }
 
+  MarkdownStyleSheet _mdStyle(ColorScheme scheme, Color fg) {
+    final MarkdownStyleSheet base =
+        MarkdownStyleSheet.fromTheme(Theme.of(context));
+    return base.copyWith(
+      p: base.p?.copyWith(color: fg, fontSize: 14.5, height: 1.35),
+      strong: base.strong?.copyWith(color: fg, fontWeight: FontWeight.w800),
+      h1: base.h1
+          ?.copyWith(color: fg, fontWeight: FontWeight.w800, fontSize: 17),
+      h2: base.h2
+          ?.copyWith(color: fg, fontWeight: FontWeight.w800, fontSize: 16),
+      h3: base.h3
+          ?.copyWith(color: fg, fontWeight: FontWeight.w700, fontSize: 15),
+      listBullet: base.listBullet?.copyWith(color: scheme.primary),
+      em: base.em?.copyWith(color: fg.withValues(alpha: 0.9)),
+    );
+  }
+
   Widget _bubble(_ChatMessage m, ColorScheme scheme) {
     final bool isUser = m.role == 'user';
     final bool dark = Theme.of(context).brightness == Brightness.dark;
@@ -379,10 +397,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
                     ),
                   ],
           ),
-          child: SelectableText(
-            m.text,
-            style: TextStyle(color: fg, fontSize: 14.5),
-          ),
+          child: isUser
+              ? SelectableText(
+                  m.text,
+                  style: TextStyle(color: fg, fontSize: 14.5),
+                )
+              : MarkdownBody(
+                  data: m.text,
+                  selectable: true,
+                  styleSheet: _mdStyle(scheme, fg),
+                ),
         ),
       ),
     );

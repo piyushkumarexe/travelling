@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/badges.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
+import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 
 /// Interactive map (MapTiler raster tiles — no Google Maps SDK key needed):
@@ -48,6 +49,41 @@ class _MapScreenState extends State<MapScreen> {
   /// Current tile style: 'satellite' (default) or 'streets-v2'.
   String _mapStyle = 'satellite';
 
+  /// Travel mode for routing + the on-map icon: walk | bike | car | auto.
+  String _travelMode = 'car';
+
+  static const List<(String, IconData, String)> _modes =
+      <(String, IconData, String)>[
+    ('walk', Icons.directions_walk, 'Walk'),
+    ('bike', Icons.directions_bike, 'Bike'),
+    ('car', Icons.directions_car, 'Car'),
+    ('auto', Icons.electric_rickshaw, 'Auto'),
+  ];
+
+  IconData _modeIcon(String mode) => switch (mode) {
+        'walk' => Icons.directions_walk,
+        'bike' => Icons.directions_bike,
+        'car' => Icons.directions_car,
+        'auto' => Icons.electric_rickshaw,
+        _ => Icons.directions_car,
+      };
+
+  String _modeLabel(String mode) => switch (mode) {
+        'walk' => 'Walking',
+        'bike' => 'Biking',
+        'car' => 'Car',
+        'auto' => 'Auto',
+        _ => 'Car',
+      };
+
+  Color _modeColor(String mode) => switch (mode) {
+        'walk' => const Color(0xFF16A34A),
+        'bike' => const Color(0xFF7C3AED),
+        'car' => const Color(0xFF2563EB),
+        'auto' => const Color(0xFFD97706),
+        _ => const Color(0xFF2563EB),
+      };
+
   Position? _position;
   bool _permissionDenied = false;
 
@@ -82,6 +118,7 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    _loadVehicleMode();
     _zonesSub = _c.zonesRepository.watchAll().listen(
           (List<SafetyZone> z) {
         if (mounted) {
@@ -131,6 +168,23 @@ class _MapScreenState extends State<MapScreen> {
       }
     } catch (_) {
       if (mounted) setState(() => _ready = true);
+    }
+  }
+
+  /// Default the travel mode to the vehicle saved in the profile (Vehicle tab)
+  /// so the map icon matches how the traveler is actually moving.
+  Future<void> _loadVehicleMode() async {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final Profile? p = await _c.profileRepository.get(uid);
+      if (!mounted || p == null) return;
+      final String v = p.vehicle;
+      if (v == 'bike' || v == 'car' || v == 'auto') {
+        setState(() => _travelMode = v);
+      }
+    } catch (_) {
+      // Profile may be unavailable — keep the default car mode.
     }
   }
 
@@ -337,6 +391,7 @@ class _MapScreenState extends State<MapScreen> {
       final RouteInfo r = await _c.placesRepository.route(
         gm.LatLng(pos.latitude, pos.longitude),
         gm.LatLng(p.lat, p.lng),
+        mode: _travelMode,
       );
       if (!mounted) return;
       setState(() {
@@ -348,7 +403,7 @@ class _MapScreenState extends State<MapScreen> {
                   points: r.polyline
                       .map((gm.LatLng lp) => LatLng(lp.latitude, lp.longitude))
                       .toList(),
-                  color: Theme.of(context).colorScheme.primary,
+                  color: _modeColor(_travelMode),
                   strokeWidth: 5,
                 ),
               ]
@@ -361,6 +416,31 @@ class _MapScreenState extends State<MapScreen> {
         SnackBar(content: Text('Could not get a route: $e')),
       );
     }
+  }
+
+  /// Live traffic overlay needs a traffic-enabled map provider. This explains
+  /// the options instead of silently failing (no free real-time traffic tile
+  /// source exists).
+  void _showTrafficInfo() {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Live traffic'),
+        content: const Text(
+          'Live traffic overlays need a traffic-enabled map provider:\n\n'
+          '• Add a Google Maps key (unlocks traffic + full turn-by-turn), or\n'
+          '• Upgrade MapTiler to a plan with traffic tiles.\n\n'
+          'Until then, Tourism shows the route, distance and travel time '
+          'using live road routing.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openNavigation() async {
@@ -545,6 +625,13 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
+                  heroTag: 'map-traffic',
+                  tooltip: 'Live traffic',
+                  onPressed: _showTrafficInfo,
+                  child: const Icon(Icons.traffic),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
                   heroTag: 'map-follow',
                   tooltip: _follow
                       ? 'Stop following my location'
@@ -593,19 +680,23 @@ class _MapScreenState extends State<MapScreen> {
 
   Marker _userLocationMarker() {
     final Position p = _position!;
+    final Color mode = _modeColor(_travelMode);
+    // A mode icon (walk / bike / car / auto) instead of a plain dot, so the
+    // traveler always sees *how* they're moving on the map.
     return Marker(
       point: LatLng(p.latitude, p.longitude),
-      width: 18,
-      height: 18,
+      width: 34,
+      height: 34,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF1E88E5),
+          color: Colors.white,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(color: mode, width: 2.5),
           boxShadow: const <BoxShadow>[
             BoxShadow(color: Colors.black26, blurRadius: 4),
           ],
         ),
+        child: Icon(_modeIcon(_travelMode), color: mode, size: 18),
       ),
     );
   }
@@ -637,7 +728,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
-                        hintText: 'Search places, attractions…',
+                        hintText: 'Where do you want to go?',
                         prefixIcon: const Icon(Icons.search, size: 20),
                         suffixIcon: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -668,6 +759,8 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(width: 52),
               ],
             ),
+            const SizedBox(height: 8),
+            _travelModeSelector(),
             const SizedBox(height: 8),
             SizedBox(
               height: 36,
@@ -717,7 +810,7 @@ class _MapScreenState extends State<MapScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Long-press the map to drop a pin',
+                  'Search or long-press the map to set your destination',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
@@ -727,6 +820,95 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Travel-mode selector: picking Walk / Bike / Car / Auto changes the
+  /// on-map icon, the route profile and the route colour.
+  Widget _travelModeSelector() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: <BoxShadow>[
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6),
+        ],
+      ),
+      child: Row(
+        children: <Widget>[
+          for (final (String id, IconData icon, String label) in _modes)
+            Expanded(
+              child: _modeChip(id, icon, label),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeChip(String id, IconData icon, String label) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool active = _travelMode == id;
+    final Color color = _modeColor(id);
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () {
+        setState(() => _travelMode = id);
+        // Recompute the shown route for the new mode when a destination exists.
+        if (_selected != null && _route != null) {
+          _route = null;
+          _polylines = <Polyline>[];
+          _getRoute();
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? color.withValues(alpha: 0.14) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 20, color: active ? color : scheme.onSurfaceVariant),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                color: active ? color : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _modeBadge() {
+    final Color color = _modeColor(_travelMode);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(_modeIcon(_travelMode), size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            _modeLabel(_travelMode),
+            style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
       ),
     );
   }
@@ -938,18 +1120,79 @@ class _MapScreenState extends State<MapScreen> {
                     Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         )),
+          const SizedBox(height: 12),
+          // Google-style origin → destination summary.
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Column(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.trip_origin,
+                        size: 16, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _position == null
+                            ? 'My location (waiting for GPS…)'
+                            : 'My location',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    _modeBadge(),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 7),
+                  child: SizedBox(
+                    height: 12,
+                    child: VerticalDivider(color: Colors.grey),
+                  ),
+                ),
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.place, size: 18, color: Color(0xFFDC2626)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           if (r != null) ...<Widget>[
             const SizedBox(height: 10),
             Row(
               children: <Widget>[
-                Icon(Icons.route, size: 18, color: scheme.primary),
+                Icon(Icons.route, size: 18, color: _modeColor(_travelMode)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
+                    '${_modeLabel(_travelMode)} · '
                     '${GeoUtils.formatDistance(r.distanceMeters)} · '
                     '${GeoUtils.formatDuration(r.durationSeconds)}'
                     '${r.isApproximate ? ' (estimate)' : ''}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],

@@ -48,7 +48,12 @@ class PlacesRepository {
       final Map<String, dynamic> data = await _api.post('/placesSearch', body);
       return _decode(data);
     } on ApiException {
-      return _free.searchPlaces(query.trim(), near: location);
+      return _free.searchPlaces(
+        query.trim(),
+        near: location,
+        types: types,
+        radiusMeters: radiusMeters ?? 5000,
+      );
     }
   }
 
@@ -95,7 +100,7 @@ class PlacesRepository {
     }
   }
 
-  Future<RouteInfo> route(LatLng from, LatLng to) async {
+  Future<RouteInfo> route(LatLng from, LatLng to, {String mode = 'car'}) async {
     try {
       final Map<String, dynamic> data =
           await _api.post('/route', <String, dynamic>{
@@ -104,10 +109,11 @@ class PlacesRepository {
           'lat': to.latitude,
           'lng': to.longitude,
         },
+        'mode': mode,
       });
       return RouteInfo.fromJson(data);
     } on ApiException {
-      return _free.route(from, to);
+      return _free.route(from, to, mode: mode);
     }
   }
 

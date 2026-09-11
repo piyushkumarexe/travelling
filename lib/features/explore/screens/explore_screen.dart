@@ -98,6 +98,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return 'tourist attractions near me';
   }
 
+  /// Google Places type ids for a category, so both the backend and the free
+  /// fallback (Overpass) return the right kind of place (hotels, museums…).
+  List<String>? _categoryTypes(String? category) => switch (category) {
+        'tourist_attraction' => const <String>['tourist_attraction'],
+        'restaurant' => const <String>['restaurant'],
+        'cafe' => const <String>['cafe'],
+        'park' => const <String>['park'],
+        'museum' => const <String>['museum'],
+        'hotel' => const <String>['hotel'],
+        'shopping_mall' => const <String>['shopping_mall'],
+        _ => null,
+      };
+
   void _runDefaultSearch() {
     _searchedOnce = true;
     _runSearch();
@@ -117,6 +130,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(_position!.latitude, _position!.longitude),
         radiusMeters: _scope == 'nearby' ? 8000.0 : null,
+        types: _categoryTypes(_activeCategory),
       );
       if (!mounted) return;
       setState(() {

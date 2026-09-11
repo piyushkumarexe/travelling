@@ -12,6 +12,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../data/models/eco.dart';
+import '../../../data/repositories/eco_repository.dart';
 
 /// Eco Score: track walking / cycling / public transport. Sessions can be
 /// GPS-tracked live or logged manually; the score persists in Firestore.
@@ -28,6 +29,7 @@ class _EcoScreenState extends State<EcoScreen> {
   EcoScore? _score;
   List<EcoActivity> _activities = const <EcoActivity>[];
   bool _loading = true;
+  bool _cloudOffline = false;
   String? _error;
 
   StreamSubscription<EcoScore?>? _scoreSub;
@@ -54,22 +56,51 @@ class _EcoScreenState extends State<EcoScreen> {
       if (mounted) {
         setState(() {
           _score = s;
+          _cloudOffline = false;
           _loading = false;
         });
       }
     }, onError: (Object e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      _fallbackToLocal(uid);
     });
     _actSub = _c.ecoRepository
         .watchActivities(uid)
         .listen((List<EcoActivity> items) {
-      if (mounted) setState(() => _activities = items);
-    }, onError: (Object _) {});
+      if (mounted) {
+        setState(() {
+          _activities = items;
+          _cloudOffline = false;
+        });
+      }
+    }, onError: (Object e) {
+      _fallbackToLocal(uid);
+    });
+  }
+
+  /// Firestore rejected the request (rules not deployed / offline) — read the
+  /// on-device copy instead so the score still works, and show a soft note
+  /// instead of a raw error.
+  Future<void> _fallbackToLocal(String uid) async {
+    if (!mounted) return;
+    try {
+      final EcoScore? localScore = await _c.ecoRepository.local.readScore(uid);
+      final List<EcoActivity> localActs =
+          await _c.ecoRepository.local.readActivities(uid);
+      if (!mounted) return;
+      setState(() {
+        _score = localScore;
+        _activities = localActs;
+        _cloudOffline = true;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not load your eco score. Please try again.';
+          _loading = false;
+        });
+      }
+    }
   }
 
   Future<void> _startSession() async {
@@ -174,26 +205,40 @@ class _EcoScreenState extends State<EcoScreen> {
     final String? uid = _c.authRepository.currentUser?.uid;
     if (uid == null) return;
     setState(() => _saving = true);
+    final EcoActivity activity = EcoActivity(
+      id: '',
+      uid: uid,
+      mode: mode,
+      distanceMeters: distanceMeters,
+      durationSeconds: durationSeconds,
+      note: note,
+      createdAt: DateTime.now(),
+    );
     try {
-      await _c.ecoRepository.addActivity(
-        uid,
-        EcoActivity(
-          id: '',
-          uid: uid,
-          mode: mode,
-          distanceMeters: distanceMeters,
-          durationSeconds: durationSeconds,
-          note: note,
-          createdAt: DateTime.now(),
-        ),
-      );
+      await _c.ecoRepository.addActivity(uid, activity);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Eco activity logged — score updated.')),
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (EcoRepository.shouldFallback(e)) {
+        // Save on-device so measurement is never lost, and refresh the UI.
+        final EcoScore updated =
+            await _c.ecoRepository.localAddActivity(uid, activity);
+        if (mounted) {
+          setState(() {
+            _score = updated;
+            _cloudOffline = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Logged on this device (cloud sync unavailable right now).'),
+            ),
+          );
+        }
+      } else if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Could not log: $e')));
       }
@@ -285,6 +330,30 @@ class _EcoScreenState extends State<EcoScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         children: <Widget>[
+          if (_cloudOffline)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.cloud_off, color: scheme.onSecondaryContainer),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Cloud sync unavailable — your eco score is saved on '
+                      'this device for now.',
+                      style:
+                          TextStyle(color: scheme.onSecondaryContainer, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_error != null)
             Container(
               margin: const EdgeInsets.only(bottom: 12),

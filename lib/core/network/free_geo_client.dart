@@ -8,11 +8,15 @@ import '../utils/geo.dart';
 import 'api_exception.dart';
 
 /// Real, free (key-light) data clients used as a fallback when the Tourism
-/// Cloud Functions backend is not deployed yet — so Explore, Map and Weather
-/// keep working on the device:
+/// Cloud Functions backend is not deployed yet — so Explore, Map, Weather and
+/// the Payment Guardian keep working on the device:
 ///
 ///   • MapTiler Geocoding (search + reverse) — uses the MapTiler key.
-///   • OSRM public router (real road routing, no key).
+///   • Nominatim Geocoding (keyless) — second search fallback.
+///   • Overpass API (keyless OpenStreetMap POIs) — first choice for
+///     category searches ("hotels near me", hospitals, ATMs…).
+///   • OSRM public router (real road routing, no key) — driving, walking
+///     and cycling profiles.
 ///   • Open-Meteo (real weather, no key).
 class FreeGeoClient {
   FreeGeoClient();
@@ -22,30 +26,245 @@ class FreeGeoClient {
     receiveTimeout: const Duration(seconds: 25),
   ));
 
+  final Dio _nominatim = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 12),
+    receiveTimeout: const Duration(seconds: 25),
+    headers: <String, String>{
+      // Nominatim requires a descriptive User-Agent (usage policy).
+      'User-Agent': 'TourismApp/1.0 (Android travel & safety assistant)',
+    },
+  ));
+
   String get _mtKey => AppConfig.mapTilerApiKey;
 
+  /// Category keyword → Overpass tag filters. Overpass gives far better
+  /// "nearby hotels / hospitals / ATMs" results than free geocoding.
+  static const Map<String, List<(String, String)>> _categoryFilters =
+      <String, List<(String, String)>>{
+    'hotel': <(String, String)>[('tourism', 'hotel|hostel|guest_house|motel')],
+    'hostel': <(String, String)>[('tourism', 'hostel')],
+    'restaurant': <(String, String)>[('amenity', 'restaurant')],
+    'food': <(String, String)>[('amenity', 'restaurant|fast_food|cafe')],
+    'cafe': <(String, String)>[('amenity', 'cafe')],
+    'park': <(String, String)>[('leisure', 'park')],
+    'museum': <(String, String)>[('tourism', 'museum')],
+    'attraction': <(String, String)>[('tourism', 'attraction')],
+    'tourist': <(String, String)>[('tourism', 'attraction')],
+    'hospital': <(String, String)>[('amenity', 'hospital|clinic')],
+    'police': <(String, String)>[('amenity', 'police')],
+    'fire': <(String, String)>[('amenity', 'fire_station')],
+    'pharmacy': <(String, String)>[('amenity', 'pharmacy')],
+    'mall': <(String, String)>[('shop', 'mall')],
+    'shopping': <(String, String)>[('shop', 'mall')],
+    'atm': <(String, String)>[('amenity', 'atm')],
+    'fuel': <(String, String)>[('amenity', 'fuel')],
+    'petrol': <(String, String)>[('amenity', 'fuel')],
+    'bank': <(String, String)>[('amenity', 'bank')],
+    'temple': <(String, String)>[('amenity', 'place_of_worship')],
+    'mosque': <(String, String)>[('amenity', 'place_of_worship')],
+    'church': <(String, String)>[('amenity', 'place_of_worship')],
+    'zoo': <(String, String)>[('tourism', 'zoo')],
+  };
+
+  /// Maps Google-style type ids to category filters.
+  static const Map<String, List<(String, String)>> _typeFilters =
+      <String, List<(String, String)>>{
+    'hospital': <(String, String)>[('amenity', 'hospital|clinic')],
+    'police_station': <(String, String)>[('amenity', 'police')],
+    'fire_station': <(String, String)>[('amenity', 'fire_station')],
+    'pharmacy': <(String, String)>[('amenity', 'pharmacy')],
+    'cafe': <(String, String)>[('amenity', 'cafe')],
+    'restaurant': <(String, String)>[('amenity', 'restaurant')],
+    'hotel': <(String, String)>[('tourism', 'hotel|hostel|guest_house|motel')],
+    'park': <(String, String)>[('leisure', 'park')],
+    'museum': <(String, String)>[('tourism', 'museum')],
+    'tourist_attraction': <(String, String)>[('tourism', 'attraction')],
+    'shopping_mall': <(String, String)>[('shop', 'mall')],
+    'atm': <(String, String)>[('amenity', 'atm')],
+  };
+
   // ---------------------------------------------------------------------
-  // MapTiler geocoding
+  // Search: Overpass (categories) → MapTiler → Nominatim
   // ---------------------------------------------------------------------
 
   Future<List<Place>> searchPlaces(
     String query, {
     LatLng? near,
+    List<String>? types,
+    double radiusMeters = 5000,
   }) async {
-    try {
-      final Map<String, dynamic> qp = <String, dynamic>{
-        'key': _mtKey,
-        'limit': 15,
-      };
-      if (near != null) qp['proximity'] = '${near.longitude},${near.latitude}';
-      final Response<dynamic> resp = await _dio.get<dynamic>(
-        'https://api.maptiler.com/geocoding/${Uri.encodeComponent(query)}.json',
-        queryParameters: qp,
-      );
-      return _parseGeocoding(resp.data);
-    } on DioException catch (e) {
-      throw _map(e, 'Could not search places right now.');
+    final String q = query.trim();
+    final List<(String, String)>? filters = _filtersFor(q, types);
+
+    // Category searches get Overpass POIs first — by far the best free
+    // "hotels / hospitals / ATMs near me" results.
+    if (filters != null && near != null) {
+      try {
+        final List<Place> pois = await _overpass(filters, near, radiusMeters);
+        if (pois.isNotEmpty) return pois;
+      } catch (_) {
+        // Fall through to geocoding.
+      }
     }
+
+    try {
+      final List<Place> r = await _maptilerSearch(q, near);
+      if (r.isNotEmpty) return r;
+    } catch (_) {
+      // Fall through.
+    }
+
+    try {
+      final List<Place> r = await _nominatimSearch(q, near);
+      if (r.isNotEmpty) return r;
+    } catch (_) {
+      // Fall through.
+    }
+
+    // A category with no geocoding match still deserves Overpass results.
+    if (filters != null && near != null) {
+      try {
+        return await _overpass(filters, near, radiusMeters);
+      } catch (_) {}
+    }
+
+    throw ApiException(
+        ApiErrorKind.server, 'Could not search places right now.');
+  }
+
+  List<(String, String)>? _filtersFor(String query, List<String>? types) {
+    if (types != null) {
+      for (final String t in types) {
+        final List<(String, String)>? f = _typeFilters[t];
+        if (f != null) return f;
+      }
+    }
+    final String q = query.toLowerCase();
+    for (final MapEntry<String, List<(String, String)>> e
+        in _categoryFilters.entries) {
+      if (q.contains(e.key)) return e.value;
+    }
+    // "Hidden gems / things to do nearby" style queries → local attractions.
+    if (q.contains('hidden') ||
+        q.contains('gem') ||
+        q.contains('things to do') ||
+        q.contains('near me')) {
+      return const <(String, String)>[('tourism', 'attraction')];
+    }
+    return null;
+  }
+
+  Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
+    final Map<String, dynamic> qp = <String, dynamic>{
+      'key': _mtKey,
+      'limit': 15,
+    };
+    if (near != null) qp['proximity'] = '${near.longitude},${near.latitude}';
+    final Response<dynamic> resp = await _dio.get<dynamic>(
+      'https://api.maptiler.com/geocoding/${Uri.encodeComponent(q)}.json',
+      queryParameters: qp,
+    );
+    return _parseGeocoding(resp.data);
+  }
+
+  Future<List<Place>> _nominatimSearch(String q, LatLng? near) async {
+    final Map<String, dynamic> qp = <String, dynamic>{
+      'q': q,
+      'format': 'jsonv2',
+      'limit': 15,
+      'addressdetails': 0,
+      'countrycodes': 'in',
+    };
+    if (near != null) {
+      final double d = 0.5; // ~55 km box — generous for tourist searches.
+      qp['viewbox'] = '${near.longitude - d},${near.latitude + d},'
+          '${near.longitude + d},${near.latitude - d}';
+      qp['bounded'] = 0;
+    }
+    final Response<dynamic> resp =
+        await _nominatim.get<dynamic>('https://nominatim.openstreetmap.org/search',
+            queryParameters: qp);
+    final Object? data = resp.data;
+    if (data is! List) return const <Place>[];
+    final List<Place> out = <Place>[];
+    for (final dynamic item in data) {
+      if (item is! Map) continue;
+      final double? lat = (item['lat'] as num?)?.toDouble();
+      final double? lon = (item['lon'] as num?)?.toDouble();
+      if (lat == null || lon == null) continue;
+      final String display = (item['display_name'] as String?) ?? '';
+      final String name =
+          (item['name'] as String?)?.isNotEmpty == true
+              ? item['name'] as String
+              : display.split(',').first.trim();
+      out.add(Place(
+        placeId: 'nom-${item['osm_id'] ?? '$lat,$lon'}',
+        name: name.isEmpty ? 'Place' : name,
+        lat: lat,
+        lng: lon,
+        address: display,
+        primaryType: 'poi',
+      ));
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Overpass POI search (keyless, real OSM data)
+  // ---------------------------------------------------------------------
+
+  Future<List<Place>> _overpass(
+    List<(String, String)> filters,
+    LatLng near,
+    double radiusMeters,
+  ) async {
+    final int radius = (radiusMeters <= 0 ? 5000 : radiusMeters).round();
+    final StringBuffer b = StringBuffer('[out:json][timeout:20];(');
+    for (final (String key, String regex) in filters) {
+      final String clause =
+          '["$key"~"$regex"](around:$radius,${near.latitude},${near.longitude})';
+      b.write('node$clause;way$clause;');
+    }
+    b.write(');out center 40;');
+
+    final List<Place> out = <Place>[];
+    for (final String host in const <String>[
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ]) {
+      try {
+        final Response<dynamic> resp = await _dio.get<dynamic>(
+          host,
+          queryParameters: <String, dynamic>{'data': b.toString()},
+        );
+        final Object? data = resp.data;
+        if (data is! Map || data['elements'] is! List) continue;
+        for (final dynamic e in data['elements'] as List) {
+          if (e is! Map) continue;
+          final double? lat = (e['lat'] as num?)?.toDouble();
+          final double? lon = (e['lon'] as num?)?.toDouble();
+          if (lat == null || lon == null) continue;
+          final Object? tags = e['tags'];
+          String name = '';
+          if (tags is Map && tags['name'] is String) {
+            name = tags['name'] as String;
+          }
+          if (name.trim().isEmpty) continue;
+          out.add(Place(
+            placeId: 'osm-${e['type'] ?? 'node'}-${e['id'] ?? '$lat,$lon'}',
+            name: name,
+            lat: lat,
+            lng: lon,
+            primaryType: 'poi',
+            types: const <String>['point_of_interest'],
+          ));
+        }
+        if (out.isNotEmpty) return out;
+      } catch (_) {
+        // Try the next host.
+      }
+    }
+    return out;
   }
 
   Future<String?> reverseGeocode(double lat, double lng) async {
@@ -62,8 +281,24 @@ class FreeGeoClient {
         if (name is String && name.trim().isNotEmpty) return name.trim();
       }
       return null;
-    } on DioException catch (e) {
-      throw _map(e, 'Could not determine your location.');
+    } on DioException {
+      // Nominatim reverse as a keyless fallback.
+      try {
+        final Response<dynamic> resp = await _nominatim.get<dynamic>(
+          'https://nominatim.openstreetmap.org/reverse',
+          queryParameters: <String, dynamic>{
+            'lat': lat,
+            'lon': lng,
+            'format': 'jsonv2',
+          },
+        );
+        final Object? data = resp.data;
+        if (data is Map && data['display_name'] is String) {
+          return data['display_name'] as String;
+        }
+      } catch (_) {}
+      throw ApiException(
+          ApiErrorKind.server, 'Could not determine your location.');
     }
   }
 
@@ -107,12 +342,20 @@ class FreeGeoClient {
   }
 
   // ---------------------------------------------------------------------
-  // OSRM routing (real road routing, no key)
+  // OSRM routing (real road routing, no key) — driving / walking / cycling
   // ---------------------------------------------------------------------
 
-  Future<RouteInfo> route(LatLng from, LatLng to) async {
+  /// OSRM profile for a travel mode: walk→foot, bike→bike, car/auto→driving.
+  static String osrmProfile(String mode) => switch (mode) {
+        'walk' => 'foot',
+        'bike' => 'bike',
+        _ => 'driving',
+      };
+
+  Future<RouteInfo> route(LatLng from, LatLng to, {String mode = 'car'}) async {
+    final String profile = osrmProfile(mode);
     try {
-      final String url = 'https://router.project-osrm.org/route/v1/driving/'
+      final String url = 'https://router.project-osrm.org/route/v1/$profile/'
           '${from.longitude},${from.latitude};'
           '${to.longitude},${to.latitude}'
           '?overview=full&geometries=geojson';
@@ -150,12 +393,18 @@ class FreeGeoClient {
     } on DioException {
       // Fall through to the honest straight-line estimate.
     }
-    return _straightLine(from, to);
+    return _straightLine(from, to, mode: mode);
   }
 
-  RouteInfo _straightLine(LatLng from, LatLng to) {
+  RouteInfo _straightLine(LatLng from, LatLng to, {String mode = 'car'}) {
     final double meters = GeoUtils.distanceMeters(from, to);
-    final double seconds = (meters / 1000) / 30 * 3600; // ~30 km/h urban
+    // Rough urban speeds by mode, so ETAs stay plausible.
+    final double kmh = switch (mode) {
+      'walk' => 4.5,
+      'bike' => 12,
+      _ => 30,
+    };
+    final double seconds = (meters / 1000) / kmh * 3600;
     return RouteInfo(
       distanceMeters: meters,
       durationSeconds: seconds,
