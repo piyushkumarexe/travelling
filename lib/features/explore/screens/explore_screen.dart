@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/favorites_store.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
@@ -53,20 +54,31 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _initLocation() async {
-    // Search first with whatever (cached) location we already have, so the
-    // screen never sits on a spinner waiting for a cold GPS fix. A fresh fix
-    // then re-runs the nearby search in the background.
+    // 1) Use the instant cached/last-known fix so the first search is already
+    //    a real "nearby" search (no flicker, no global fallback noise).
+    try {
+      final Position? cached = await _c.locationService.lastKnown();
+      if (mounted && cached != null) {
+        setState(() {
+          _position = cached;
+          _locationDone = true;
+        });
+      }
+    } catch (_) {}
+    // 2) Run the first search with whatever location we have (cached or
+    //    null). Never block the UI on a cold GPS fix.
     if (!_searchedOnce) _runDefaultSearch();
+    // 3) Refresh the fix in the background; re-run nearby ONLY when we had no
+    //    location at all, so a successful search is never wiped out.
     try {
       final Position? pos = await _c.locationService.currentPosition();
-      if (!mounted) return;
+      if (!mounted || pos == null) return;
       final bool hadLocation = _position != null;
       setState(() {
         _position = pos;
         _locationDone = true;
       });
-      // A real fix just landed after the first search ran without one.
-      if (!hadLocation && pos != null) unawaited(_runSearch());
+      if (!hadLocation) unawaited(_runSearch());
     } catch (_) {
       if (mounted) setState(() => _locationDone = true);
       if (!_searchedOnce) _runDefaultSearch();
@@ -107,10 +119,31 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _scope = scope;
       _activeCategory = null;
     });
+    if (scope == 'saved') {
+      unawaited(_loadSaved());
+      return;
+    }
     if (scope == 'hidden') {
       _queryController.text = kHiddenGemsQueries.first;
     }
     _runSearch();
+  }
+
+  Future<void> _loadSaved() async {
+    setState(() => _loading = true);
+    try {
+      final List<Place> saved = await FavoritesStore.all();
+      if (!mounted) return;
+      setState(() {
+        _results = saved;
+        _loading = false;
+        _error = null;
+        _searchedOnce = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   void _setCategory(String? category) {
@@ -121,7 +154,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   String _effectiveQuery() {
     if (_query.isNotEmpty) return _query;
-    if (_activeCategory != null) return _activeCategory!;
+    if (_activeCategory != null) {
+      // Use the human label ("Cafés", "Hotels", "Parks"…) so free providers
+      // search the right kind of place instead of reusing the default
+      // attraction query for every category.
+      return kExploreCategoryLabels[_activeCategory] ?? _activeCategory!;
+    }
     return 'tourist attractions near me';
   }
 
@@ -192,6 +230,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
       if (!mounted) return;
       setState(() {
+        // A background refresh that comes back empty must never wipe out
+        // results the user is already looking at (prevents the flicker to
+        // "no places found" when a re-run races the first fix).
+        if (places.isEmpty && _results.isNotEmpty) {
+          _loading = false;
+          return;
+        }
         _results = places;
         _loading = false;
         _searchedOnce = true;
@@ -199,7 +244,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        if (_results.isEmpty) _error = e.toString();
         _loading = false;
         _searchedOnce = true;
       });
@@ -272,6 +317,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 _scopeChip('Anywhere', _scope == 'anywhere', () => _setScope('anywhere')),
                 const SizedBox(width: 8),
                 _scopeChip('Hidden gems', _scope == 'hidden', () => _setScope('hidden')),
+                const SizedBox(width: 8),
+                _scopeChip('Saved', _scope == 'saved', () => _setScope('saved')),
                 const SizedBox(width: 16),
                 ChoiceChip(
                   label: const Text('⭐ Hotels'),
@@ -332,9 +379,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
     }
     if (_error != null && _results.isEmpty) {
-      return ErrorState(message: _error!, onRetry: _runSearch);
+      return ErrorState(
+        message: _error!,
+        onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
+      );
     }
     if (_results.isEmpty) {
+      if (_scope == 'saved') {
+        return EmptyState(
+          icon: Icons.bookmark_border,
+          title: 'No saved places yet',
+          message:
+              'Tap the bookmark icon on any place to save it here for quick '
+              'access — even offline.',
+          actionLabel: 'Explore nearby',
+          onAction: () => _setScope('nearby'),
+        );
+      }
       return EmptyState(
         icon: Icons.search,
         title: 'No places found',

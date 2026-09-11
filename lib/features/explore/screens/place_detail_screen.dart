@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/favorites_store.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
@@ -40,7 +41,10 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
   Position? _position;
   Uint8List? _photoBytes;
+  String? _imageUrl;
+  String? _description;
   bool _photoLoading = false;
+  bool _saved = false;
 
   bool _routeLoading = false;
 
@@ -58,6 +62,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         _loading = false;
       });
       unawaited(_loadPositionAndPhoto());
+      unawaited(_initSaved());
       return;
     }
     setState(() {
@@ -73,6 +78,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       });
       if (p != null) {
         unawaited(_loadPositionAndPhoto());
+        unawaited(_initSaved());
       }
     } catch (e) {
       if (!mounted) return;
@@ -89,7 +95,9 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       if (mounted) setState(() => _position = pos);
     } catch (_) {}
     final Place? p = _place;
-    if (p != null && p.photoUrls.isNotEmpty) {
+    if (p == null) return;
+    // Backend photo first (real Google Places photo when backend is online).
+    if (p.photoUrls.isNotEmpty) {
       if (mounted) setState(() => _photoLoading = true);
       try {
         final Uint8List bytes = await _c.placesRepository.photoBytes(
@@ -101,14 +109,64 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             _photoLoading = false;
           });
         }
+        return;
       } catch (_) {
-        if (mounted) {
-          setState(() {
-            _photoLoading = false;
-          });
-        }
+        if (mounted) setState(() => _photoLoading = false);
       }
     }
+    // Free Wikipedia photo + description so OSM/Wikipedia places never show
+    // a bare placeholder.
+    String? image;
+    String? extract;
+    final String? title = _wikiTitleFromUrl(p.website);
+    if (title != null) {
+      final (String?, String?) s =
+          await _c.placesRepository.wikipediaSummary(title);
+      image = s.$1;
+      extract = s.$2;
+    }
+    if (image == null && p.name.trim().isNotEmpty) {
+      image = await _c.placesRepository.wikipediaThumbnailBySearch(p.name);
+    }
+    if (mounted) {
+      setState(() {
+        _imageUrl = image;
+        _description = extract;
+      });
+    }
+  }
+
+  String? _wikiTitleFromUrl(String? url) {
+    if (url == null) return null;
+    final Uri? u = Uri.tryParse(url);
+    if (u == null || !u.host.contains('wikipedia.org')) return null;
+    final List<String> segs = u.pathSegments;
+    if (segs.length >= 2 && segs.first == 'wiki') {
+      return Uri.decodeComponent(segs[1]);
+    }
+    return null;
+  }
+
+  Future<void> _initSaved() async {
+    final Place? p = _place;
+    if (p == null) return;
+    final bool saved = await FavoritesStore.contains(p.placeId);
+    if (mounted) setState(() => _saved = saved);
+  }
+
+  Future<void> _toggleSaved() async {
+    final Place? p = _place;
+    if (p == null) return;
+    final bool saved = await FavoritesStore.toggle(p);
+    if (!mounted) return;
+    setState(() => _saved = saved);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved
+            ? 'Saved to your places.'
+            : 'Removed from your saved places.'),
+      ),
+    );
   }
 
   Future<void> _loadRoute() async {
@@ -349,6 +407,14 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                           ),
                         ),
                       ),
+                    IconButton(
+                      tooltip: _saved ? 'Remove from saved' : 'Save place',
+                      icon: Icon(
+                        _saved ? Icons.bookmark : Icons.bookmark_border,
+                        color: _saved ? scheme.primary : scheme.onSurfaceVariant,
+                      ),
+                      onPressed: _toggleSaved,
+                    ),
                   ],
                 ),
                 if (p.address != null && p.address!.isNotEmpty) ...<Widget>[
@@ -362,6 +428,16 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                             style: Theme.of(context).textTheme.bodyMedium),
                       ),
                     ],
+                  ),
+                ],
+                if (_description != null && _description!.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    _description!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.45,
+                          color: scheme.onSurfaceVariant,
+                        ),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -472,39 +548,52 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   }
 
   Widget _header(Place p, ColorScheme scheme) {
+    final Widget image;
+    if (_photoBytes != null) {
+      image = Image.memory(_photoBytes!, fit: BoxFit.cover);
+    } else if (_imageUrl != null) {
+      image = Image.network(
+        _imageUrl!,
+        fit: BoxFit.cover,
+        loadingBuilder: (BuildContext context, Widget child,
+            ImageChunkEvent? progress) {
+          if (progress == null) return child;
+          return ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        },
+        errorBuilder: (BuildContext context, Object e, StackTrace? s) =>
+            _placeholder(p, scheme),
+      );
+    } else {
+      image = _placeholder(p, scheme);
+    }
     return SizedBox(
-      height: 190,
+      height: 210,
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          if (_photoBytes != null)
-            Image.memory(_photoBytes!, fit: BoxFit.cover)
-          else
-            Container(
-              color: scheme.surfaceContainerHighest,
-              child: Center(
-                child: Icon(
-                  PlaceCard.iconFor(p),
-                  size: 64,
-                  color: PlaceCard.colorFor(context, p).withValues(alpha: 0.6),
-                ),
-              ),
-            ),
+          image,
           if (_photoLoading)
-            Container(
+            ColoredBox(
               color: Colors.black26,
               child: const Center(child: CircularProgressIndicator()),
             ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[Colors.transparent, Colors.black45],
-              ),
-            ),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _placeholder(Place p, ColorScheme scheme) {
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          PlaceCard.iconFor(p),
+          size: 64,
+          color: PlaceCard.colorFor(context, p).withValues(alpha: 0.6),
+        ),
       ),
     );
   }

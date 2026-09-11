@@ -85,6 +85,8 @@ class AppRouter {
             builder: (BuildContext context, GoRouterState state) {
               final Map<String, String> qp = state.uri.queryParameters;
               return MapScreen(
+                key: ValueKey<String>(
+                    'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}'),
                 initialLat: double.tryParse(qp['lat'] ?? ''),
                 initialLng: double.tryParse(qp['lng'] ?? ''),
                 initialName: qp['name'],

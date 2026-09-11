@@ -22,13 +22,13 @@ class FreeGeoClient {
   FreeGeoClient();
 
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 12),
-    receiveTimeout: const Duration(seconds: 25),
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 15),
   ));
 
   final Dio _nominatim = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 12),
-    receiveTimeout: const Duration(seconds: 25),
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 15),
     headers: <String, String>{
       // Nominatim requires a descriptive User-Agent (usage policy).
       'User-Agent': 'TourismApp/1.0 (Android travel & safety assistant)',
@@ -238,6 +238,66 @@ class FreeGeoClient {
     return '${(meters / 1000).toStringAsFixed(1)} km away';
   }
 
+  /// Wikipedia REST summary for a page title → (thumbnail URL, description).
+  /// Gives real photos + a short intro for famous places, entirely free.
+  Future<(String?, String?)> wikipediaSummary(String title) async {
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://en.wikipedia.org/api/rest_v1/page/summary/'
+        '${Uri.encodeComponent(title.replaceAll(' ', '_'))}',
+      );
+      final Object? data = resp.data;
+      if (data is! Map) return (null, null);
+      String? image;
+      final Object? thumb = data['thumbnail'];
+      if (thumb is Map && thumb['source'] is String) {
+        image = thumb['source'] as String;
+      }
+      String? extract = data['extract'] as String?;
+      if (extract != null && extract.length > 400) {
+        extract = '${extract.substring(0, 400)}…';
+      }
+      return (image, extract);
+    } catch (_) {
+      return (null, null);
+    }
+  }
+
+  /// Finds a thumbnail image by searching Wikipedia for [query] — used for
+  /// places that don't already carry a Wikipedia URL (hotels, landmarks…).
+  Future<String?> wikipediaThumbnailBySearch(String query) async {
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://en.wikipedia.org/w/api.php',
+        queryParameters: <String, dynamic>{
+          'action': 'query',
+          'generator': 'search',
+          'gsrsearch': query,
+          'gsrlimit': 3,
+          'prop': 'pageimages',
+          'piprop': 'thumbnail',
+          'pithumbsize': 800,
+          'format': 'json',
+          'redirects': 1,
+        },
+      );
+      final Object? data = resp.data;
+      if (data is! Map) return null;
+      final Object? queryObj = data['query'];
+      if (queryObj is! Map || queryObj['pages'] is! Map) return null;
+      for (final dynamic page in (queryObj['pages'] as Map).values) {
+        if (page is! Map) continue;
+        final Object? thumb = page['thumbnail'];
+        if (thumb is Map && thumb['source'] is String) {
+          return thumb['source'] as String;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'key': _mtKey,
@@ -302,6 +362,8 @@ class FreeGeoClient {
     LatLng near,
     double radiusMeters,
   ) async {
+    final bool hotelFilter =
+        filters.any((f) => f.$2.contains('hotel'));
     final int radius = (radiusMeters <= 0 ? 5000 : radiusMeters).round();
     final StringBuffer b = StringBuffer('[out:json][timeout:20];(');
     for (final (String key, String regex) in filters) {
@@ -343,6 +405,7 @@ class FreeGeoClient {
             address = <String>[street, city].where((String s) => s.isNotEmpty).join(', ');
           }
           if (name.trim().isEmpty) continue;
+          if (hotelFilter && !_looksLikeHotel(name)) continue;
           out.add(Place(
             placeId:
                 'osm-${e['type'] ?? 'node'}-${e['id'] ?? '${coords.$1},${coords.$2}'}',
@@ -415,7 +478,7 @@ class FreeGeoClient {
             final Object? tags = e['tags'];
             String name = '';
             if (tags is Map) name = _tagOf(tags, 'name');
-            if (name.trim().isEmpty) continue;
+            if (name.trim().isEmpty || !_looksLikeHotel(name)) continue;
             out.add(_hotelPlace(e, tags, coords.$1!, coords.$2!, stars.toDouble()));
           }
           break;
@@ -450,7 +513,7 @@ class FreeGeoClient {
             final Object? tags = e['tags'];
             String name = '';
             if (tags is Map) name = _tagOf(tags, 'name');
-            if (name.trim().isEmpty) continue;
+            if (name.trim().isEmpty || !_looksLikeHotel(name)) continue;
             out.add(_hotelPlace(e, tags, coords.$1!, coords.$2!, null));
           }
           break;
@@ -500,6 +563,19 @@ class FreeGeoClient {
 
   static String nameOf(Object? tags) =>
       tags is Map ? _tagOf(tags, 'name') : '';
+
+  /// Filters OSM entries that are tagged `tourism=hotel` but are really
+  /// marriage/banquet halls — they look fake in a "hotels" list.
+  static bool _looksLikeHotel(String name) {
+    final String n = name.toLowerCase();
+    return !(n.contains('marriage') ||
+        n.contains('banquet') ||
+        n.contains('wedding') ||
+        n.contains('mandap') ||
+        n.contains('function') ||
+        n.contains('lawn') ||
+        n.contains('party'));
+  }
 
   Future<String?> reverseGeocode(double lat, double lng) async {
     try {

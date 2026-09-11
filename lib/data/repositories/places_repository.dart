@@ -142,6 +142,16 @@ class PlacesRepository {
   /// server-side).
   Future<Uint8List> photoBytes(String photoUrl) => _api.getBytes(photoUrl);
 
+  /// Free Wikipedia photo + short description for a page title. Used so place
+  /// details show a real picture even when the backend is offline.
+  Future<(String?, String?)> wikipediaSummary(String title) =>
+      _free.wikipediaSummary(title);
+
+  /// Free Wikipedia thumbnail by free-text search (for places without a wiki
+  /// URL). Returns an image URL or null.
+  Future<String?> wikipediaThumbnailBySearch(String query) =>
+      _free.wikipediaThumbnailBySearch(query);
+
   /// Opens real turn-by-turn navigation on the device: native Google Maps
   /// navigation first, then the Maps deep link, then a geo: URI.
   Future<bool> openInGoogleMaps(double lat, double lng, String? name) async {

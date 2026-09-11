@@ -58,6 +58,23 @@ class Place {
 
   LatLng get coords => LatLng(lat, lng);
 
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'placeId': placeId,
+        'name': name,
+        'lat': lat,
+        'lng': lng,
+        'address': address,
+        'rating': rating,
+        'userRatingCount': userRatingCount,
+        'primaryType': primaryType,
+        'types': types,
+        'photoUrls': photoUrls,
+        'phone': phone,
+        'website': website,
+        'priceLevel': priceLevel,
+        'openNow': openNow,
+      };
+
   bool get isTourist => types.contains('tourist_attraction');
   bool get isFood =>
       types.contains('restaurant') ||

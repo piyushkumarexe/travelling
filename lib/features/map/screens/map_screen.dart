@@ -46,8 +46,9 @@ class _MapScreenState extends State<MapScreen> {
   LatLng _initialCenter = const LatLng(20.5937, 78.9629);
   double _initialZoom = 4;
 
-  /// Current tile style: 'satellite' (default) or 'streets-v2'.
-  String _mapStyle = 'satellite';
+  /// Current tile style: 'streets-v2' (default, most reliable on the free
+  /// tier) with satellite/hybrid available via the layer toggle.
+  String _mapStyle = 'streets-v2';
 
   /// Travel mode for routing + the on-map icon: walk | bike | car | auto.
   String _travelMode = 'car';
@@ -428,6 +429,25 @@ class _MapScreenState extends State<MapScreen> {
       _searchController.clear();
       _activeChip = null;
     });
+  }
+
+  /// One-tap "set start" from a search result (Google-style from/to).
+  void _setOriginFrom(Place p) {
+    setState(() {
+      _origin = LatLng(p.lat, p.lng);
+      _originName = p.name;
+      _settingOrigin = false;
+      _resultsVisible = false;
+      _results = const <Place>[];
+      _searchController.clear();
+      _activeChip = null;
+    });
+    if (_selected != null) {
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      unawaited(_getRoute());
+    }
   }
 
   void _clearOrigin() {
@@ -1288,6 +1308,19 @@ class _MapScreenState extends State<MapScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => _select(p),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () => _setOriginFrom(p),
+                          child: const Text('Start'),
+                        ),
+                        FilledButton(
+                          onPressed: () => _select(p),
+                          child: const Text('Go'),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),

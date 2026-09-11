@@ -226,6 +226,43 @@ class _SosSheetViewState extends State<_SosSheetView> {
     }
   }
 
+  /// India emergency numbers (works nationwide from any SIM) — shown so the
+  /// user always has a real number to call, even before/without GPS.
+  Widget _emergencyNumbers(ColorScheme scheme) {
+    const List<(String, String)> numbers = <(String, String)>[
+      ('112', 'Emergency (all)'),
+      ('100', 'Police'),
+      ('101', 'Fire'),
+      ('102', 'Ambulance'),
+      ('108', 'Ambulance'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Emergency numbers (India)',
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final (String number, String label) in numbers)
+              ActionChip(
+                avatar: const Icon(Icons.call, size: 16),
+                label: Text('$number · $label'),
+                onPressed: () => _call(number),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MediaQueryData mq = MediaQuery.of(context);
@@ -300,6 +337,8 @@ class _SosSheetViewState extends State<_SosSheetView> {
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 16),
+        _emergencyNumbers(scheme),
         if (_error != null) ...<Widget>[
           const SizedBox(height: 12),
           Container(
@@ -431,6 +470,8 @@ class _SosSheetViewState extends State<_SosSheetView> {
               style: TextStyle(color: scheme.error),
               textAlign: TextAlign.center),
         ],
+        const SizedBox(height: 24),
+        _emergencyNumbers(scheme),
         const SizedBox(height: 24),
         Text(
           'Nearby emergency services',
