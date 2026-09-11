@@ -4,7 +4,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../models/weather.dart';
 
-/// OpenWeather data through the Yatrawise backend (key stays server-side).
+/// OpenWeather data through the YatraWise backend (key stays server-side).
 class WeatherRepository {
   WeatherRepository(this._api);
 

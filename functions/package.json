@@ -1,6 +1,6 @@
 {
   "name": "yatrawise-functions",
-  "description": "Yatrawise secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
+  "description": "YatraWise secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
   "private": true,
   "main": "index.js",
   "engines": {

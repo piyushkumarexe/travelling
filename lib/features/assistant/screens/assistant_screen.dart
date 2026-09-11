@@ -8,7 +8,7 @@ import '../../../core/state/app_container.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/repositories/ai_repository.dart';
 
-/// Real AI tourism assistant (NVIDIA API via the Yatrawise backend).
+/// Real AI tourism assistant (NVIDIA API via the YatraWise backend).
 /// No canned responses: every answer comes from the live model with the
 /// user's location and preferences as context.
 class AssistantScreen extends StatefulWidget {
@@ -122,7 +122,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             role: 'assistant',
             text:
                 'I could not reach the AI service: ${e.toString()}\n\n'
-                'Check your internet connection (and that the Yatrawise '
+                'Check your internet connection (and that the YatraWise '
                 'backend is deployed) and try again.',
             isError: true,
           ),

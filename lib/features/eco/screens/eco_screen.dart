@@ -432,7 +432,7 @@ class _EcoScreenState extends State<EcoScreen> {
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          'Keep the app open while you walk or cycle; Yatrawise '
+                          'Keep the app open while you walk or cycle; YatraWise '
                           'measures real distance from GPS.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),

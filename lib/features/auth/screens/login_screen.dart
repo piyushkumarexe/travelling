@@ -75,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 22),
               Text(
-                'Yatrawise',
+                'YatraWise',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.5,

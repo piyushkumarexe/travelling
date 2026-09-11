@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Yatrawise "Clean Minimal" theme (uiverse-inspired soft UI):
+/// YatraWise "Clean Minimal" theme (uiverse-inspired soft UI):
 /// fresh teal accent, hairline borders, soft shadows, pill-ish radii.
 library;
 

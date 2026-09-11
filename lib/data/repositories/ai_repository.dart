@@ -3,7 +3,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/nvidia_direct_client.dart';
 import '../models/itinerary.dart';
 
-/// NVIDIA AI calls — preferably through the Yatrawise backend (server-side
+/// NVIDIA AI calls — preferably through the YatraWise backend (server-side
 /// key, rate limits). When the backend is unreachable (Cloud Functions not
 /// deployed yet) and a build-time NVIDIA key is present, calls
 /// transparently fall back to a direct NVIDIA request so the AI features

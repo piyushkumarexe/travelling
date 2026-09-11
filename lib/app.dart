@@ -5,8 +5,8 @@ import 'core/state/app_container.dart';
 import 'core/theme/app_theme.dart';
 import 'features/setup/screens/setup_guide_screen.dart';
 
-class YatrawiseApp extends StatelessWidget {
-  const YatrawiseApp({super.key, required this.container});
+class YatraWiseApp extends StatelessWidget {
+  const YatraWiseApp({super.key, required this.container});
 
   final AppContainer container;
 
@@ -16,7 +16,7 @@ class YatrawiseApp extends StatelessWidget {
     // instead of a broken app (honest, actionable state).
     if (!container.firebaseReady) {
       return MaterialApp(
-        title: 'Yatrawise',
+        title: 'YatraWise',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
@@ -29,7 +29,7 @@ class YatrawiseApp extends StatelessWidget {
     return AppScope(
       container: container,
       child: MaterialApp.router(
-        title: 'Yatrawise',
+        title: 'YatraWise',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),

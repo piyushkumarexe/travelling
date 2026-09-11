@@ -25,7 +25,7 @@ class DefaultFirebaseOptions {
       return android;
     }
     throw UnsupportedError(
-      'Yatrawise currently only supports Android. '
+      'YatraWise currently only supports Android. '
       'Run `flutterfire configure --platforms=android`.',
     );
   }

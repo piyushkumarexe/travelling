@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_exception.dart';
 
-/// HTTP client for the Yatrawise backend (Firebase Cloud Functions).
+/// HTTP client for the YatraWise backend (Firebase Cloud Functions).
 ///
 /// The backend URL is derived from the Firebase project id; no secrets and
 /// no third-party endpoints are reachable from this client. Every request
@@ -107,7 +107,7 @@ class ApiClient {
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
         return ApiException(ApiErrorKind.timeout,
-            'The Yatrawise backend did not respond in time. Check your connection and try again.');
+            'The YatraWise backend did not respond in time. Check your connection and try again.');
       case DioExceptionType.connectionError:
         return ApiException(ApiErrorKind.network,
             'No network connection. Check your internet connection and try again.');
@@ -118,7 +118,7 @@ class ApiClient {
         return ApiException(ApiErrorKind.unknown, 'Request cancelled.');
       case DioExceptionType.badResponse:
         return ApiException(ApiErrorKind.server,
-            msg ?? 'The Yatrawise backend returned an error (${code ?? 'unknown'}).',
+            msg ?? 'The YatraWise backend returned an error (${code ?? 'unknown'}).',
             statusCode: code,
             details: details);
       case DioExceptionType.unknown:

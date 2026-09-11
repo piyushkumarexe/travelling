@@ -1,6 +1,6 @@
-# Yatrawise — Smart Tourism & Safety Assistant (Android)
+# YatraWise — Smart Tourism & Safety Assistant (Android)
 
-Yatrawise is a native Android app (Flutter) that combines a premium travel
+YatraWise is a native Android app (Flutter) that combines a premium travel
 experience with real safety tooling: live Google Maps, real AI assistance
 (NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
 zones with Android notifications, a one-tap SOS flow, a Digital Emergency

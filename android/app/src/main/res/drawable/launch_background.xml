@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- YatraWise splash: warm cream background (matches brand logo) -->
     <item>
         <shape android:shape="rectangle">
-            <gradient
-                android:angle="270"
-                android:startColor="#0B3954"
-                android:endColor="#0E7C7B" />
+            <solid android:color="#FFFBF0" />
         </shape>
+    </item>
+    <!-- Centered launcher icon (emblem art, added with the new icons). -->
+    <item
+        android:width="108dp"
+        android:height="108dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@mipmap/ic_launcher"
+            android:gravity="fill" />
     </item>
 </layer-list>
