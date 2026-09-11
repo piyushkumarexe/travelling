@@ -451,7 +451,7 @@ class _MapScreenState extends State<MapScreen> {
         _recenter();
       }
       // Restart the live position watch now that permission is granted.
-      _posSub?.cancel();
+      unawaited(_posSub?.cancel());
       _posSub = null;
       _startPositionWatch();
     }
