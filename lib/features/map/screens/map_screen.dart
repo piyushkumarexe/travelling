@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
+import 'package:latlong2/latlong.dart';
 
+import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
@@ -12,10 +15,10 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/safety_zone.dart';
 
-/// REAL interactive Google Maps screen (Google Maps SDK for Flutter):
-/// GPS location, zoom/pan/rotate, place search, tourist attractions,
-/// nearby places, safety zones, emergency services, destination markers,
-/// route info and actual Google Maps navigation on the device.
+/// Interactive map (MapTiler raster tiles — no Google Maps SDK key needed):
+/// GPS location, zoom/pan, place search, tourist attractions, nearby places,
+/// safety zones, emergency services, destination markers, route info and
+/// real turn-by-turn navigation on the device.
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -37,19 +40,17 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   AppContainer get _c => AppScope.of(context);
 
-  GoogleMapController? _controller;
+  final MapController _controller = MapController();
   bool _ready = false;
-  CameraPosition _initial = const CameraPosition(
-    target: LatLng(20.5937, 78.9629),
-    zoom: 4,
-  );
+  LatLng _initialCenter = const LatLng(20.5937, 78.9629);
+  double _initialZoom = 4;
 
   Position? _position;
   bool _permissionDenied = false;
 
-  Set<Marker> _markers = <Marker>{};
-  Set<Circle> _circles = <Circle>{};
-  Set<Polyline> _polylines = <Polyline>{};
+  List<Marker> _markers = <Marker>[];
+  List<CircleMarker> _circles = <CircleMarker>[];
+  List<Polyline> _polylines = <Polyline>[];
 
   Place? _selected;
   RouteInfo? _route;
@@ -91,7 +92,8 @@ class _MapScreenState extends State<MapScreen> {
     final double? lng = widget.initialLng;
     if (lat != null && lng != null) {
       setState(() {
-        _initial = CameraPosition(target: LatLng(lat, lng), zoom: 15);
+        _initialCenter = LatLng(lat, lng);
+        _initialZoom = 15;
         _ready = true;
       });
       return;
@@ -110,10 +112,8 @@ class _MapScreenState extends State<MapScreen> {
       } else if (pos != null) {
         setState(() {
           _position = pos;
-          _initial = CameraPosition(
-            target: LatLng(pos.latitude, pos.longitude),
-            zoom: 14,
-          );
+          _initialCenter = LatLng(pos.latitude, pos.longitude);
+          _initialZoom = 14;
           _ready = true;
         });
       } else {
@@ -157,7 +157,7 @@ class _MapScreenState extends State<MapScreen> {
       _searchError = null;
     });
     try {
-      final LatLng? target = _cameraTarget();
+      final gm.LatLng? target = _cameraTarget();
       final List<Place> places = await _c.placesRepository.search(
         q,
         location: target,
@@ -196,7 +196,7 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _runSearchWithTypes(String q, List<String>? types) async {
     setState(() => _searchLoading = true);
     try {
-      final LatLng? target = _cameraTarget();
+      final gm.LatLng? target = _cameraTarget();
       final List<Place> places = await _c.placesRepository.search(
         q,
         location: target,
@@ -218,28 +218,28 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  LatLng? _cameraTarget() {
+  gm.LatLng? _cameraTarget() {
     final Position? p = _position;
-    if (p != null) return LatLng(p.latitude, p.longitude);
+    if (p != null) return gm.LatLng(p.latitude, p.longitude);
     return null;
   }
 
   void _rebuildZones() {
     if (!_showZones) {
-      _circles = <Circle>{};
+      _circles = <CircleMarker>[];
       return;
     }
-    final Set<Circle> circles = <Circle>{};
+    final List<CircleMarker> circles = <CircleMarker>[];
     for (final SafetyZone z in _zones) {
       if (!z.active) continue;
       final Color color = RiskBadge.colorFor(context, z.riskLevel);
-      circles.add(Circle(
-        circleId: CircleId('zone-${z.id}'),
-        center: LatLng(z.lat, z.lng),
+      circles.add(CircleMarker(
+        point: LatLng(z.lat, z.lng),
         radius: z.radiusMeters,
-        fillColor: color.withValues(alpha: 0.18),
-        strokeColor: color.withValues(alpha: 0.7),
-        strokeWidth: 2,
+        useRadiusInMeter: true,
+        color: color.withValues(alpha: 0.18),
+        borderColor: color.withValues(alpha: 0.7),
+        borderStrokeWidth: 2,
       ));
     }
     _circles = circles;
@@ -249,46 +249,45 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _selected = p;
       _route = null;
-      _polylines = <Polyline>{};
-      _distanceToSelected = _distance(p.coords);
+      _polylines = <Polyline>[];
+      _distanceToSelected = _distanceTo(p.lat, p.lng);
       _resultsVisible = false;
-      _markers = <Marker>{
+      _markers = <Marker>[
         Marker(
-          markerId: const MarkerId('selected'),
-          position: p.coords,
-          infoWindow: InfoWindow(
-            title: p.name,
-            snippet: p.address ?? '',
-          ),
+          point: LatLng(p.lat, p.lng),
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.location_pin,
+              color: Color(0xFFDC2626), size: 40),
         ),
-      };
+      ];
     });
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(p.coords, 15),
-    );
+    _controller.move(LatLng(p.lat, p.lng), 15);
   }
 
-  double? _distance(LatLng target) {
+  double? _distanceTo(double lat, double lng) {
     final Position? p = _position;
     if (p == null) return null;
-    return GeoUtils.distanceMeters(
-      LatLng(p.latitude, p.longitude),
-      target,
+    return GeoUtils.distanceMetersLL(
+      p.latitude,
+      p.longitude,
+      lat,
+      lng,
     );
   }
 
   void _updateDistance() {
     final Place? s = _selected;
     if (s == null) return;
-    setState(() => _distanceToSelected = _distance(s.coords));
+    setState(() => _distanceToSelected = _distanceTo(s.lat, s.lng));
   }
 
   void _clearSelection() {
     setState(() {
       _selected = null;
       _route = null;
-      _markers = <Marker>{};
-      _polylines = <Polyline>{};
+      _markers = <Marker>[];
+      _polylines = <Polyline>[];
       _distanceToSelected = null;
     });
   }
@@ -308,23 +307,24 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _routeLoading = true);
     try {
       final RouteInfo r = await _c.placesRepository.route(
-        LatLng(pos.latitude, pos.longitude),
-        p.coords,
+        gm.LatLng(pos.latitude, pos.longitude),
+        gm.LatLng(p.lat, p.lng),
       );
       if (!mounted) return;
       setState(() {
         _route = r;
         _routeLoading = false;
         _polylines = r.polyline.length >= 2
-            ? <Polyline>{
+            ? <Polyline>[
                 Polyline(
-                  polylineId: const PolylineId('route'),
-                  points: r.polyline,
+                  points: r.polyline
+                      .map((gm.LatLng lp) => LatLng(lp.latitude, lp.longitude))
+                      .toList(),
                   color: Theme.of(context).colorScheme.primary,
-                  width: 5,
+                  strokeWidth: 5,
                 ),
-              }
-            : <Polyline>{};
+              ]
+            : <Polyline>[];
       });
     } catch (e) {
       if (!mounted) return;
@@ -341,12 +341,10 @@ class _MapScreenState extends State<MapScreen> {
     await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
   }
 
-  Future<void> _recenter() async {
+  void _recenter() {
     final Position? p = _position;
     if (p == null) return;
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(p.latitude, p.longitude), 15),
-    );
+    _controller.move(LatLng(p.latitude, p.longitude), 15);
   }
 
   Future<void> _enableLocation() async {
@@ -364,7 +362,7 @@ class _MapScreenState extends State<MapScreen> {
         _permissionDenied = false;
       });
       if (pos != null) {
-        unawaited(_recenter());
+        _recenter();
       }
     }
   }
@@ -388,21 +386,27 @@ class _MapScreenState extends State<MapScreen> {
     return Scaffold(
       body: Stack(
         children: <Widget>[
-          GoogleMap(
-            initialCameraPosition: _initial,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: true,
-            compassEnabled: true,
-            rotateGesturesEnabled: true,
-            tiltGesturesEnabled: true,
-            onMapCreated: (GoogleMapController controller) {
-              _controller = controller;
-            },
-            markers: _markers,
-            circles: _circles,
-            polylines: _polylines,
-            onTap: (LatLng _) => _clearSelection(),
+          FlutterMap(
+            mapController: _controller,
+            options: MapOptions(
+              initialCenter: _initialCenter,
+              initialZoom: _initialZoom,
+              onTap: (TapPosition _, LatLng __) => _clearSelection(),
+            ),
+            children: <Widget>[
+              TileLayer(
+                urlTemplate: AppConfig.mapTilerTileUrl('streets-v2'),
+                userAgentPackageName: 'app.roamio.tourism',
+              ),
+              MarkerLayer(
+                markers: <Marker>[
+                  ..._markers,
+                  if (_position != null) _userLocationMarker(),
+                ],
+              ),
+              CircleLayer(circles: _circles),
+              PolylineLayer(polylines: _polylines),
+            ],
           ),
           Positioned(
             top: 0,
@@ -434,13 +438,58 @@ class _MapScreenState extends State<MapScreen> {
           Positioned(
             right: 16,
             bottom: _selected != null ? 260 : 96,
-            child: FloatingActionButton.small(
-              tooltip: 'My location',
-              onPressed: _recenter,
-              child: const Icon(Icons.my_location),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FloatingActionButton.small(
+                  heroTag: 'map-zoom-in',
+                  tooltip: 'Zoom in',
+                  onPressed: () => _controller.move(
+                    _controller.camera.center,
+                    _controller.camera.zoom + 1,
+                  ),
+                  child: const Icon(Icons.add),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-zoom-out',
+                  tooltip: 'Zoom out',
+                  onPressed: () => _controller.move(
+                    _controller.camera.center,
+                    _controller.camera.zoom - 1,
+                  ),
+                  child: const Icon(Icons.remove),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-my-location',
+                  tooltip: 'My location',
+                  onPressed: _recenter,
+                  child: const Icon(Icons.my_location),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Marker _userLocationMarker() {
+    final Position p = _position!;
+    return Marker(
+      point: LatLng(p.latitude, p.longitude),
+      width: 18,
+      height: 18,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E88E5),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(color: Colors.black26, blurRadius: 4),
+          ],
+        ),
       ),
     );
   }
@@ -645,8 +694,8 @@ class _MapScreenState extends State<MapScreen> {
                     subtitle: Text(
                       [
                         if (p.address != null) p.address!,
-                        if (_distance(p.coords) != null)
-                          GeoUtils.formatDistance(_distance(p.coords)!),
+                        if (_distanceTo(p.lat, p.lng) != null)
+                          GeoUtils.formatDistance(_distanceTo(p.lat, p.lng)!),
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

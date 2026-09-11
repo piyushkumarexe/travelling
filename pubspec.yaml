@@ -21,8 +21,10 @@ dependencies:
   # --- Google Sign-In ---
   google_sign_in: ^6.2.2
 
-  # --- Maps & location (real Google Maps SDK, real GPS) ---
+  # --- Maps & location (real GPS + MapTiler tiles, no Google Maps key) ---
   google_maps_flutter: ^2.12.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.9.1
   geolocator: ^13.0.1
 
   # --- Navigation, networking, UI ---

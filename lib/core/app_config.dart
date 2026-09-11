@@ -53,6 +53,19 @@ class AppConfig {
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 
+  /// MapTiler tile API key (client-side, shown on the device — same category
+  /// as the Google Maps Android key). Provides the interactive map tiles so
+  /// the map works without a Google Maps SDK key. Override at build time:
+  ///   flutter build apk --dart-define=MAPTILER_API_KEY=...
+  static const String mapTilerApiKey = String.fromEnvironment(
+    'MAPTILER_API_KEY',
+    defaultValue: 'udi5P84vPD7vdzptwwAN',
+  );
+
+  /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite').
+  static String mapTilerTileUrl(String style) =>
+      'https://api.maptiler.com/maps/$style/{z}/{x}/{y}.png?key=$mapTilerApiKey';
+
   /// Maximum file sizes accepted for user uploads (bytes).
   static const int maxImageBytes = 10 * 1024 * 1024; // 10 MB
   static const int maxVideoBytes = 50 * 1024 * 1024; // 50 MB
