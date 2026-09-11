@@ -43,7 +43,7 @@ class AppConfig {
       String.fromEnvironment('NVIDIA_API_KEY', defaultValue: '');
   static const String nvidiaModel = String.fromEnvironment(
     'NVIDIA_MODEL',
-    defaultValue: 'meta/llama-3.3-70b-instruct',
+    defaultValue: 'nvidia/nemotron-3-ultra-550b-a55b',
   );
   static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
 
