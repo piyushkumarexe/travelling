@@ -82,7 +82,7 @@ List<String> weatherSafetyNotes(WeatherCurrent w) {
   } else if (w.tempC <= 5) {
     notes.add('Cold day: layered clothing is recommended.');
   }
-  final double windMsToKmh = w.windMs * 3.6;
+  final double windMsToKmh = (w.windMs * 3.6 * 10).round() / 10;
   if (windMsToKmh >= 40) {
     notes.add('Strong winds: avoid open areas, loose signage and water bodies.');
   } else if (windMsToKmh >= 25) {
