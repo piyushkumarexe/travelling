@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../../core/utils/eco_math.dart';
 import '../local/eco_local_store.dart';
@@ -58,8 +57,9 @@ class EcoRepository {
     await _scoreRef(uid).set(EcoMath.applyActivity(current, activity).toMap());
   }
 
-  /// On-device fallback: same score math, stored locally.
-  Future<void> localAddActivity(String uid, EcoActivity activity) =>
+  /// On-device fallback: same score math, stored locally. Returns the
+  /// updated score so the UI can refresh immediately.
+  Future<EcoScore> localAddActivity(String uid, EcoActivity activity) =>
       local.addActivity(uid, activity);
 
   /// True when [e] means the cloud rejected the request (rules/offline) and a
