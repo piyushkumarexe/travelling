@@ -466,8 +466,8 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
                 ),
                 children: <Widget>[
                   TileLayer(
-                    urlTemplate: AppConfig.mapTilerTileUrl('streets-v2'),
-                    fallbackUrl: AppConfig.fallbackTileUrl,
+                    urlTemplate: AppConfig.tileUrlTemplate('streets-v2'),
+                    fallbackUrl: AppConfig.tileFallbackUrl,
                     userAgentPackageName: 'app.roamio.tourism',
                     retinaMode: RetinaMode.isHighDensity(context),
                     maxNativeZoom: 19,

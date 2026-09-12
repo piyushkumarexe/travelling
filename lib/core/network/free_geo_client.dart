@@ -431,6 +431,30 @@ class FreeGeoClient {
     }
   }
 
+  /// One-request check of the compiled MapTiler key (geocoding endpoint).
+  /// Returns false only when MapTiler explicitly rejects the key (401/403 or
+  /// an "Invalid key" payload). A network failure is rethrown so callers do
+  /// not mistake "offline" for "bad key".
+  Future<bool> mapTilerKeyValid() async {
+    if (!AppConfig.mapTilerConfigured) return false;
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://api.maptiler.com/geocoding/${Uri.encodeComponent('museum')}.json',
+        queryParameters: <String, dynamic>{'key': _mtKey, 'limit': 1},
+      );
+      final Object? data = resp.data;
+      if (data is Map && data['features'] is List) return true;
+      if (data is String && data.toLowerCase().contains('invalid key')) {
+        return false;
+      }
+      return false;
+    } on DioException catch (e) {
+      final int? code = e.response?.statusCode;
+      if (code == 401 || code == 403) return false;
+      rethrow;
+    }
+  }
+
   Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'key': _mtKey,

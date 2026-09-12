@@ -130,24 +130,53 @@ class AppConfig {
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 
-  /// MapTiler tile API key (client-side, shown on the device — same category
-  /// as the Google Maps Android key). Provides the interactive map tiles so
-  /// the map works without a Google Maps SDK key. Override at build time:
+  /// MapTiler API key for tiles + geocoding. Supplied at build time ONLY —
+  /// never committed to source (this default is intentionally empty):
   ///   flutter build apk --dart-define=MAPTILER_API_KEY=...
+  /// In CI the same value comes from the MAPTILER_API_KEY repository secret
+  /// (see .github/workflows/build-apk.yml). When no key is compiled in, the
+  /// map uses keyless OpenStreetMap tiles instead, so it can never show an
+  /// "Invalid key" error or a blank screen.
   static const String mapTilerApiKey = String.fromEnvironment(
     'MAPTILER_API_KEY',
-    defaultValue: 'udiP84vPD7vdzptwwAN',
+    defaultValue: '',
   );
+
+  /// True when a MapTiler key was compiled into this build.
+  static bool get mapTilerConfigured => mapTilerApiKey.isNotEmpty;
+
+  /// Sanitized runtime diagnostic — never logs the key itself, only whether
+  /// it is present, its length and its first 4 characters.
+  static String debugMapConfig() {
+    final String key = mapTilerApiKey;
+    final String prefix = key.length >= 4
+        ? key.substring(0, 4)
+        : (key.isEmpty ? '<empty>' : key);
+    return 'MapTiler configured=${mapTilerConfigured}, '
+        'keyLength=${key.length}, keyPrefix=$prefix';
+  }
 
   /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite',
   /// 'hybrid'). `{r}` becomes `@2x` on high-DPI screens so tiles stay sharp.
+  /// Only used when [mapTilerConfigured] is true.
   static String mapTilerTileUrl(String style) =>
       'https://api.maptiler.com/maps/$style/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey';
 
-  /// Keyless fallback tile URL used when the MapTiler tiles cannot be fetched
-  /// (invalid/expired key, or no route to api.maptiler.com). Keeps the map
-  /// from ever rendering as a blank screen; the app still shows real roads
-  /// and labels from OpenStreetMap.
+  /// The primary tile URL for the given [style]: MapTiler when a key is
+  /// compiled in, otherwise keyless OpenStreetMap tiles. In keyless mode the
+  /// map never makes a MapTiler request, so it never shows "Invalid key".
+  static String tileUrlTemplate(String style) =>
+      mapTilerConfigured ? mapTilerTileUrl(style) : fallbackTileUrl;
+
+  /// Secondary (fallback) tile URL. Only used when a MapTiler key is compiled
+  /// in — a bad/expired key still shows real OSM streets instead of a blank
+  /// map. Null in keyless mode because the primary is already keyless.
+  static String? get tileFallbackUrl =>
+      mapTilerConfigured ? fallbackTileUrl : null;
+
+  /// Keyless OpenStreetMap tile source (real streets/labels, no API key).
+  /// Used as the primary source in keyless mode and as the fallback when a
+  /// MapTiler key is compiled in.
   static const String fallbackTileUrl =
       'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 

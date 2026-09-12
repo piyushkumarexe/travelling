@@ -53,9 +53,14 @@ class _MapScreenState extends State<MapScreen> {
   /// tier) with satellite/hybrid available via the layer toggle.
   String _mapStyle = 'streets-v2';
 
-  /// Set when map tiles fail to load even from the keyless fallback source.
-  /// Used to show a visible diagnostic instead of a blank map.
-  bool _tilesFailed = false;
+  /// Non-null message when the map needs to show an honest diagnostic banner
+  /// (tiles failed on both sources, or the compiled MapTiler key was
+  /// rejected at runtime). The map itself keeps rendering, never blank.
+  String? _tileNotice;
+
+  /// True when MapTiler rejected the compiled key at runtime — the map then
+  /// switches to keyless OpenStreetMap tiles and explains why.
+  bool _maptilerRejected = false;
 
   /// Travel mode for routing + the on-map icon: walk | bike | car | auto.
   String _travelMode = 'car';
@@ -152,6 +157,31 @@ class _MapScreenState extends State<MapScreen> {
     _startIncidentsWatch();
     _startPositionWatch();
     _resolveInitial();
+    // Runtime diagnostic (sanitized): shows whether a key was compiled in and
+    // its length/prefix, so the on-device value can be verified in logcat.
+    debugPrint('[map] ${AppConfig.debugMapConfig()}');
+    unawaited(_verifyMapKey());
+  }
+
+  /// Verifies the compiled MapTiler key with ONE geocoding request so a
+  /// rejected key is surfaced honestly (and the map falls back to keyless
+  /// OpenStreetMap tiles) instead of rendering MapTiler's "Invalid key"
+  /// error tiles. Network failures are ignored — they are not a key problem.
+  Future<void> _verifyMapKey() async {
+    if (!AppConfig.mapTilerConfigured) return;
+    bool ok;
+    try {
+      ok = await _c.placesRepository.mapTilerKeyValid();
+    } catch (_) {
+      return; // offline / transient — keep MapTiler as configured.
+    }
+    if (!mounted || ok) return;
+    setState(() {
+      _maptilerRejected = true;
+      _tileNotice = 'MapTiler rejected the configured key (invalid key). '
+          'The map is showing OpenStreetMap tiles instead. Update the '
+          'MapTiler key and rebuild the app to restore MapTiler tiles.';
+    });
   }
 
   /// Category markers for incidents (privacy-preserving: no reporter
@@ -921,6 +951,10 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    // MapTiler is used only when a key was compiled in AND it validated at
+    // runtime. Otherwise the map renders keyless OpenStreetMap tiles so it
+    // never shows MapTiler's "Invalid key" error tiles and never goes blank.
+    final bool useMaptiler = AppConfig.mapTilerConfigured && !_maptilerRejected;
     return Scaffold(
       body: Stack(
         children: <Widget>[
@@ -935,15 +969,21 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: <Widget>[
               TileLayer(
-                key: ValueKey<String>(_mapStyle),
-                urlTemplate: AppConfig.mapTilerTileUrl(_mapStyle),
-                fallbackUrl: AppConfig.fallbackTileUrl,
+                key: ValueKey<String>('$_mapStyle-$useMaptiler'),
+                urlTemplate: useMaptiler
+                    ? AppConfig.mapTilerTileUrl(_mapStyle)
+                    : AppConfig.fallbackTileUrl,
+                fallbackUrl: useMaptiler ? AppConfig.fallbackTileUrl : null,
                 userAgentPackageName: 'app.roamio.tourism',
                 retinaMode: RetinaMode.isHighDensity(context),
                 maxNativeZoom: _maxNativeZoom,
                 errorTileCallback: (tile, error, stackTrace) {
-                  if (!_tilesFailed && mounted) {
-                    setState(() => _tilesFailed = true);
+                  if (_tileNotice == null && mounted) {
+                    setState(() {
+                      _tileNotice = 'Map tiles could not load. Check your '
+                          'internet connection — route lines and markers '
+                          'still show.';
+                    });
                   }
                 },
               ),
@@ -1014,12 +1054,12 @@ class _MapScreenState extends State<MapScreen> {
               right: 12,
               child: _permissionBanner(),
             ),
-          if (_tilesFailed)
+          if (_tileNotice != null)
             Positioned(
               top: 148,
               left: 12,
               right: 12,
-              child: _tileErrorBanner(),
+              child: _tileNoticeBanner(_tileNotice!),
             ),
           if (_selected != null)
             Positioned(
@@ -1036,8 +1076,10 @@ class _MapScreenState extends State<MapScreen> {
               children: <Widget>[
                 FloatingActionButton.small(
                   heroTag: 'map-layer-toggle',
-                  tooltip: '$_styleLabel — tap to switch style',
-                  onPressed: _toggleStyle,
+                  tooltip: useMaptiler
+                      ? '$_styleLabel — tap to switch style'
+                      : 'Satellite/hybrid styles need a MapTiler key',
+                  onPressed: useMaptiler ? _toggleStyle : null,
                   child: Icon(_styleIcon),
                 ),
                 const SizedBox(height: 8),
@@ -1592,7 +1634,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _tileErrorBanner() {
+  Widget _tileNoticeBanner(String message) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1606,8 +1648,7 @@ class _MapScreenState extends State<MapScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Map tiles could not load. Check your internet connection — '
-              'route lines and markers still show.',
+              message,
               style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
             ),
           ),

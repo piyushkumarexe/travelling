@@ -98,6 +98,9 @@ class PlacesRepository {
   Future<List<Place>> luxuryHotels(LatLng near, {int radiusMeters = 8000}) =>
       _free.luxuryHotels(near, radiusMeters: radiusMeters);
 
+  /// Validates the compiled MapTiler key with a single geocoding request.
+  Future<bool> mapTilerKeyValid() => _free.mapTilerKeyValid();
+
   Future<Place?> details(String placeId) async {
     try {
       final Map<String, dynamic> data =

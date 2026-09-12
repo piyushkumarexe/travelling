@@ -117,7 +117,15 @@ jobs:
       - name: Build release APK
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
         run: |
+          # Sanitized config report (never the full key): tells the user
+          # whether the APK got a MapTiler key and its length/prefix.
+          if [ -z "$MAPTILER_API_KEY" ]; then
+            echo "::warning::MAPTILER_API_KEY secret is not set — the APK will render keyless OpenStreetMap tiles (no 'Invalid key', but no MapTiler tiles). Set the secret to enable MapTiler + satellite/hybrid."
+          else
+            echo "MAPTILER CONFIG PRESENT=true KEY LENGTH=${#MAPTILER_API_KEY} KEY PREFIX=${MAPTILER_API_KEY:0:4}"
+          fi
           DEFINES=""
           if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
             DEFINES="$DEFINES --dart-define=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}"
@@ -143,8 +151,8 @@ jobs:
           if [ -n "${{ secrets.AI_MODEL }}" ]; then
             DEFINES="$DEFINES --dart-define=AI_MODEL=${{ secrets.AI_MODEL }}"
           fi
-          if [ -n "${{ secrets.MAPTILER_API_KEY }}" ]; then
-            DEFINES="$DEFINES --dart-define=MAPTILER_API_KEY=${{ secrets.MAPTILER_API_KEY }}"
+          if [ -n "$MAPTILER_API_KEY" ]; then
+            DEFINES="$DEFINES --dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY"
           fi
           if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
             DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
