@@ -114,12 +114,6 @@ class PlacesRepository {
     return result;
   }
 
-  /// Best-rated hotels (4–5★) nearby, with star rating + estimated price
-  /// computed on-device. Uses OpenStreetMap (Overpass) directly — no backend
-  /// needed, so it works even when Cloud Functions are not deployed.
-  Future<List<Place>> luxuryHotels(LatLng near, {int radiusMeters = 8000}) =>
-      _free.luxuryHotels(near, radiusMeters: radiusMeters);
-
   /// Validates the compiled MapTiler key with a single geocoding request.
   Future<bool> mapTilerKeyValid() => _free.mapTilerKeyValid();
 
@@ -262,10 +256,3 @@ const Map<String, String> kExploreCategoryLabels = <String, String>{
   'hotel': 'Hotels',
   'shopping': 'Shopping',
 };
-
-/// "Hidden / local" queries are real Places queries, not a fake list.
-const List<String> kHiddenGemsQueries = <String>[
-  'hidden gem near here',
-  'local spot near here',
-  'under the radar tourist spot',
-];
