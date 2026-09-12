@@ -167,12 +167,13 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
       );
     }
     if (_results.isEmpty) {
+      final String label = _selected!.label.toLowerCase();
       return EmptyState(
         icon: Icons.search_off,
-        title: 'Nothing found',
+        title: 'No $label found nearby',
         message:
-            'No ${_selected!.label.toLowerCase()} results near you. '
-            'Try a different category or a wider area.',
+            'No $label results within 8 km. Try a different category or '
+            'move to a larger town.',
         actionLabel: 'Retry',
         onAction: () => _search(_selected!),
       );

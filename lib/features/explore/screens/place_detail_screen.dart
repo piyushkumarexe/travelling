@@ -713,6 +713,7 @@ class _DirectionsMap extends StatelessWidget {
       children: <Widget>[
         fm.TileLayer(
           urlTemplate: AppConfig.mapTilerTileUrl('streets-v2'),
+          fallbackUrl: AppConfig.fallbackTileUrl,
           userAgentPackageName: 'app.roamio.tourism',
         ),
         fm.PolylineLayer(

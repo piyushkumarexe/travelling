@@ -26,6 +26,12 @@ class VoiceAssistantService extends ChangeNotifier {
   bool _initializing = false;
   Completer<String?>? _pending;
 
+  /// Last non-empty text heard during the current session. Some Android
+  /// recognizers fire the `done` status without a separate `finalResult`, so
+  /// this is used to complete the session with what was actually heard
+  /// (instead of losing it and never auto-submitting).
+  String _lastHeard = '';
+
   // ---- Text-to-speech session state ----
   bool _speaking = false;
   bool _paused = false;
@@ -97,11 +103,15 @@ class VoiceAssistantService extends ChangeNotifier {
   }
 
   void _onStatus(String status) {
-    // Recognition finished with no usable result (silence, timeout, no
-    // match) — release the listener with null so the UI isn't stuck.
+    // Recognition finished. Complete with the last text heard so the caller
+    // can auto-submit it — otherwise a recognizer that sends `done` without a
+    // `finalResult` would silently drop the transcript.
     if (status == 'done') {
       final Completer<String?>? c = _pending;
-      if (c != null && !c.isCompleted) c.complete(null);
+      if (c != null && !c.isCompleted) {
+        final String heard = _lastHeard.trim();
+        c.complete(heard.isEmpty ? null : heard);
+      }
     }
   }
 
@@ -159,6 +169,7 @@ class VoiceAssistantService extends ChangeNotifier {
 
     final Completer<String?> completer = Completer<String?>();
     _pending = completer;
+    _lastHeard = '';
 
     try {
       final LocaleName? system = await _speech.systemLocale();
@@ -171,6 +182,7 @@ class VoiceAssistantService extends ChangeNotifier {
             final String words = result.recognizedWords.trim();
             if (!completer.isCompleted) completer.complete(words);
           } else {
+            _lastHeard = result.recognizedWords;
             onPartial?.call(result.recognizedWords);
           }
         },

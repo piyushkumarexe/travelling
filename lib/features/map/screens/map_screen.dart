@@ -52,6 +52,10 @@ class _MapScreenState extends State<MapScreen> {
   /// tier) with satellite/hybrid available via the layer toggle.
   String _mapStyle = 'streets-v2';
 
+  /// Set when map tiles fail to load even from the keyless fallback source.
+  /// Used to show a visible diagnostic instead of a blank map.
+  bool _tilesFailed = false;
+
   /// Travel mode for routing + the on-map icon: walk | bike | car | auto.
   String _travelMode = 'car';
 
@@ -168,12 +172,35 @@ class _MapScreenState extends State<MapScreen> {
     final double? lat = widget.initialLat;
     final double? lng = widget.initialLng;
     if (lat != null && lng != null) {
+      // Opened from "Get Directions" / "View on map": focus on the place,
+      // drop the destination marker and auto-compute the real OSRM route
+      // from the current location (with proper permission handling). The
+      // screen never renders an empty/white map — the marker, route and
+      // distance/ETA appear even while GPS is still warming up.
+      final Place dest = Place(
+        placeId: 'dest-${lat.toStringAsFixed(6)}-${lng.toStringAsFixed(6)}',
+        name: widget.initialName ?? 'Destination',
+        lat: lat,
+        lng: lng,
+      );
       setState(() {
         _initialCenter = LatLng(lat, lng);
         _initialZoom = 15;
         _ready = true;
         _autoCentered = true;
+        _selected = dest;
+        _distanceToSelected = _distanceTo(lat, lng);
+        _markers = <Marker>[
+          Marker(
+            point: LatLng(lat, lng),
+            width: 40,
+            height: 40,
+            child: const Icon(Icons.location_pin,
+                color: Color(0xFFDC2626), size: 40),
+          ),
+        ];
       });
+      unawaited(_autoRouteFor());
       return;
     }
     // Render the map immediately (country view) instead of blocking on a cold
@@ -203,6 +230,32 @@ class _MapScreenState extends State<MapScreen> {
         // Map not attached yet — the position watch will center it instead.
       }
     } catch (_) {}
+  }
+
+  /// After opening the map with a destination, resolve the current location
+  /// (prompting for permission) and compute the route — without ever leaving
+  /// the screen blank or stuck. On denial the permission banner is shown and
+  /// the destination marker stays visible so the user can set a start point.
+  Future<void> _autoRouteFor() async {
+    if (_position == null) {
+      try {
+        final LocationPermission perm =
+            await _c.locationService.ensurePermission();
+        if (!mounted) return;
+        if (perm == LocationPermission.denied ||
+            perm == LocationPermission.deniedForever) {
+          setState(() => _permissionDenied = true);
+          return;
+        }
+        final Position? fixed = await _c.locationService.currentPosition();
+        if (mounted && fixed != null) setState(() => _position = fixed);
+      } catch (_) {
+        // Location unavailable — the destination marker still shows and the
+        // user can set a start point manually.
+      }
+    }
+    if (_position == null) return;
+    await _getRoute();
   }
 
   /// Default the travel mode to the vehicle saved in the profile (Vehicle tab)
@@ -867,9 +920,15 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 key: ValueKey<String>(_mapStyle),
                 urlTemplate: AppConfig.mapTilerTileUrl(_mapStyle),
+                fallbackUrl: AppConfig.fallbackTileUrl,
                 userAgentPackageName: 'app.roamio.tourism',
                 retinaMode: RetinaMode.isHighDensity(context),
                 maxNativeZoom: 19,
+                errorTileCallback: (tile, error, stackTrace) {
+                  if (!_tilesFailed && mounted) {
+                    setState(() => _tilesFailed = true);
+                  }
+                },
               ),
               MarkerLayer(
                 markers: <Marker>[
@@ -937,6 +996,13 @@ class _MapScreenState extends State<MapScreen> {
               left: 12,
               right: 12,
               child: _permissionBanner(),
+            ),
+          if (_tilesFailed)
+            Positioned(
+              top: 148,
+              left: 12,
+              right: 12,
+              child: _tileErrorBanner(),
             ),
           if (_selected != null)
             Positioned(
@@ -1509,6 +1575,30 @@ class _MapScreenState extends State<MapScreen> {
               style: TextStyle(
                   color: scheme.onErrorContainer,
                   fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tileErrorBanner() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.map_outlined, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Map tiles could not load. Check your internet connection — '
+              'route lines and markers still show.',
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
             ),
           ),
         ],

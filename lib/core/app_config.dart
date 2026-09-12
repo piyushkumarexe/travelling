@@ -144,6 +144,13 @@ class AppConfig {
   static String mapTilerTileUrl(String style) =>
       'https://api.maptiler.com/maps/$style/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey';
 
+  /// Keyless fallback tile URL used when the MapTiler tiles cannot be fetched
+  /// (invalid/expired key, or no route to api.maptiler.com). Keeps the map
+  /// from ever rendering as a blank screen; the app still shows real roads
+  /// and labels from OpenStreetMap.
+  static const String fallbackTileUrl =
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
   /// Maximum file sizes accepted for user uploads (bytes).
   static const int maxImageBytes = 10 * 1024 * 1024; // 10 MB
   static const int maxVideoBytes = 50 * 1024 * 1024; // 50 MB

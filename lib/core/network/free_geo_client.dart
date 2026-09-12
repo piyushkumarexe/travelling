@@ -102,17 +102,38 @@ class FreeGeoClient {
     final String q = query.trim();
     final List<(String, String)>? filters = _filtersFor(q, types);
 
-    // Category searches (types != null) stay in the requested category via
-    // Overpass only — free-text geocoding would return far-away or unrelated
-    // matches, so if nothing is mapped nearby we return empty (the UI shows
-    // an honest "No X found near you") instead of another city's results.
+    // Category searches (types != null) must return results for the requested
+    // category. Overpass (real OSM POIs) is tried first; when it has no
+    // coverage or is unreachable we fall back to MapTiler geocoding (biased
+    // to the user's location) and then Nominatim, so a transient Overpass
+    // outage doesn't masquerade as "nothing found". Only when every provider
+    // genuinely fails do we surface a network error to the UI.
     if (types != null) {
       if (filters != null && near != null) {
+        bool anyProviderSucceeded = false;
+        List<Place> results = const <Place>[];
         try {
-          return await _overpass(filters, near, radiusMeters);
-        } catch (_) {
-          return const <Place>[];
+          results = await _overpass(filters, near, radiusMeters);
+          anyProviderSucceeded = true;
+          if (results.isNotEmpty) return results;
+        } catch (_) {}
+        try {
+          results = await _maptilerSearch(q, near);
+          anyProviderSucceeded = true;
+          if (results.isNotEmpty) return results;
+        } catch (_) {}
+        try {
+          results = await _nominatimSearch(q, near);
+          anyProviderSucceeded = true;
+          if (results.isNotEmpty) return results;
+        } catch (_) {}
+        if (!anyProviderSucceeded) {
+          throw ApiException(
+            ApiErrorKind.network,
+            'Could not search for "$q" nearby. Check your connection and try again.',
+          );
         }
+        return const <Place>[];
       }
       return const <Place>[];
     }

@@ -63,7 +63,15 @@ class _SafetyScreenState extends State<SafetyScreen> {
   @override
   void initState() {
     super.initState();
+    // Reflect live geofence status (the service is also started from the app
+    // shell on sign-in), so the card and buttons update without a manual
+    // rebuild.
+    _c.geofenceService.addListener(_onGeofenceChanged);
     _init();
+  }
+
+  void _onGeofenceChanged() {
+    if (mounted) setState(() {});
   }
 
   void _init() {
@@ -241,6 +249,29 @@ class _SafetyScreenState extends State<SafetyScreen> {
     return ('No active safety zones within 3 km', AppTheme.success);
   }
 
+  /// Starts zone monitoring and reports the real outcome to the user — never
+  /// silently claims success. The card itself reacts to [GeofenceService]
+  /// status changes via the listener registered in [initState].
+  Future<void> _enableMonitoring() async {
+    try {
+      await _c.geofenceService.start();
+    } catch (_) {
+      // start() already maps failures to a status; ignore stray exceptions.
+    }
+    if (!mounted) return;
+    final String message = switch (_c.geofenceService.status) {
+      GeofenceStatus.monitoring => 'Zone geofencing is now on.',
+      GeofenceStatus.denied =>
+        'Location permission is required for monitoring. Enable it in Settings and retry.',
+      GeofenceStatus.serviceOff =>
+        'Device location (GPS) is turned off. Enable it in Settings and retry.',
+      _ => 'Monitoring could not start. Please try again.',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   String _geofenceStatusText() {
     final GeofenceStatus s = _c.geofenceService.status;
     return switch (s) {
@@ -260,6 +291,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
   @override
   void dispose() {
+    _c.geofenceService.removeListener(_onGeofenceChanged);
     _posSub?.cancel();
     _zonesSub?.cancel();
     _incidentsSub?.cancel();
@@ -527,10 +559,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
                   child: FilledButton.icon(
                     icon: const Icon(Icons.notifications_active),
                     label: const Text('Enable monitoring'),
-                    onPressed: () {
-                      unawaited(
-                          _c.geofenceService.start().catchError((Object _) {}));
-                    },
+                    onPressed: _enableMonitoring,
                   ),
                 )
               else
