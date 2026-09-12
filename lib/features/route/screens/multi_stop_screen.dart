@@ -73,8 +73,8 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
       _searchResults = const <Place>[];
     });
     try {
-      final LatLng? near = _position != null
-          ? LatLng(_position!.latitude, _position!.longitude)
+      final gm.LatLng? near = _position != null
+          ? gm.LatLng(_position!.latitude, _position!.longitude)
           : null;
       final List<Place> results = await _c.placesRepository.search(
         q,
@@ -423,11 +423,9 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
                         ),
                         if (i < _legs.length)
                           Text(
-                            GeoUtils.formatDistance(
-                                    _legs[i].distanceMeters) +
-                                ' · ' +
-                                GeoUtils.formatDuration(
-                                    _legs[i].durationSeconds),
+                            '${GeoUtils.formatDistance(_legs[i].distanceMeters)}'
+                            ' · '
+                            '${GeoUtils.formatDuration(_legs[i].durationSeconds)}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                       ],

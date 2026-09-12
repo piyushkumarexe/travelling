@@ -285,6 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _posSub?.cancel();
     _notifSub?.cancel();
     _zonesSub?.cancel();
+    _incidentsSub?.cancel();
     _profileSub?.cancel();
     super.dispose();
   }

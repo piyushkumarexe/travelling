@@ -106,11 +106,11 @@ List<String> weatherSafetyNotes(WeatherCurrent w) {
 String weatherTravelAdvice(WeatherCurrent w, {ForecastDay? today}) {
   final int rainPct = today?.precipChancePct ?? -1;
   if (rainPct >= 60) {
-    return 'High chance of rain (${rainPct}%) — carry an umbrella and keep '
+    return 'High chance of rain ($rainPct%) — carry an umbrella and keep '
         'outdoor plans flexible.';
   }
   if (rainPct >= 30) {
-    return 'A ${rainPct}% chance of rain today — pack a light rain jacket.';
+    return 'A $rainPct% chance of rain today — pack a light rain jacket.';
   }
   if (w.tempC >= 38) {
     return 'Extreme heat today — plan sightseeing for early morning or evening.';

@@ -654,7 +654,7 @@ class _PlanEditor extends StatefulWidget {
 }
 
 class _PlanEditorState extends State<_PlanEditor> {
-  late List<ItineraryDay> _days = List<ItineraryDay>.from(widget.plan);
+  late final List<ItineraryDay> _days = List<ItineraryDay>.from(widget.plan);
 
   void _moveDay(int index, int delta) {
     final int target = index + delta;
