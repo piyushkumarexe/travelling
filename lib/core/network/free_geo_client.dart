@@ -65,6 +65,11 @@ class FreeGeoClient {
   static final Map<String, Future<_ProviderResult>> _overpassInFlight =
       <String, Future<_ProviderResult>>{};
 
+  /// Monotonic request counter for the `[places] overpass req#N` dev logs —
+  /// lets a tester count real network hits (to prove cache hits don't refire
+  /// the provider). Reset on process restart.
+  static int _overpassRequestCount = 0;
+
   /// Category keyword → Overpass tag filters. Overpass gives far better
   /// "nearby hotels / hospitals / ATMs" results than free geocoding.
   static const Map<String, List<(String, String)>> _categoryFilters =
@@ -942,9 +947,9 @@ class FreeGeoClient {
 
   /// Single Overpass request runner shared by the per-category search and the
   /// grouped nearby fetch. Throttles to [_overpassMinGap], rotates hosts,
-  /// honors the 429 cooldown, and classifies network/server/parser failures
-  /// as distinct typed errors — so callers never collapse a provider failure
-  /// into "no results".
+  /// remembers 429s without hard-blocking the fallback mirror, and classifies
+  /// network/server/parser failures as distinct typed errors — so callers
+  /// never collapse a provider failure into "no results".
   Future<List<dynamic>> _overpassElements(String query) async {
     final DateTime? last = _lastOverpassAt;
     if (last != null) {
@@ -955,6 +960,8 @@ class FreeGeoClient {
       }
     }
     _lastOverpassAt = DateTime.now();
+    _overpassRequestCount++;
+    final int reqNo = _overpassRequestCount;
 
     const List<String> hosts = <String>[
       'https://overpass-api.de/api/interpreter',
@@ -967,41 +974,57 @@ class FreeGeoClient {
 
     bool responded = false;
     bool serverError = false;
-    ApiException? rateLimited;
+    bool got429 = false;
     for (final String host in ordered) {
+      final Stopwatch sw = Stopwatch()..start();
       try {
         final Response<dynamic> resp = await _dio.get<dynamic>(
           host,
           queryParameters: <String, dynamic>{'data': query},
         );
+        sw.stop();
         responded = true;
         final Object? data = resp.data;
         if (data is! Map || data['elements'] is! List) {
-          continue; // Non-JSON (gateway error page) — try the next host.
+          // Non-JSON (gateway error page) — try the next host.
+          debugPrint('[places] overpass req#$reqNo $host ${resp.statusCode} '
+              'unusable-body ${sw.elapsedMilliseconds}ms');
+          continue;
         }
         _overpassHostBias = hosts.indexOf(host);
         _overpassRateLimitedUntil = null;
-        return data['elements'] as List;
+        final List<dynamic> elements = data['elements'] as List;
+        debugPrint('[places] overpass req#$reqNo $host ${resp.statusCode} '
+            '${elements.length} elements ${sw.elapsedMilliseconds}ms');
+        return elements;
       } on DioException catch (e) {
-        // 429 = rate limit: remember it (so the next caller fails fast to its
-        // cached fallback) and stop trying the other mirror — hammering it
-        // now would only make the cooldown worse.
-        if (e.response?.statusCode == 429) {
-          _overpassRateLimitedUntil =
-              DateTime.now().add(const Duration(seconds: 20));
-          rateLimited = const ApiException(ApiErrorKind.rateLimited,
-              'Nearby search is temporarily limited. Try again shortly.');
-          break;
+        sw.stop();
+        final int? code = e.response?.statusCode;
+        if (code == 429) {
+          // Rate limited on THIS mirror: try the other one before giving up.
+          got429 = true;
+          responded = true;
+          debugPrint('[places] overpass req#$reqNo $host 429 '
+              '${sw.elapsedMilliseconds}ms — trying next host');
+          continue;
         }
+        debugPrint('[places] overpass req#$reqNo $host ${code ?? e.type.name} '
+            '${sw.elapsedMilliseconds}ms');
         if (e.response != null) {
           responded = true;
           if ((e.response!.statusCode ?? 0) >= 500) serverError = true;
         }
       } catch (_) {
+        sw.stop();
         // Try the next host.
       }
     }
-    if (rateLimited != null) throw rateLimited;
+    if (got429) {
+      _overpassRateLimitedUntil =
+          DateTime.now().add(const Duration(seconds: 10));
+      throw const ApiException(ApiErrorKind.rateLimited,
+          'Nearby search is temporarily limited. Try again shortly.');
+    }
     if (serverError) {
       throw const ApiException(ApiErrorKind.server,
           'The nearby data service is unavailable. Please try again shortly.');
@@ -1122,7 +1145,14 @@ class FreeGeoClient {
     List<String>? categories,
   }) async {
     final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
-    final StringBuffer b = StringBuffer('[out:json][timeout:25];(');
+    // NOTE: the output limit is deliberately high and quadtile-ordered.
+    // Overpass fills `out` in statement order, so a small cap (the old
+    // `out center 400`) silently truncated the LATER categories (hotel/park/
+    // museum/attraction/transit) to zero in dense areas while the early ones
+    // (hospital/clinic/police…) filled the cap. `qt 5000` keeps the whole
+    // 10 km dataset for dense cities and drops only the far quadtiles in
+    // pathological megacity cases; the client re-sorts by distance anyway.
+    final StringBuffer b = StringBuffer('[out:json][timeout:40];(');
     for (final MapEntry<String, List<(String, String?)>> entry
         in _nearbyCategoryTags.entries) {
       if (categories != null && !categories.contains(entry.key)) continue;
@@ -1132,7 +1162,7 @@ class FreeGeoClient {
         b.write('way$sel(around:${radius.round()},${near.latitude},${near.longitude});');
       }
     }
-    b.write(');out center 400;');
+    b.write(');out center qt 5000;');
 
     final List<dynamic> elements = await _overpassElements(b.toString());
     final Map<String, Place> dedup = <String, Place>{};

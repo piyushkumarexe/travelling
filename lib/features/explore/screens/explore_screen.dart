@@ -262,10 +262,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
       };
 
   Future<void> _runCategoryNearby(String category) async {
-    final Position? pos = _position;
-    if (pos == null || _loading) return;
     final List<String>? cats = _categoryDatasetSet(category);
-    if (cats == null) return;
+    if (cats == null || _loading) return;
+    final Position? pos = _position;
+    if (pos == null) {
+      // Location failure is its own outcome — never "temporarily limited"
+      // and never a silent empty list.
+      setState(() {
+        _error = 'Your location is currently unavailable.';
+        _searchedOnce = true;
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;

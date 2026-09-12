@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -59,11 +60,20 @@ class NearbyStore {
     final String key = '${bucketKey(location)}|$variant';
     final _Bucket? mem = _mem[key];
     if (!force && mem != null && DateTime.now().difference(mem.fetchedAt) < ttl) {
+      // Cache HIT: no network request. The `[places]` dev log will NOT show a
+      // new `overpass req#N` line for this call — that is the proof that
+      // switching categories reuses the already-downloaded dataset.
+      debugPrint('[places] nearbyStore HIT $key (${mem.places.length} places, '
+          '${DateTime.now().difference(mem.fetchedAt).inSeconds}s old)');
       return NearbyResult(places: mem.places, fromCache: true);
     }
     final Future<NearbyResult>? pending = _inFlight[key];
-    if (pending != null) return pending;
+    if (pending != null) {
+      debugPrint('[places] nearbyStore DEDUP $key (shared in-flight fetch)');
+      return pending;
+    }
 
+    debugPrint('[places] nearbyStore FETCH $key (network fetch starting)');
     final Future<NearbyResult> run = _run(key, fetch);
     _inFlight[key] = run;
     try {

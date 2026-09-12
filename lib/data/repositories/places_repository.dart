@@ -274,7 +274,12 @@ class PlacesRepository {
 
 /// Convenience: a stable, user-friendly error message for places errors.
 String placesErrorMessage(Object e) {
-  if (e is ApiException) return e.message;
+  if (e is ApiException) {
+    if (e.kind == ApiErrorKind.location) {
+      return 'Your location is currently unavailable.';
+    }
+    return e.message;
+  }
   return 'Could not load places. Please try again.';
 }
 
