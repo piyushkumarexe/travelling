@@ -1294,10 +1294,10 @@ class _ProviderResult {
 
   int get parsed => places.length;
 
-  const _ProviderResult.skipped(String provider)
+  _ProviderResult.skipped(String provider)
       : this(
           provider: provider,
-          places: <Place>[],
+          places: const <Place>[],
           responded: false,
           error: null,
           raw: 0,

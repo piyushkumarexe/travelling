@@ -14,7 +14,7 @@ enum ApiErrorKind {
 }
 
 class ApiException implements Exception {
-  ApiException(this.kind, this.message,
+  const ApiException(this.kind, this.message,
       {this.statusCode, this.retryable = true, this.details});
 
   final ApiErrorKind kind;
