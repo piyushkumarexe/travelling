@@ -8,10 +8,12 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
+import '../../../core/utils/format.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/badges.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
@@ -119,9 +121,13 @@ class _MapScreenState extends State<MapScreen> {
 
   List<SafetyZone> _zones = const <SafetyZone>[];
   bool _showZones = true;
+
+  List<Incident> _incidents = const <Incident>[];
+  bool _showIncidents = true;
   String? _activeChip;
 
   StreamSubscription<List<SafetyZone>>? _zonesSub;
+  StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Position>? _posSub;
 
   @override
@@ -138,8 +144,24 @@ class _MapScreenState extends State<MapScreen> {
       },
       onError: (Object _) {},
         );
+    _startIncidentsWatch();
     _startPositionWatch();
     _resolveInitial();
+  }
+
+  /// Category markers for incidents (privacy-preserving: no reporter
+  /// identity is shown). Regular travelers see their own reports; admins see
+  /// all reports. Rules reject unauthenticated list reads, which is handled
+  /// here without surfacing raw errors.
+  void _startIncidentsWatch() {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) return;
+    final Stream<List<Incident>> stream = _c.authState.isAdmin
+        ? _c.incidentsRepository.watchAll()
+        : _c.incidentsRepository.watchMine(uid);
+    _incidentsSub = stream.listen((List<Incident> items) {
+      if (mounted) setState(() => _incidents = items);
+    }, onError: (Object _) {});
   }
 
   Future<void> _resolveInitial() async {
@@ -344,6 +366,119 @@ class _MapScreenState extends State<MapScreen> {
       ));
     }
     _circles = circles;
+  }
+
+  /// Category icon + severity colour for an incident marker.
+  IconData _incidentIcon(Incident i) => switch (i.category) {
+        'theft' => Icons.directions_run,
+        'fraud' => Icons.currency_rupee,
+        'assault' => Icons.gavel,
+        'harassment' => Icons.report,
+        'accident' => Icons.car_crash,
+        'unsafe_area' => Icons.dangerous,
+        'poor_infrastructure' => Icons.construction,
+        'natural_hazard' => Icons.flood,
+        _ => Icons.place,
+      };
+
+  Color _incidentColor(Incident i) => switch (i.severity) {
+        'low' => const Color(0xFF16A34A),
+        'medium' => const Color(0xFFF59E0B),
+        'high' => const Color(0xFFEA580C),
+        'critical' => const Color(0xFFDC2626),
+        _ => const Color(0xFFF59E0B),
+      };
+
+  List<Marker> _incidentMarkers() {
+    final List<Marker> markers = <Marker>[];
+    for (final Incident i in _incidents) {
+      final Color color = _incidentColor(i);
+      markers.add(Marker(
+        point: LatLng(i.lat, i.lng),
+        width: 32,
+        height: 32,
+        child: GestureDetector(
+          onTap: () => _showIncidentInfo(i),
+          child: Container(
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3), blurRadius: 4),
+              ],
+            ),
+            child: const Icon(Icons.warning_amber,
+                size: 16, color: Colors.white),
+          ),
+        ),
+      ));
+    }
+    return markers;
+  }
+
+  /// Privacy-preserving incident details: category, severity, status, time
+  /// and distance — never the reporter's identity.
+  void _showIncidentInfo(Incident i) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) {
+        final ColorScheme scheme = Theme.of(ctx).colorScheme;
+        final double? dist = _distanceTo(i.lat, i.lng);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  CircleAvatar(
+                    backgroundColor: _incidentColor(i).withValues(alpha: 0.14),
+                    child: Icon(_incidentIcon(i),
+                        color: _incidentColor(i), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      i.categoryLabel,
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${i.severityLabel} severity · ${i.statusLabel}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${Fmt.relative(i.createdAt)}'
+                '${dist != null ? ' · ${GeoUtils.formatDistance(dist)} away' : ''}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              if (i.description.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 10),
+                Text(i.description,
+                    style: Theme.of(ctx).textTheme.bodyMedium),
+              ],
+              if (i.summary != null && i.summary!.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(i.summary!,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant)),
+              ],
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _select(Place p) async {
@@ -703,6 +838,7 @@ class _MapScreenState extends State<MapScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _zonesSub?.cancel();
+    _incidentsSub?.cancel();
     _posSub?.cancel();
     super.dispose();
   }
@@ -738,6 +874,7 @@ class _MapScreenState extends State<MapScreen> {
               MarkerLayer(
                 markers: <Marker>[
                   ..._markers,
+                  if (_showIncidents) ..._incidentMarkers(),
                   if (_origin != null) _originMarker(),
                   if (_position != null) _userLocationMarker(),
                 ],
@@ -1020,6 +1157,12 @@ class _MapScreenState extends State<MapScreen> {
                       _rebuildZones();
                     }),
                     active: _showZones,
+                  ),
+                  const SizedBox(width: 8),
+                  _chip(
+                    'Incidents',
+                    () => setState(() => _showIncidents = !_showIncidents),
+                    active: _showIncidents,
                   ),
                   const SizedBox(width: 8),
                 ],

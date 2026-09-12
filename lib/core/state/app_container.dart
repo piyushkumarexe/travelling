@@ -1,6 +1,9 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseApp;
 import 'package:flutter/widgets.dart';
 
+import '../../data/local/fuel_log_store.dart';
+import '../../data/local/trip_plan_store.dart';
+import '../../data/local/wallet_local_store.dart';
 import '../../data/repositories/ai_repository.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/digital_id_repository.dart';
@@ -56,6 +59,11 @@ class AppContainer {
   late final EcoRepository ecoRepository = EcoRepository();
   late final NotificationsRepository notificationsRepository =
       NotificationsRepository();
+
+  // --- Local (offline-first) stores ---
+  late final WalletLocalStore walletStore = WalletLocalStore();
+  late final FuelLogStore fuelLogStore = FuelLogStore();
+  late final TripPlanStore tripPlanStore = TripPlanStore();
 
   // --- Backend-backed repositories ---
   late final PlacesRepository placesRepository = PlacesRepository(apiClient);

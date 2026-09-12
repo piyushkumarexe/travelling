@@ -99,3 +99,33 @@ List<String> weatherSafetyNotes(WeatherCurrent w) {
   }
   return notes;
 }
+
+/// A single, honest travel recommendation for today, derived only from the
+/// current conditions and (when available) the day's rain probability.
+/// Never invents data — when nothing is actionable, returns a neutral line.
+String weatherTravelAdvice(WeatherCurrent w, {ForecastDay? today}) {
+  final int rainPct = today?.precipChancePct ?? -1;
+  if (rainPct >= 60) {
+    return 'High chance of rain (${rainPct}%) — carry an umbrella and keep '
+        'outdoor plans flexible.';
+  }
+  if (rainPct >= 30) {
+    return 'A ${rainPct}% chance of rain today — pack a light rain jacket.';
+  }
+  if (w.tempC >= 38) {
+    return 'Extreme heat today — plan sightseeing for early morning or evening.';
+  }
+  if (w.tempC >= 32) {
+    return 'Hot day — carry water and prefer shaded, indoor attractions midday.';
+  }
+  if (w.tempC <= 5) {
+    return 'Cold day — dress in layers for comfortable sightseeing.';
+  }
+  if ((w.windMs * 3.6) >= 25) {
+    return 'Windy today — mind hats, umbrellas and open-air viewpoints.';
+  }
+  if (w.humidityPct >= 80) {
+    return 'Humid day — take breaks and stay hydrated while exploring.';
+  }
+  return 'Good day for outdoor sightseeing — conditions look comfortable.';
+}

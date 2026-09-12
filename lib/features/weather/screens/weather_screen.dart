@@ -409,6 +409,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
   Widget _notesCard(ColorScheme scheme) {
     final WeatherCurrent w = _current!;
     final List<String> notes = weatherSafetyNotes(w);
+    final ForecastDay? today = _forecast.isEmpty ? null : _forecast.first;
+    final String advice = weatherTravelAdvice(w, today: today);
     final bool hasAlert = !(notes.isNotEmpty &&
         notes.first.contains('comfortable'));
     return AppCard(
@@ -428,7 +430,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Weather safety notes',
+                  'Travel advice',
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -436,6 +438,26 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.travel_explore,
+                    size: 16, color: scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(advice,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           for (final String note in notes)

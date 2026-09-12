@@ -10,6 +10,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
 import '../../features/eco/screens/eco_screen.dart';
+import '../../features/essentials/screens/essentials_screen.dart';
 import '../../features/explore/screens/explore_screen.dart';
 import '../../features/explore/screens/place_detail_screen.dart';
 import '../../features/guardian/screens/payment_guardian_screen.dart';
@@ -22,10 +23,14 @@ import '../../features/itinerary/screens/itinerary_list_screen.dart';
 import '../../features/itinerary/screens/itinerary_new_screen.dart';
 import '../../features/map/screens/map_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
+import '../../features/planner/screens/trip_planner_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/route/screens/multi_stop_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
+import '../../features/trip/screens/live_trip_screen.dart';
 import '../../features/vehicle/screens/vehicle_screen.dart';
+import '../../features/wallet/screens/wallet_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
 import '../state/app_container.dart';
 import '../state/auth_state.dart';
@@ -107,6 +112,37 @@ class AppRouter {
             path: '/vehicle',
             builder: (BuildContext context, GoRouterState state) =>
                 const VehicleScreen(),
+          ),
+          GoRoute(
+            path: '/essentials',
+            builder: (BuildContext context, GoRouterState state) =>
+                const EssentialsScreen(),
+          ),
+          GoRoute(
+            path: '/wallet',
+            builder: (BuildContext context, GoRouterState state) =>
+                const WalletScreen(),
+          ),
+          GoRoute(
+            path: '/planner',
+            builder: (BuildContext context, GoRouterState state) =>
+                const TripPlannerScreen(),
+          ),
+          GoRoute(
+            path: '/route/multi',
+            builder: (BuildContext context, GoRouterState state) =>
+                const MultiStopScreen(),
+          ),
+          GoRoute(
+            path: '/trip/live',
+            builder: (BuildContext context, GoRouterState state) {
+              final Map<String, String> qp = state.uri.queryParameters;
+              return LiveTripScreen(
+                destinationLat: double.tryParse(qp['lat'] ?? ''),
+                destinationLng: double.tryParse(qp['lng'] ?? ''),
+                destinationName: qp['name'],
+              );
+            },
           ),
         ],
       ),

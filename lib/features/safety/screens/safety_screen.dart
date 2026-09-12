@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/geofence_service.dart';
+import '../../../core/services/safety_engine.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
@@ -16,6 +17,7 @@ import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/badges.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/emergency_event.dart';
+import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/weather.dart';
@@ -36,6 +38,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   bool _locationDone = false;
 
   List<SafetyZone> _zones = const <SafetyZone>[];
+  List<Incident> _incidents = const <Incident>[];
   List<EmergencyEvent> _events = const <EmergencyEvent>[];
   List<Place> _services = const <Place>[];
   bool _servicesLoading = false;
@@ -44,8 +47,17 @@ class _SafetyScreenState extends State<SafetyScreen> {
   WeatherCurrent? _weather;
   List<String> _weatherNotes = const <String>[];
 
+  // Safe route state.
+  final TextEditingController _routeQuery = TextEditingController();
+  bool _routeLoading = false;
+  String? _routeError;
+  String? _routeDestName;
+  RouteInfo? _routeInfo;
+  SafetyAssessment? _routeAssessment;
+
   StreamSubscription<Position>? _posSub;
   StreamSubscription<List<SafetyZone>>? _zonesSub;
+  StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<List<EmergencyEvent>>? _eventsSub;
 
   @override
@@ -62,6 +74,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
           .listen((List<EmergencyEvent> e) {
         if (mounted) setState(() => _events = e);
       }, onError: (Object _) {});
+      _incidentsSub = _c.incidentsRepository
+          .watchMine(uid)
+          .listen((List<Incident> items) {
+        if (mounted) setState(() => _incidents = items);
+      }, onError: (Object _) {});
     }
     _zonesSub = _c.zonesRepository
         .watchAll()
@@ -69,6 +86,66 @@ class _SafetyScreenState extends State<SafetyScreen> {
       if (mounted) setState(() => _zones = z);
     }, onError: (Object _) {});
     _loadLocation();
+  }
+
+  /// Computes a real OSRM route to the searched destination and assesses it
+  /// against configured safety zones and the user's own recent reports.
+  Future<void> _checkSafeRoute() async {
+    final String q = _routeQuery.text.trim();
+    if (q.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a destination first.')),
+      );
+      return;
+    }
+    final Position? pos = _position;
+    if (pos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Enable location services to check a route.')),
+      );
+      return;
+    }
+    setState(() {
+      _routeLoading = true;
+      _routeError = null;
+      _routeInfo = null;
+      _routeAssessment = null;
+    });
+    try {
+      final LatLng here = LatLng(pos.latitude, pos.longitude);
+      final List<Place> results = await _c.placesRepository.search(
+        q,
+        location: here,
+        radiusMeters: 20000,
+      );
+      if (results.isEmpty) {
+        throw Exception('No matching place found for "$q".');
+      }
+      final Place dest = results.first;
+      final RouteInfo route = await _c.placesRepository.route(
+        here,
+        LatLng(dest.lat, dest.lng),
+      );
+      final SafetyAssessment assessment = SafetyEngine.routeAssessment(
+        polyline: route.polyline,
+        zones: _zones,
+        ownIncidents: _incidents,
+      );
+      if (!mounted) return;
+      setState(() {
+        _routeInfo = route;
+        _routeAssessment = assessment;
+        _routeDestName = dest.name;
+        _routeLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _routeError = e.toString();
+        _routeLoading = false;
+      });
+    }
   }
 
   Future<void> _loadLocation() async {
@@ -185,7 +262,9 @@ class _SafetyScreenState extends State<SafetyScreen> {
   void dispose() {
     _posSub?.cancel();
     _zonesSub?.cancel();
+    _incidentsSub?.cancel();
     _eventsSub?.cancel();
+    _routeQuery.dispose();
     super.dispose();
   }
 
@@ -200,6 +279,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
               children: <Widget>[
                 _statusCard(),
                 const SizedBox(height: 12),
+                _safeRouteSection(),
+                const SizedBox(height: 12),
                 _geofenceCard(),
                 const SectionHeader(title: 'Configured safety zones'),
                 _zonesSection(),
@@ -213,6 +294,129 @@ class _SafetyScreenState extends State<SafetyScreen> {
                 ],
               ],
             ),
+    );
+  }
+
+  Widget _safeRouteSection() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final SafetyAssessment? a = _routeAssessment;
+    final Color accent = switch (a?.level) {
+      SafetyLevel.normal => AppTheme.success,
+      SafetyLevel.caution => AppTheme.warning,
+      SafetyLevel.alert => AppTheme.danger,
+      _ => scheme.outline,
+    };
+    final String emoji = switch (a?.level) {
+      SafetyLevel.normal => '🟢',
+      SafetyLevel.caution => '🟡',
+      SafetyLevel.alert => '🔴',
+      _ => '⚪',
+    };
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.route, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Safe route',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Enter a destination to get a real route and a safety check '
+            'based on available zones and reports.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  controller: _routeQuery,
+                  decoration: const InputDecoration(
+                    hintText: 'Destination (e.g. Charminar)',
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _checkSafeRoute(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _routeLoading ? null : _checkSafeRoute,
+                child: _routeLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Check'),
+              ),
+            ],
+          ),
+          if (_routeError != null) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(
+              _routeError!,
+              style: TextStyle(color: AppTheme.danger, fontSize: 12.5),
+            ),
+          ],
+          if (a != null && _routeInfo != null) ...<Widget>[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '$emoji ${a.headline}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_routeDestName ?? 'Destination'} · '
+                    '${GeoUtils.formatDistance(_routeInfo!.distanceMeters)} · '
+                    '${GeoUtils.formatDuration(_routeInfo!.durationSeconds)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(a.detail, style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      final RouteInfo r = _routeInfo!;
+                      final List<LatLng> pts = r.polyline;
+                      final LatLng end = pts.isEmpty
+                          ? const LatLng(0, 0)
+                          : pts.last;
+                      context.push('/map?lat=${end.latitude}&lng=${end.longitude}'
+                          '&name=${Uri.encodeComponent(_routeDestName ?? 'Destination')}');
+                    },
+                    icon: const Icon(Icons.map, size: 16),
+                    label: const Text('View route on map'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
