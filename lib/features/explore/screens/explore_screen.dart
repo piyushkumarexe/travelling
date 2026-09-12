@@ -101,6 +101,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
       });
       if (!hadLocation) unawaited(_runSearch(preserveOnEmpty: true));
     } catch (_) {
+      // The fix failed — re-check the permission so the UI distinguishes
+      // "permission denied" from "GPS unavailable" instead of guessing.
+      if (mounted) unawaited(_refreshLocationState());
+    }
+  }
+
+  /// Re-reads the permission and marks location resolution done, so the body
+  /// can show the right state (permission vs GPS) after a failed fix.
+  Future<void> _refreshLocationState() async {
+    try {
+      final LocationPermission perm =
+          await _c.locationService.checkPermission();
+      if (!mounted) return;
+      setState(() {
+        _locationDenied = perm == LocationPermission.denied ||
+            perm == LocationPermission.deniedForever;
+        _locationDone = true;
+      });
+    } catch (_) {
       if (mounted) setState(() => _locationDone = true);
     }
   }
