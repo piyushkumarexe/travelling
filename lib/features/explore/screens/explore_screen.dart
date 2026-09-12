@@ -15,8 +15,9 @@ import '../../../data/models/places.dart';
 import '../../../data/repositories/places_repository.dart'
     show kExploreCategories, kExploreCategoryLabels;
 
-/// Explore: real Google Places search (attractions, hidden gems, food,
-/// nearby) with distance from current location and map actions.
+/// Explore: real nearby search over OpenStreetMap/Overpass + MapTiler +
+/// Wikipedia (attractions, hidden gems, food, nearby) with distance from the
+/// device's current GPS location and map actions.
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
 
@@ -248,15 +249,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   /// Type id for a category, mapped to real OSM/provider filters by
-  /// FreeGeoClient._typeFilters (hotels, restaurants, museums, parks…).
+  /// FreeGeoClient._typeFilters (hotels, food, museums, parks, shops…).
   List<String>? _categoryTypes(String? category) => switch (category) {
         'tourist_attraction' => const <String>['tourist_attraction'],
-        'restaurant' => const <String>['restaurant'],
-        'cafe' => const <String>['cafe'],
-        'park' => const <String>['park'],
         'museum' => const <String>['museum'],
+        'park' => const <String>['park'],
         'hotel' => const <String>['hotel'],
+        'food' => const <String>['food'],
         'shopping' => const <String>['shopping'],
+        'landmark' => const <String>['landmark'],
+        'tourist_places' => const <String>['tourist_places'],
         _ => null,
       };
 
