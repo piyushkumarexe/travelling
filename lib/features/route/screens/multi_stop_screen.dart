@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
@@ -39,6 +41,8 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
   List<Place> _stops = <Place>[];
   List<Place> _searchResults = const <Place>[];
   bool _searching = false;
+  String? _searchError;
+  Timer? _debounce;
 
   List<Place> _ordered = const <Place>[];
   List<RouteInfo> _legs = const <RouteInfo>[];
@@ -65,11 +69,60 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
     }
   }
 
+  /// Debounced live suggestions while typing (MapTiler Geocoding first — an
+  /// appropriate interactive-search provider; never public Nominatim).
+  void _onQueryChanged(String text) {
+    _debounce?.cancel();
+    final String q = text.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _searchResults = const <Place>[];
+        _searchError = null;
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      unawaited(_suggest(q));
+    });
+  }
+
+  Future<void> _suggest(String q) async {
+    if (_searching) return;
+    setState(() {
+      _searching = true;
+      _searchError = null;
+    });
+    try {
+      final gm.LatLng? near = _position != null
+          ? gm.LatLng(_position!.latitude, _position!.longitude)
+          : null;
+      final List<Place> results =
+          await _c.placesRepository.suggest(q, location: near);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _searching = false;
+        if (results.isEmpty) {
+          _searchError = 'No places found for "$q". Try a different name.';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _searchError = _friendlySearchError(e);
+      });
+    }
+  }
+
+  /// Full search (Overpass + MapTiler + Nominatim) used by the "Add" button —
+  /// richer than autocomplete, with the real reason surfaced on failure.
   Future<void> _search() async {
     final String q = _query.text.trim();
     if (q.isEmpty) return;
     setState(() {
       _searching = true;
+      _searchError = null;
       _searchResults = const <Place>[];
     });
     try {
@@ -85,14 +138,22 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
       setState(() {
         _searchResults = results;
         _searching = false;
+        if (results.isEmpty) {
+          _searchError = 'No places found for "$q". Try a different name.';
+        }
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _searching = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Search failed. Try again.')),
-      );
+      setState(() {
+        _searching = false;
+        _searchError = _friendlySearchError(e);
+      });
     }
+  }
+
+  String _friendlySearchError(Object e) {
+    if (e is ApiException) return e.message;
+    return 'Search failed. Please check your connection and try again.';
   }
 
   void _addStop(Place p) {
@@ -105,6 +166,7 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
     setState(() {
       _stops = <Place>[..._stops, p];
       _searchResults = const <Place>[];
+      _searchError = null;
       _query.clear();
     });
   }
@@ -234,6 +296,7 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _query.dispose();
     super.dispose();
   }
@@ -280,6 +343,7 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
                     prefixIcon: Icon(Icons.search, size: 18),
                     isDense: true,
                   ),
+                  onChanged: _onQueryChanged,
                   onSubmitted: (_) => _search(),
                 ),
               ),
@@ -297,6 +361,13 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
               ),
             ],
           ),
+          if (_searchError != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              _searchError!,
+              style: TextStyle(color: AppTheme.danger, fontSize: 12.5),
+            ),
+          ],
           if (_searchResults.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             Container(
@@ -315,6 +386,11 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
                     leading: const Icon(Icons.place, size: 18),
                     title: Text(p.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: (p.address != null && p.address!.isNotEmpty)
+                        ? Text(p.address!,
+                            maxLines: 1, overflow: TextOverflow.ellipsis)
+                        : null,
+                    trailing: const Icon(Icons.add_circle_outline, size: 18),
                     onTap: () => _addStop(p),
                   );
                 },

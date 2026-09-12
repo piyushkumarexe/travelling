@@ -240,29 +240,27 @@ String placesErrorMessage(Object e) {
   return 'Could not load places. Please try again.';
 }
 
-/// Explore category chips: Attractions, Museums, Parks, Hotels, Food,
-/// Shopping, Tourist places and Landmarks — each with an explicit OSM filter
-/// mapping (see FreeGeoClient._typeFilters), never just a UI label.
+/// Explore category chips: Attractions, Restaurants, Cafés, Parks, Museums,
+/// Hotels and Shopping — each with an explicit OSM filter mapping (see
+/// FreeGeoClient._typeFilters), never just a UI label.
 const List<String> kExploreCategories = <String>[
   'tourist_attraction',
-  'museum',
+  'restaurant',
+  'cafe',
   'park',
+  'museum',
   'hotel',
-  'food',
   'shopping',
-  'tourist_places',
-  'landmark',
 ];
 
 const Map<String, String> kExploreCategoryLabels = <String, String>{
   'tourist_attraction': 'Attractions',
-  'museum': 'Museums',
+  'restaurant': 'Restaurants',
+  'cafe': 'Cafés',
   'park': 'Parks',
+  'museum': 'Museums',
   'hotel': 'Hotels',
-  'food': 'Food',
   'shopping': 'Shopping',
-  'tourist_places': 'Tourist places',
-  'landmark': 'Landmarks',
 };
 
 /// "Hidden / local" queries are real Places queries, not a fake list.

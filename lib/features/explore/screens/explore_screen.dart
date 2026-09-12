@@ -4,14 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/favorites_store.dart';
 import '../../../core/state/app_container.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
-import '../../../core/utils/hotel_estimates.dart';
-import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
@@ -252,16 +248,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   /// Type id for a category, mapped to real OSM/provider filters by
-  /// FreeGeoClient._typeFilters (hotels, museums, food, shopping…).
+  /// FreeGeoClient._typeFilters (hotels, restaurants, museums, parks…).
   List<String>? _categoryTypes(String? category) => switch (category) {
         'tourist_attraction' => const <String>['tourist_attraction'],
-        'museum' => const <String>['museum'],
+        'restaurant' => const <String>['restaurant'],
+        'cafe' => const <String>['cafe'],
         'park' => const <String>['park'],
+        'museum' => const <String>['museum'],
         'hotel' => const <String>['hotel'],
-        'food' => const <String>['food'],
         'shopping' => const <String>['shopping'],
-        'tourist_places' => const <String>['tourist_places'],
-        'landmark' => const <String>['landmark'],
         _ => null,
       };
 
@@ -278,37 +273,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _error = null;
       _shown = 20;
     });
-    // Special "5★ hotels" mode: real OSM hotel data + on-device price estimate.
-    if (_activeCategory == 'luxury_hotels') {
-      try {
-        final Position? pos = _position;
-        if (pos == null) {
-          setState(() {
-            _loading = false;
-            _error = 'Enable location to find hotels near you.';
-          });
-          return;
-        }
-        final List<Place> hotels = await _c.placesRepository.luxuryHotels(
-          LatLng(pos.latitude, pos.longitude),
-        );
-        if (!mounted) return;
-        setState(() {
-          _results = hotels;
-          _loading = false;
-          _searchedOnce = true;
-        });
-        return;
-      } catch (e) {
-        if (!mounted) return;
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-          _searchedOnce = true;
-        });
-        return;
-      }
-    }
     try {
       final List<Place> places = await _c.placesRepository.search(
         q,
@@ -415,13 +379,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 const SizedBox(width: 8),
                 _scopeChip('Saved', _scope == 'saved', () => _setScope('saved')),
                 const SizedBox(width: 16),
-                ChoiceChip(
-                  label: const Text('⭐ Hotels'),
-                  selected: _activeCategory == 'luxury_hotels',
-                  onSelected: (bool _) => _setCategory(
-                      _activeCategory == 'luxury_hotels' ? null : 'luxury_hotels'),
-                ),
-                const SizedBox(width: 8),
                 for (final String cat in kExploreCategories) ...<Widget>[
                   ChoiceChip(
                     label: Text(kExploreCategoryLabels[cat] ?? cat),
@@ -541,13 +498,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
           );
         }
         final Place p = _results[i];
-        if (_activeCategory == 'luxury_hotels') {
-          return _LuxuryHotelCard(
-            place: p,
-            distance: _distanceFor(p),
-            onTap: () => context.push('/explore/place/${p.placeId}', extra: p),
-          );
-        }
         return PlaceCard(
           place: p,
           distance: _distanceFor(p),
@@ -558,185 +508,3 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 }
 
-/// Hotel card with star rating, estimated nightly price, real contact info
-/// and a working "Book now" action (opens Google Maps search / hotel website).
-class _LuxuryHotelCard extends StatelessWidget {
-  const _LuxuryHotelCard({
-    required this.place,
-    required this.onTap,
-    this.distance,
-  });
-
-  final Place place;
-  final VoidCallback onTap;
-  final String? distance;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final int stars = (place.rating ?? 0).round();
-    final bool starred = place.rating != null;
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppTheme.warning.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.hotel, color: AppTheme.warning),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      place.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: <Widget>[
-                        if (starred) ...<Widget>[
-                          Text(
-                            '${'★' * stars}${'☆' * (5 - stars)}',
-                            style: const TextStyle(
-                                color: AppTheme.warning, fontSize: 14),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$stars-star',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                          ),
-                        ] else
-                          Text(
-                            'Hotel',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      HotelEstimates.rangeLabel(place.rating?.round()),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-              if (distance != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    distance!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (place.address != null && place.address!.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                Icon(Icons.place_outlined,
-                    size: 14, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    place.address!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: scheme.onPrimary,
-                  ),
-                  onPressed: () => _openUrl(
-                    context,
-                    'https://www.google.com/maps/search/?api=1&query='
-                    '${Uri.encodeComponent('${place.name} hotel')}',
-                  ),
-                  icon: const Icon(Icons.calendar_month, size: 16),
-                  label: const Text('Book now'),
-                ),
-              ),
-              if (place.phone != null && place.phone!.isNotEmpty) ...<Widget>[
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'Call ${place.phone}',
-                  onPressed: () => _openUrl(context, 'tel:${place.phone}'),
-                  icon: const Icon(Icons.call, size: 18),
-                ),
-              ],
-              if (place.website != null && place.website!.isNotEmpty) ...<Widget>[
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'Open website',
-                  onPressed: () => _openUrl(context, place.website!),
-                  icon: const Icon(Icons.public, size: 18),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openUrl(BuildContext context, String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open link.')),
-      );
-    }
-  }
-}

@@ -255,16 +255,21 @@ class _SafetyScreenState extends State<SafetyScreen> {
   Future<void> _enableMonitoring() async {
     try {
       await _c.geofenceService.start();
-    } catch (_) {
-      // start() already maps failures to a status; ignore stray exceptions.
+    } catch (e) {
+      // start() maps every failure to a status + reason; this is a last-resort
+      // guard for a truly unexpected exception.
+      debugPrint('SafetyScreen enable monitoring unexpected error: $e');
     }
     if (!mounted) return;
-    final String message = switch (_c.geofenceService.status) {
+    final GeofenceService g = _c.geofenceService;
+    final String message = switch (g.status) {
       GeofenceStatus.monitoring => 'Zone geofencing is now on.',
       GeofenceStatus.denied =>
         'Location permission is required for monitoring. Enable it in Settings and retry.',
       GeofenceStatus.serviceOff =>
         'Device location (GPS) is turned off. Enable it in Settings and retry.',
+      GeofenceStatus.error =>
+        g.lastError ?? 'Monitoring could not start. Please try again.',
       _ => 'Monitoring could not start. Please try again.',
     };
     ScaffoldMessenger.of(context).showSnackBar(
@@ -276,10 +281,12 @@ class _SafetyScreenState extends State<SafetyScreen> {
     final GeofenceStatus s = _c.geofenceService.status;
     return switch (s) {
       GeofenceStatus.idle => 'Off',
-      GeofenceStatus.monitoring => 'Monitoring live',
+      GeofenceStatus.starting => 'Starting…',
+      GeofenceStatus.monitoring => 'On',
       GeofenceStatus.paused => 'Paused',
-      GeofenceStatus.denied => 'Location permission denied',
+      GeofenceStatus.denied => 'Location permission required',
       GeofenceStatus.serviceOff => 'Location services disabled',
+      GeofenceStatus.error => 'Could not start',
     };
   }
 
@@ -498,6 +505,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
     final GeofenceStatus status = _c.geofenceService.status;
     final bool active = status == GeofenceStatus.monitoring;
     final (String text, Color color) = switch (status) {
+      GeofenceStatus.starting => (
+          'Starting monitoring…',
+          scheme.onSurfaceVariant
+        ),
       GeofenceStatus.monitoring => (
           'Live GPS monitoring is on. If you enter a configured high-risk zone you will get an in-app warning, an Android notification and one-tap SOS access.',
           AppTheme.success
@@ -516,6 +527,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
         ),
       GeofenceStatus.serviceOff => (
           'Device location services are turned off. Enable GPS in system settings, then retry.',
+          AppTheme.danger
+        ),
+      GeofenceStatus.error => (
+          _c.geofenceService.lastError ??
+              'Monitoring could not start. Check your connection and retry.',
           AppTheme.danger
         ),
     };
@@ -554,12 +570,18 @@ class _SafetyScreenState extends State<SafetyScreen> {
             children: <Widget>[
               if (status == GeofenceStatus.idle ||
                   status == GeofenceStatus.denied ||
-                  status == GeofenceStatus.serviceOff)
+                  status == GeofenceStatus.serviceOff ||
+                  status == GeofenceStatus.error ||
+                  status == GeofenceStatus.starting)
                 Expanded(
                   child: FilledButton.icon(
                     icon: const Icon(Icons.notifications_active),
-                    label: const Text('Enable monitoring'),
-                    onPressed: _enableMonitoring,
+                    label: Text(status == GeofenceStatus.starting
+                        ? 'Starting…'
+                        : 'Enable monitoring'),
+                    onPressed: status == GeofenceStatus.starting
+                        ? null
+                        : _enableMonitoring,
                   ),
                 )
               else
