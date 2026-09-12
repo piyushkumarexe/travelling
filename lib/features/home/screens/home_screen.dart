@@ -332,9 +332,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   _sosCard(),
                   const SectionHeader(title: 'Quick actions'),
                   _quickActions(),
-                  const SectionHeader(
+                  SectionHeader(
                     title: 'Nearby attractions',
                     actionLabel: 'See all',
+                    onAction: () => context.push('/explore'),
                   ),
                   _attractionsRow(),
                   if (_alerts.isNotEmpty) ...<Widget>[

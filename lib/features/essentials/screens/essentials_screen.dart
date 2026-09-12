@@ -66,7 +66,41 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         _locationDone = true;
       });
     } catch (_) {
-      if (mounted) setState(() => _locationDone = true);
+      if (mounted) {
+        setState(() {
+          _position = null;
+          _locationDone = true;
+        });
+      }
+    }
+  }
+
+  /// User-initiated retry: re-request permission (opening settings if it was
+  /// denied/permanently denied) and re-obtain the fix. Never fabricates a
+  /// coordinate — [currentPosition] returns null when nothing is available.
+  Future<void> _retryLocation() async {
+    try {
+      final LocationPermission perm =
+          await _c.locationService.ensurePermission();
+      if (!mounted) return;
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        setState(() {
+          _position = null;
+          _locationDone = true;
+        });
+        return;
+      }
+    } catch (_) {}
+    try {
+      final Position? pos = await _c.locationService.currentPosition();
+      if (!mounted) return;
+      setState(() {
+        _position = pos;
+        _locationDone = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _position = null);
     }
   }
 
@@ -149,6 +183,17 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
 
   Widget _body() {
     if (_selected == null) {
+      // Distinguish "no location" from the plain empty prompt (requirement:
+      // no-location / network / API-failure / zero-results must not blur).
+      if (_position == null) {
+        return ErrorState(
+          message:
+              "Your location isn't available yet. Turn on location services "
+              'and allow location permission, then try again.',
+          retryLabel: 'Enable location',
+          onRetry: _retryLocation,
+        );
+      }
       return const EmptyState(
         icon: Icons.location_searching,
         title: 'What do you need nearby?',
