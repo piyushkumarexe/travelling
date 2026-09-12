@@ -39,6 +39,11 @@ google-services.json
 firebase-debug.log
 .firebaserc.bak
 
+# Node / Cloud Functions
+node_modules/
+functions/node_modules/
+functions/.runtimeconfig.json
+
 # Secrets / environment
 .env
 .env.*

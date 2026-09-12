@@ -179,6 +179,17 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 
 ### 6. Deploy the secure backend
 
+> **Quick start:** `bash scripts/deploy-backend.sh` — one command that logs you
+> in, sets the three secrets and deploys functions + Firestore rules + Storage
+> rules. Full Hindi/Hinglish step-by-step (including the **Blaze plan** and
+> **Firestore database** requirements): see [`BACKEND_SETUP.md`](BACKEND_SETUP.md).
+
+**Two things that are easy to miss:**
+1. The project must be on the **Blaze (pay-as-you-go)** plan — v2 functions with
+   secrets don't run on the free Spark plan.
+2. A **Firestore database** must exist (console → Build → Firestore → Create
+   database) — the rate limiter and app data depend on it.
+
 ```bash
 firebase login
 firebase use <your-project-id>
