@@ -136,7 +136,7 @@ class AppConfig {
   ///   flutter build apk --dart-define=MAPTILER_API_KEY=...
   static const String mapTilerApiKey = String.fromEnvironment(
     'MAPTILER_API_KEY',
-    defaultValue: 'udi5P84vPD7vdzptwwAN',
+    defaultValue: 'udiP84vPD7vdzptwwAN',
   );
 
   /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite',

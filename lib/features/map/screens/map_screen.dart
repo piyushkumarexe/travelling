@@ -45,6 +45,7 @@ class _MapScreenState extends State<MapScreen> {
 
   final MapController _controller = MapController();
   bool _ready = false;
+  String? _setupError;
   LatLng _initialCenter = const LatLng(20.5937, 78.9629);
   double _initialZoom = 4;
 
@@ -172,6 +173,21 @@ class _MapScreenState extends State<MapScreen> {
     final double? lat = widget.initialLat;
     final double? lng = widget.initialLng;
     if (lat != null && lng != null) {
+      // Reject invalid destination coordinates before rendering — never draw
+      // a map centered on NaN/out-of-range values (which looks blank).
+      if (!lat.isFinite ||
+          !lng.isFinite ||
+          lat < -90 ||
+          lat > 90 ||
+          lng < -180 ||
+          lng > 180) {
+        setState(() {
+          _ready = true;
+          _setupError = 'This destination has invalid coordinates, so it '
+              'cannot be shown on the map.';
+        });
+        return;
+      }
       // Opened from "Get Directions" / "View on map": focus on the place,
       // drop the destination marker and auto-compute the real OSRM route
       // from the current location (with proper permission handling). The
@@ -315,7 +331,7 @@ class _MapScreenState extends State<MapScreen> {
       }
       return;
     }
-    _searchDebounce = Timer(const Duration(milliseconds: 550), _runSearch);
+    _searchDebounce = Timer(const Duration(milliseconds: 450), _runSearch);
   }
 
   Future<void> _runSearch() async {
@@ -408,6 +424,13 @@ class _MapScreenState extends State<MapScreen> {
     final List<CircleMarker> circles = <CircleMarker>[];
     for (final SafetyZone z in _zones) {
       if (!z.active) continue;
+      // Skip malformed zones so a bad radius/coords can never crash the map.
+      if (!z.radiusMeters.isFinite ||
+          z.radiusMeters <= 0 ||
+          !z.lat.isFinite ||
+          !z.lng.isFinite) {
+        continue;
+      }
       final Color color = RiskBadge.colorFor(context, z.riskLevel);
       circles.add(CircleMarker(
         point: LatLng(z.lat, z.lng),
@@ -751,31 +774,6 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  /// Live traffic overlay needs a traffic-enabled map provider. This explains
-  /// the options instead of silently failing (no free real-time traffic tile
-  /// source exists).
-  void _showTrafficInfo() {
-    showDialog<void>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: const Text('Live traffic'),
-        content: const Text(
-          'Live traffic overlays need a traffic-enabled map provider:\n\n'
-          '• Add a Google Maps key (unlocks traffic + full turn-by-turn), or\n'
-          '• Upgrade MapTiler to a plan with traffic tiles.\n\n'
-          'Until then, Tourism shows the route, distance and travel time '
-          'using live road routing.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _openNavigation() async {
     final Place? p = _selected;
     if (p == null) return;
@@ -803,6 +801,13 @@ class _MapScreenState extends State<MapScreen> {
         'hybrid' => 'Hybrid (satellite + labels)',
         _ => 'Streets',
       };
+
+  /// Satellite/hybrid imagery tops out at a lower zoom than street vector
+  /// tiles, so cap the camera there — over-zooming beyond the source's native
+  /// resolution is what makes satellite look blurry.
+  int get _maxNativeZoom => _mapStyle == 'streets-v2' ? 19 : 18;
+
+  double get _maxZoom => _mapStyle == 'streets-v2' ? 19 : 18;
 
   IconData get _styleIcon => switch (_mapStyle) {
         'satellite' => Icons.satellite_alt,
@@ -900,7 +905,19 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     if (!_ready) {
       return const Scaffold(
-        body: LoadingView(message: 'Preparing the map…'),
+        body: LoadingView(message: 'Loading map…'),
+      );
+    }
+    if (_setupError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Map')),
+        body: ErrorState(
+          message: _setupError!,
+          onRetry: () {
+            setState(() => _setupError = null);
+            unawaited(_resolveInitial());
+          },
+        ),
       );
     }
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -912,7 +929,7 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _initialCenter,
               initialZoom: _initialZoom,
-              maxZoom: 19,
+              maxZoom: _maxZoom,
               onTap: (TapPosition _, LatLng __) => _clearSelection(),
               onLongPress: _dropPin,
             ),
@@ -923,7 +940,7 @@ class _MapScreenState extends State<MapScreen> {
                 fallbackUrl: AppConfig.fallbackTileUrl,
                 userAgentPackageName: 'app.roamio.tourism',
                 retinaMode: RetinaMode.isHighDensity(context),
-                maxNativeZoom: 19,
+                maxNativeZoom: _maxNativeZoom,
                 errorTileCallback: (tile, error, stackTrace) {
                   if (!_tilesFailed && mounted) {
                     setState(() => _tilesFailed = true);
@@ -1022,13 +1039,6 @@ class _MapScreenState extends State<MapScreen> {
                   tooltip: '$_styleLabel — tap to switch style',
                   onPressed: _toggleStyle,
                   child: Icon(_styleIcon),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'map-traffic',
-                  tooltip: 'Live traffic',
-                  onPressed: _showTrafficInfo,
-                  child: const Icon(Icons.traffic),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(

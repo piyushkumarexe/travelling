@@ -110,7 +110,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     _debounce?.cancel();
     if (q.isEmpty) return;
-    _debounce = Timer(const Duration(milliseconds: 550), () {
+    _debounce = Timer(const Duration(milliseconds: 450), () {
       // A typed search is a brand-new query — clear stale results so the UI
       // never keeps showing a previous category's list.
       if (_results.isNotEmpty) setState(() => _results = const <Place>[]);
@@ -239,7 +239,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
         location: _position == null
             ? null
             : LatLng(_position!.latitude, _position!.longitude),
-        radiusMeters: _scope == 'nearby' ? 8000.0 : null,
+        radiusMeters: switch (_scope) {
+          'nearby' => 8000.0,
+          'hidden' => 8000.0,
+          'anywhere' => 30000.0,
+          _ => null,
+        },
         types: _categoryTypes(_activeCategory),
       );
       if (!mounted) return;

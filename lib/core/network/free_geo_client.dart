@@ -138,10 +138,9 @@ class FreeGeoClient {
       return const <Place>[];
     }
 
-    // Free-text: run every provider IN PARALLEL and return the first
-    // non-empty result in preference order (Overpass → Wikipedia → MapTiler
-    // → Nominatim). This makes search feel fast instead of summing up each
-    // provider's timeout.
+    // Free-text: run every provider IN PARALLEL and MERGE the results, so a
+    // sparse Overpass response doesn't hide the extra places MapTiler and
+    // Nominatim found. Results are deduped by name and sorted by distance.
     final bool attraction = _isAttractionQuery(q, null);
     final List<List<Place>> all = await Future.wait(<Future<List<Place>>>[
       if (filters != null && near != null)
@@ -155,9 +154,22 @@ class FreeGeoClient {
       _safe(() => _maptilerSearch(q, near)),
       _safe(() => _nominatimSearch(q, near)),
     ]);
+
+    final Map<String, Place> merged = <String, Place>{};
     for (final List<Place> r in all) {
-      if (r.isNotEmpty) return r;
+      for (final Place p in r) {
+        final String nameKey = p.name.trim().toLowerCase();
+        final String key =
+            nameKey.isEmpty ? p.placeId : nameKey;
+        merged.putIfAbsent(key, () => p);
+      }
     }
+    final List<Place> out = merged.values.toList();
+    if (near != null) {
+      out.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+          .compareTo(GeoUtils.distanceMeters(near, b.coords)));
+    }
+    if (out.isNotEmpty) return out;
     throw ApiException(
         ApiErrorKind.server, 'Could not search places right now.');
   }
@@ -227,7 +239,7 @@ class FreeGeoClient {
         'generator': 'geosearch',
         'ggscoord': '${near.latitude}|${near.longitude}',
         'ggsradius': radius,
-        'ggslimit': 30,
+        'ggslimit': 40,
         'prop': 'coordinates|categories',
         'cllimit': 'max',
         'format': 'json',
@@ -422,7 +434,7 @@ class FreeGeoClient {
   Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'key': _mtKey,
-      'limit': 15,
+      'limit': 25,
     };
     if (near != null) qp['proximity'] = '${near.longitude},${near.latitude}';
     final Response<dynamic> resp = await _dio.get<dynamic>(
@@ -436,7 +448,7 @@ class FreeGeoClient {
     final Map<String, dynamic> qp = <String, dynamic>{
       'q': q,
       'format': 'jsonv2',
-      'limit': 15,
+      'limit': 25,
       'addressdetails': 0,
       'countrycodes': 'in',
     };
@@ -492,7 +504,7 @@ class FreeGeoClient {
           '["$key"~"$regex"](around:$radius,${near.latitude},${near.longitude})';
       b.write('node$clause;way$clause;');
     }
-    b.write(');out center 40;');
+    b.write(');out center 60;');
 
     final List<Place> out = <Place>[];
     for (final String host in const <String>[
@@ -580,7 +592,7 @@ class FreeGeoClient {
           '(around:$radius,${near.latitude},${near.longitude});'
           'way["tourism"="hotel"]["stars"="$stars"]'
           '(around:$radius,${near.latitude},${near.longitude});'
-          ');out center 40;';
+          ');out center 60;';
       try {
         for (final String host in const <String>[
           'https://overpass-api.de/api/interpreter',
@@ -615,7 +627,7 @@ class FreeGeoClient {
           '(around:$radius,${near.latitude},${near.longitude});'
           'way["tourism"~"hotel|guest_house|hostel|motel"]'
           '(around:$radius,${near.latitude},${near.longitude});'
-          ');out center 40;';
+          ');out center 60;';
       try {
         for (final String host in const <String>[
           'https://overpass-api.de/api/interpreter',
