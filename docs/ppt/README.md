@@ -1,37 +1,30 @@
-# YatraWise — Product Presentation
+# Tourism — Product Presentation
 
-**File:** `YatraWise_Team_Genesis.pptx`  
-*(also copied to repository root for easy download)*
+**File:** `Tourism_Team_Genesis.pptx`  
+*(also at repository root)*
 
 **Team:** Genesis  
-**Format:** PowerPoint 16:9 (13.33 × 7.5 in)  
-**Slides:** 16 with fade / push / wipe transitions
+**Format:** PowerPoint 16:9 · **10 slides** · fade / push / wipe transitions
 
 ## How to open
 
-1. Download `YatraWise_Team_Genesis.pptx`
-2. Open with **Microsoft PowerPoint**, **Google Slides** (File → Open), or **LibreOffice Impress**
-3. Use **Slide Show** mode to see transitions
+1. Switch branch to **`arena/01a09483-travelling`**
+2. Download `Tourism_Team_Genesis.pptx` (root or `docs/ppt/`)
+3. Open in Microsoft PowerPoint, Google Slides, or LibreOffice Impress
 
 ## Slide list
 
 | # | Slide |
 |---|---|
-| 1 | Title — YatraWise + Team Genesis |
+| 1 | Title — Tourism + Team Genesis |
 | 2 | Agenda |
-| 3 | The gap on the ground |
-| 4 | One app. Real safety. Real travel. |
-| 5 | Home — live context |
-| 6 | AI Trip Planner (form + generated plan) |
-| 7 | Complete feature map (16 modules) |
-| 8 | Safety loop |
-| 9 | Explore, navigate, converse |
-| 10 | Digital ID, Eco, Weather & account |
-| 11 | Architecture |
-| 12 | Tech stack |
-| 13 | Security model |
-| 14 | Live backend capabilities |
-| 15 | What ships as real |
-| 16 | Thank you — Team Genesis |
+| 3 | Problem → Solution |
+| 4 | Home UI |
+| 5 | **AI in the app** (Trip Planner + Assistant + Incident triage) |
+| 6 | Complete feature set (16 modules) |
+| 7 | Safety loop |
+| 8 | How it is built (Flutter · Firebase · smart services) |
+| 9 | Security + what is live today |
+| 10 | Thank you — Team Genesis |
 
-All app features described are live / working — no demo placeholders.
+No third-party API keys or model names are listed. Firebase is included as the backend platform. AI features are called out clearly.
