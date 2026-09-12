@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -684,16 +685,30 @@ class _DirectionsMap extends StatelessWidget {
     final List<ll.LatLng> pts = route.polyline
         .map((LatLng lp) => ll.LatLng(lp.latitude, lp.longitude))
         .toList();
-    final ll.LatLngBounds bounds = ll.LatLngBounds.fromPoints(
-      <ll.LatLng>[
-        ll.LatLng(origin.latitude, origin.longitude),
-        ...pts,
-      ],
-    );
+    // Fit the camera over the whole route manually (latlong2 0.9 has no
+    // LatLngBounds), so the preview shows origin, route and destination.
+    final List<ll.LatLng> all = <ll.LatLng>[
+      ll.LatLng(origin.latitude, origin.longitude),
+      ...pts,
+    ];
+    double minLat = all.first.latitude;
+    double maxLat = all.first.latitude;
+    double minLng = all.first.longitude;
+    double maxLng = all.first.longitude;
+    for (final ll.LatLng p in all) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final ll.LatLng center =
+        ll.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+    final double span =
+        math.max((maxLat - minLat).abs(), (maxLng - minLng).abs());
     return fm.FlutterMap(
       options: fm.MapOptions(
-        initialCenter: bounds.center,
-        initialZoom: 13,
+        initialCenter: center,
+        initialZoom: _zoomForSpan(span),
       ),
       children: <Widget>[
         fm.TileLayer(
@@ -729,5 +744,18 @@ class _DirectionsMap extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  double _zoomForSpan(double span) {
+    if (span > 20) return 4;
+    if (span > 8) return 5;
+    if (span > 4) return 6;
+    if (span > 2) return 7;
+    if (span > 1) return 8;
+    if (span > 0.5) return 9;
+    if (span > 0.2) return 10;
+    if (span > 0.1) return 11;
+    if (span > 0.05) return 12;
+    return 13;
   }
 }
