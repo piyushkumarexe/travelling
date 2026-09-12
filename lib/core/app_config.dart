@@ -152,7 +152,7 @@ class AppConfig {
     final String prefix = key.length >= 4
         ? key.substring(0, 4)
         : (key.isEmpty ? '<empty>' : key);
-    return 'MapTiler configured=${mapTilerConfigured}, '
+    return 'MapTiler configured=$mapTilerConfigured, '
         'keyLength=${key.length}, keyPrefix=$prefix';
   }
 
