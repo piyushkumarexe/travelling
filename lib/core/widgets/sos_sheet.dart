@@ -164,8 +164,10 @@ class _SosSheetViewState extends State<_SosSheetView> {
   Future<void> _cancel() async {
     final EmergencyEvent? event = _event;
     if (event == null) return;
+    bool markedCancelled = false;
     try {
       await _c.emergencyRepository.updateStatus(event.id, 'cancelled');
+      markedCancelled = true;
     } catch (_) {
       // Even if the update fails we still close the sheet; the event
       // remains and the user can retry from the Safety screen.
@@ -173,7 +175,12 @@ class _SosSheetViewState extends State<_SosSheetView> {
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS cancelled. The event was marked as cancelled.')),
+        SnackBar(
+          content: Text(markedCancelled
+              ? 'SOS cancelled.'
+              : 'SOS closed, but the event could not be marked as cancelled. '
+                  'You can retry from the Safety screen.'),
+        ),
       );
     }
   }
