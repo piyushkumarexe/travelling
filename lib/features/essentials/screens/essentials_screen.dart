@@ -9,9 +9,12 @@ import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 
-/// Nearby essentials: real, on-demand search for hospitals, police,
-/// pharmacies, ATMs, fuel, food, hotels, transit and attractions around the
-/// user's current location. Every result can be opened for details and
+/// Nearby essentials: on-demand nearby-POI search around the user's real GPS
+/// location, with OpenStreetMap Overpass as the primary bulk engine and a
+/// strict 10,000 m radius. Categories: Hospital, Police, Pharmacy, ATM, Fuel,
+/// Food, Hotel, Transit, Attractions, Museums, Parks and Shopping — each with
+/// its proper OSM tag mapping. Results are parsed, deduplicated, filtered to
+/// the radius and sorted nearest-first; every result opens for details and
 /// OSRM-based directions.
 class EssentialsScreen extends StatefulWidget {
   const EssentialsScreen({super.key});
@@ -42,6 +45,9 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     _Category('Transit', Icons.directions_bus, 'transit', <String>['transit']),
     _Category('Attractions', Icons.attractions, 'attractions',
         <String>['tourist_attraction']),
+    _Category('Museums', Icons.museum, 'museums', <String>['museum']),
+    _Category('Parks', Icons.park, 'parks', <String>['park']),
+    _Category('Shopping', Icons.shopping_bag, 'shopping', <String>['shopping']),
   ];
 
   Position? _position;

@@ -155,8 +155,30 @@ class FreeGeoClient {
       );
     }
 
-    // Run every provider IN PARALLEL and MERGE. A sparse/failed Overpass
-    // response never hides what MapTiler/Nominatim found, and vice-versa.
+    // Bulk category / nearby-POI search (Nearby Essentials, Explore category
+    // chips, map layers): Overpass is the primary bulk engine. MapTiler
+    // geocoding is reserved for text/place search (types == null) and is NOT
+    // used here — text-geocoding a generic keyword like "hospital" returns a
+    // handful of name matches, not a 10 km radius sweep.
+    if (types != null) {
+      if (near == null) {
+        throw const ApiException(
+          ApiErrorKind.location,
+          'Your location is needed to search nearby places.',
+          retryable: false,
+        );
+      }
+      return _nearbyPois(
+        filters!,
+        near,
+        radiusMeters,
+        attraction: _isAttractionQuery(q, types),
+      );
+    }
+
+    // Free-text search: run every provider IN PARALLEL and MERGE. A
+    // sparse/failed Overpass response never hides what MapTiler/Nominatim
+    // found, and vice-versa.
     final bool attraction = _isAttractionQuery(q, types);
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
@@ -217,6 +239,66 @@ class FreeGeoClient {
           'Search service temporarily unavailable. Please try again.');
     }
     return const <Place>[]; // Providers responded, genuinely zero results.
+  }
+
+  /// Bulk nearby-POI search for a category (types != null).
+  ///
+  /// Overpass is the primary engine (real OSM POIs). Wikipedia GeoSearch
+  /// supplements attraction categories only. Raw POIs are parsed, then
+  /// deduplicated, filtered to the exact radius and sorted nearest→farthest.
+  /// A provider / network / rate-limit failure throws a typed error; only a
+  /// genuine "providers responded with nothing" returns an empty list.
+  Future<List<Place>> _nearbyPois(
+    List<(String, String)> filters,
+    LatLng near,
+    double radiusMeters, {
+    bool attraction = false,
+  }) async {
+    final List<_ProviderResult> results =
+        await Future.wait(<Future<_ProviderResult>>[
+      _guard('overpass', () => _overpass(filters, near, radiusMeters)),
+      if (attraction)
+        _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters))
+      else
+        Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
+    ]);
+
+    // 3) parse (already done by the provider) → dedup → 4) actual distance
+    //    from the user → 5) drop anything beyond the radius → 6) nearest
+    //    first.
+    final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
+    final List<Place> out = _mergeAndDedup(results)
+        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= radius)
+        .toList()
+      ..sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+          .compareTo(GeoUtils.distanceMeters(near, b.coords)));
+
+    debugPrint('[places] nearby providers='
+        '${results.map((_ProviderResult r) => '${r.provider}:${r.raw}/${r.parsed}').join(', ')} '
+        'radius=${radius.round()}m final=${out.length}');
+    if (out.isNotEmpty) return out;
+
+    // Nothing within the radius — classify the failure honestly instead of
+    // returning [] for every error.
+    final bool anyResponded = results.any((_ProviderResult r) => r.responded);
+    final Set<ApiErrorKind> errs = <ApiErrorKind>{
+      for (final _ProviderResult r in results)
+        if (r.error != null) r.error!,
+    };
+    if (!anyResponded) {
+      if (errs.contains(ApiErrorKind.rateLimited)) {
+        throw const ApiException(ApiErrorKind.rateLimited,
+            'Nearby search is temporarily limited. Try again shortly.');
+      }
+      if (errs.contains(ApiErrorKind.network) ||
+          errs.contains(ApiErrorKind.timeout)) {
+        throw const ApiException(ApiErrorKind.network,
+            'Unable to load nearby places. Check your internet connection.');
+      }
+      throw const ApiException(ApiErrorKind.server,
+          'Nearby search is temporarily unavailable. Please try again.');
+    }
+    return const <Place>[]; // Genuinely zero results within the radius.
   }
 
   /// Autocomplete suggestions while typing. Uses MapTiler Geocoding (which
@@ -755,6 +837,11 @@ class FreeGeoClient {
     }
     b.write(');out center 80;');
 
+    // Distinguish an unreachable host (network) from a host that responded
+    // but wasn't usable JSON (provider/parser), so the caller can surface the
+    // right typed error instead of one generic "unreachable" message.
+    bool responded = false;
+    bool serverError = false;
     for (final String host in const <String>[
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -764,6 +851,7 @@ class FreeGeoClient {
           host,
           queryParameters: <String, dynamic>{'data': b.toString()},
         );
+        responded = true;
         final Object? data = resp.data;
         if (resp.statusCode == 429) {
           // Let the caller classify this as rate-limited.
@@ -824,9 +912,21 @@ class FreeGeoClient {
         // A 429 (rate limit) is a real, distinct outcome — let the caller
         // classify it instead of masking it as "try the next host".
         if (e.response?.statusCode == 429) rethrow;
+        if (e.response != null) {
+          responded = true;
+          if ((e.response!.statusCode ?? 0) >= 500) serverError = true;
+        }
       } catch (_) {
         // Try the next host.
       }
+    }
+    if (serverError) {
+      throw const ApiException(ApiErrorKind.server,
+          'The nearby data service is unavailable. Please try again shortly.');
+    }
+    if (responded) {
+      throw const ApiException(ApiErrorKind.parser,
+          'The nearby data service returned an unreadable response.');
     }
     throw const ApiException(
         ApiErrorKind.network, 'Overpass is unreachable right now.');
