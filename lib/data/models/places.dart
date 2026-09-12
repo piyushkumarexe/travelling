@@ -18,6 +18,10 @@ class Place {
     this.website,
     this.priceLevel,
     this.openNow,
+    this.category,
+    this.provider,
+    this.distanceMeters,
+    this.metadata = const <String, dynamic>{},
   });
 
   final String placeId;
@@ -34,6 +38,22 @@ class Place {
   final String? website;
   final int? priceLevel;
   final bool? openNow;
+
+  /// Canonical OSM-derived category (hotel, hospital, museum, transit, …).
+  /// Null when the place came from a text/geocoding search that has no
+  /// category mapping. Never fabricated.
+  final String? category;
+
+  /// Which provider produced this record (overpass, maptiler, nominatim,
+  /// wikipedia, …). Useful for diagnostics and deduplication.
+  final String? provider;
+
+  /// Haversine distance from the search/fetch origin, when known. Computed,
+  /// never invented; may be null when the origin was not known.
+  final double? distanceMeters;
+
+  /// Provider-specific extras (OSM tags, etc.). Never fabricated.
+  final Map<String, dynamic> metadata;
 
   factory Place.fromJson(Map<String, dynamic> m) => Place(
         placeId: (m['placeId'] as String?) ?? '',
@@ -54,6 +74,13 @@ class Place {
         website: m['website'] as String?,
         priceLevel: (m['priceLevel'] as num?)?.toInt(),
         openNow: m['openNow'] as bool?,
+        category: m['category'] as String?,
+        provider: m['provider'] as String?,
+        distanceMeters: (m['distanceMeters'] as num?)?.toDouble(),
+        metadata: (m['metadata'] is Map)
+            ? (m['metadata'] as Map).map((Object? k, Object? v) =>
+                MapEntry(k.toString(), v))
+            : <String, dynamic>{},
       );
 
   LatLng get coords => LatLng(lat, lng);
@@ -73,6 +100,10 @@ class Place {
         'website': website,
         'priceLevel': priceLevel,
         'openNow': openNow,
+        'category': category,
+        'provider': provider,
+        'distanceMeters': distanceMeters,
+        'metadata': metadata,
       };
 
   bool get isTourist => types.contains('tourist_attraction');

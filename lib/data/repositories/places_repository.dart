@@ -8,6 +8,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/free_geo_client.dart';
 import '../../core/network/osrm_client.dart';
+import '../local/nearby_store.dart';
 import '../local/search_cache.dart';
 import '../models/places.dart';
 
@@ -25,6 +26,7 @@ class PlacesRepository {
   final ApiClient _api;
   final FreeGeoClient _free = FreeGeoClient();
   final OsrmClient _osrm = OsrmClient();
+  final NearbyStore _nearby = NearbyStore();
 
   List<Place> _decode(Map<String, dynamic> data) {
     final List<dynamic> raw =
@@ -101,17 +103,59 @@ class PlacesRepository {
     );
     final List<Place>? cached = await SearchCache.read(cacheKey);
     if (cached != null && cached.isNotEmpty) return cached;
-    final List<Place> result = await _free.searchPlaces(
-      query,
-      near: near,
-      types: types,
-      radiusMeters: radiusMeters,
-      filterToRadius: types != null,
-    );
-    if (result.isNotEmpty) {
-      unawaited(SearchCache.write(cacheKey, result));
+    try {
+      final List<Place> result = await _free.searchPlaces(
+        query,
+        near: near,
+        types: types,
+        radiusMeters: radiusMeters,
+        filterToRadius: types != null,
+      );
+      if (result.isNotEmpty) {
+        unawaited(SearchCache.write(cacheKey, result));
+      }
+      return result;
+    } on ApiException catch (e) {
+      // Offline / rate-limited / provider error → serve stale saved results
+      // instead of surfacing a misleading failure when we have real data.
+      if (e.kind == ApiErrorKind.network ||
+          e.kind == ApiErrorKind.timeout ||
+          e.kind == ApiErrorKind.rateLimited ||
+          e.kind == ApiErrorKind.server ||
+          e.kind == ApiErrorKind.parser) {
+        final List<Place>? stale = await SearchCache.readStale(cacheKey);
+        if (stale != null && stale.isNotEmpty) return stale;
+      }
+      rethrow;
     }
-    return result;
+  }
+
+  /// Combined nearby dataset (all essential categories) for a location,
+  /// fetched once via a grouped Overpass query and cached per location
+  /// bucket. Callers filter it locally by category — switching categories
+  /// does NOT trigger another network request. On network/rate-limit
+  /// failures a stale cached dataset is returned (flagged) instead of an
+  /// error.
+  Future<NearbyResult> nearbyAround(LatLng location,
+      {double radiusMeters = 10000, bool force = false}) {
+    return _nearby.load(
+      location,
+      force: force,
+      variant: 'core',
+      fetch: () => _free.nearbyAround(location, radiusMeters: radiusMeters),
+    );
+  }
+
+  /// Shops only (`shop=*`) for the Shopping category — fetched on demand so
+  /// the dense shop layer never crowds the essential POI dataset.
+  Future<NearbyResult> nearbyShopping(LatLng location,
+      {double radiusMeters = 10000, bool force = false}) {
+    return _nearby.load(
+      location,
+      force: force,
+      variant: 'shopping',
+      fetch: () => _free.nearbyShopping(location, radiusMeters: radiusMeters),
+    );
   }
 
   /// Validates the compiled MapTiler key with a single geocoding request.

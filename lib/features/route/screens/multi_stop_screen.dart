@@ -81,6 +81,16 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
       });
       return;
     }
+    if (q.length < 2) {
+      // Query too short: no request, just an honest hint (distinct from a
+      // network error or zero results).
+      setState(() {
+        _searchResults = const <Place>[];
+        _searchError = 'Keep typing to search places…';
+      });
+      return;
+    }
+    setState(() => _searchError = null);
     _debounce = Timer(const Duration(milliseconds: 400), () {
       unawaited(_suggest(q));
     });
@@ -120,6 +130,13 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
   Future<void> _search() async {
     final String q = _query.text.trim();
     if (q.isEmpty) return;
+    if (q.length < 2) {
+      setState(() {
+        _searchResults = const <Place>[];
+        _searchError = 'Type at least 2 characters to search.';
+      });
+      return;
+    }
     setState(() {
       _searching = true;
       _searchError = null;

@@ -33,6 +33,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final bool _saving = false;
   bool _uploadingPhoto = false;
 
+  String get profileContactName => (_profile?.emergencyContactName ?? '').trim();
+  String get profileContactPhone =>
+      (_profile?.emergencyContactPhone ?? '').trim();
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +59,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _profile = p;
           _loading = false;
         });
+      }
+      if (_c.settings.powerOffSafety) {
+        unawaited(_refreshPowerOffPayload());
       }
     }, onError: (Object e) {
       debugPrint('ProfileScreen watch error: $e');
@@ -183,6 +190,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  /// Re-mirrors the share payload with a fresh Firebase ID token while the
+  /// feature is on (the native receiver can only use the last token it was
+  /// given, and tokens expire after ~1h).
+  Future<void> _refreshPowerOffPayload() async {
+    final Profile? profile = _profile;
+    final String phone = (profile?.emergencyContactPhone ?? '').trim();
+    if (phone.isEmpty) return;
+    String? token;
+    try {
+      token = await _c.authRepository.currentUser?.getIdToken();
+    } catch (_) {
+      token = null;
+    }
+    final String? projectId = _c.app?.options.projectId;
+    await _c.settings.syncPowerOffSafetyPayload(
+      sosPhone: phone,
+      sosName: (profile?.emergencyContactName ?? '').trim(),
+      projectId: projectId ?? '',
+      idToken: token,
+    );
+  }
+
+  /// Enables/disables Power-Off Safety Location. Gated on a configured SOS
+  /// contact (never attempts to share to an unknown destination) and on a
+  /// signed-in user. Honest about the Android limitation: the app can only
+  /// try to share the latest AVAILABLE location during shutdown, never fetch
+  /// a new GPS fix after the device is off.
+  Future<void> _togglePowerOffSafety(bool value) async {
+    if (!value) {
+      await _c.settings.setPowerOffSafety(false);
+      if (mounted) setState(() {});
+      return;
+    }
+    final Profile? profile = _profile;
+    final String phone = (profile?.emergencyContactPhone ?? '').trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set an SOS contact first.')),
+      );
+      return;
+    }
+    final User? user = _c.authRepository.currentUser;
+    String? token;
+    try {
+      token = await user?.getIdToken();
+    } catch (_) {
+      token = null;
+    }
+    final String? projectId = _c.app?.options.projectId;
+    await _c.settings.setPowerOffSafety(true);
+    await _c.settings.syncPowerOffSafetyPayload(
+      sosPhone: phone,
+      sosName: (profile?.emergencyContactName ?? '').trim(),
+      projectId: projectId ?? '',
+      idToken: token,
+    );
+    if (mounted) setState(() {});
   }
 
   @override
@@ -408,6 +474,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onChanged: (bool v) {
                   _c.settings.setAutoReadReplies(v);
                 },
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          AppCard(
+            child: ListenableBuilder(
+              listenable: _c.settings,
+              builder: (BuildContext context, Widget? _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.power_settings_new),
+                    title: const Text('Power-Off Safety Location'),
+                    subtitle: const Text(
+                      'When enabled, Tourism will try to share your latest '
+                      'available location with your configured SOS contact '
+                      'when the device starts shutting down. It cannot get a '
+                      'new GPS fix after the phone is off. Off by default.',
+                    ),
+                    value: _c.settings.powerOffSafety,
+                    onChanged: _togglePowerOffSafety,
+                  ),
+                  if (_c.settings.powerOffSafety &&
+                      (profileContactPhone).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 52, right: 8, bottom: 10),
+                      child: Text(
+                        'Sharing to: ${profileContactName.isEmpty ? 'SOS contact' : profileContactName} '
+                        '($profileContactPhone)',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    )
+                  else if (_c.settings.powerOffSafety)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 52, right: 8, bottom: 10),
+                      child: Text(
+                        'No SOS contact set — add one in "Your details" above.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppTheme.danger,
+                            ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

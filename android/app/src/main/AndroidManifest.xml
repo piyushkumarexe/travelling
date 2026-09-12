@@ -94,5 +94,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!--
+            Power-Off Safety Location: best-effort share of the latest
+            available location while the device is shutting down. A plain
+            manifest receiver — no foreground/background service and no extra
+            permissions. Fails safely when the OS/network does not allow the
+            operation; delivery is only recorded when actually confirmed.
+        -->
+        <receiver
+            android:name=".PowerOffReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

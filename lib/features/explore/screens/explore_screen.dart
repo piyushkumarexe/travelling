@@ -11,9 +11,10 @@ import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../data/local/nearby_store.dart';
 import '../../../data/models/places.dart';
 import '../../../data/repositories/places_repository.dart'
-    show kExploreCategories, kExploreCategoryLabels;
+    show kExploreCategories, kExploreCategoryLabels, placesErrorMessage;
 
 /// Explore: real nearby search over OpenStreetMap/Overpass + MapTiler +
 /// Wikipedia (attractions, hidden gems, food, nearby) with distance from the
@@ -180,7 +181,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = placesErrorMessage(e);
         _loading = false;
         _searchedOnce = true;
       });
@@ -234,7 +235,67 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _error = null;
       _shown = 20;
     });
-    _runSearch();
+    // Category chips fetch the combined nearby dataset ONCE and filter it
+    // locally (no new Overpass request per chip). The "Anywhere" scope still
+    // runs a wider free-provider search.
+    if (category != null && _scope != 'anywhere') {
+      _runCategoryNearby(category);
+    } else {
+      _runSearch();
+    }
+  }
+
+  /// Dataset categories a Explore chip maps to (see
+  /// FreeGeoClient._nearbyCategoryTags). "Attractions" is the broad
+  /// tourism/historic/natural set; "Food" is the restaurant/café/fast-food
+  /// roll-up.
+  List<String>? _categoryDatasetSet(String? category) => switch (category) {
+        'tourist_attraction' => const <String>['attraction', 'museum', 'park'],
+        'museum' => const <String>['museum'],
+        'park' => const <String>['park'],
+        'hotel' => const <String>['hotel'],
+        'food' => const <String>['food', 'restaurant', 'cafe', 'fast_food'],
+        'shopping' => const <String>['shopping'],
+        'landmark' => const <String>['attraction'],
+        'tourist_places' => const <String>['attraction', 'museum', 'park'],
+        _ => null,
+      };
+
+  Future<void> _runCategoryNearby(String category) async {
+    final Position? pos = _position;
+    if (pos == null || _loading) return;
+    final List<String>? cats = _categoryDatasetSet(category);
+    if (cats == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _shown = 20;
+    });
+    try {
+      final LatLng here = LatLng(pos.latitude, pos.longitude);
+      final NearbyResult dataset = category == 'shopping'
+          ? await _c.placesRepository.nearbyShopping(here)
+          : await _c.placesRepository.nearbyAround(here);
+      if (!mounted) return;
+      final List<Place> filtered = dataset.places
+          .where((Place p) =>
+              cats.any((String c) => p.category == c || p.types.contains(c)))
+          .toList()
+        ..sort((Place a, Place b) => (a.distanceMeters ?? double.infinity)
+            .compareTo(b.distanceMeters ?? double.infinity));
+      setState(() {
+        _results = filtered;
+        _loading = false;
+        _searchedOnce = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (_results.isEmpty) _error = placesErrorMessage(e);
+        _loading = false;
+        _searchedOnce = true;
+      });
+    }
   }
 
   String _effectiveQuery() {
@@ -305,7 +366,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        if (_results.isEmpty) _error = e.toString();
+        if (_results.isEmpty) _error = placesErrorMessage(e);
         _loading = false;
         _searchedOnce = true;
       });

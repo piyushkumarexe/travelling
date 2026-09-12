@@ -28,6 +28,18 @@ class SearchCache {
   }
 
   static Future<List<Place>?> read(String key) async {
+    return _read(key, ignoreTtl: false);
+  }
+
+  /// Reads the cache even when the TTL has expired — used as an offline /
+  /// provider-failure fallback so the UI can show "saved nearby places"
+  /// instead of an error.
+  static Future<List<Place>?> readStale(String key) async {
+    return _read(key, ignoreTtl: true);
+  }
+
+  static Future<List<Place>?> _read(String key,
+      {required bool ignoreTtl}) async {
     try {
       final SharedPreferences p = await SharedPreferences.getInstance();
       final String? raw = p.getString(key);
@@ -36,7 +48,8 @@ class SearchCache {
           (jsonDecode(raw) as Map).map((Object? k, Object? v) =>
               MapEntry(k.toString(), v));
       final int ts = (m['t'] as num?)?.toInt() ?? 0;
-      if (DateTime.now().millisecondsSinceEpoch - ts > ttl.inMilliseconds) {
+      if (!ignoreTtl &&
+          DateTime.now().millisecondsSinceEpoch - ts > ttl.inMilliseconds) {
         return null;
       }
       final Object? list = m['p'];

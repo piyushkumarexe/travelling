@@ -17,6 +17,19 @@ class LocationService {
 
   Future<LocationPermission> checkPermission() => Geolocator.checkPermission();
 
+  /// Shared location-manager surface (one service, used by every screen):
+  /// fresh fix, cached/last-known fix, and a live position stream.
+  Future<Position?> getCurrentLocation({Duration timeout = const Duration(seconds: 8)}) =>
+      currentPosition(timeout: timeout);
+
+  Future<Position?> getLastKnownLocation() => lastKnown();
+
+  Stream<Position> subscribeToLocation({
+    int distanceFilter = 0,
+    LocationAccuracy accuracy = LocationAccuracy.best,
+  }) =>
+      watchPosition(distanceFilter: distanceFilter, accuracy: accuracy);
+
   /// Requests location permission (without opening system settings — for
   /// app-start warm-up). Returns the resulting permission.
   Future<LocationPermission> requestPermission() async {

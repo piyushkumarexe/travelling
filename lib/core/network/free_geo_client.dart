@@ -43,6 +43,26 @@ class FreeGeoClient {
   /// Shared per process so debounced typing can never exceed it.
   static DateTime? _lastNominatimAt;
 
+  /// Overpass is a shared public service: throttle every request so several
+  /// screens mounting at once can never fire a burst of duplicate queries.
+  /// This (plus the cache) is the actual fix for the frequent 429
+  /// "Nearby search is temporarily limited" errors.
+  static DateTime? _lastOverpassAt;
+  static const Duration _overpassMinGap = Duration(milliseconds: 350);
+
+  /// The host that last answered successfully — tried first next time, so we
+  /// stop hammering the primary mirror after it starts rate-limiting.
+  static int _overpassHostBias = 0;
+
+  /// When a 429 arrives, remember it briefly so callers fail fast to their
+  /// cached fallback instead of piling more requests onto the server.
+  static DateTime? _overpassRateLimitedUntil;
+
+  /// In-flight dedup: identical Overpass query → one shared Future, so
+  /// concurrent components never send the same request twice.
+  static final Map<String, Future<_ProviderResult>> _overpassInFlight =
+      <String, Future<_ProviderResult>>{};
+
   /// Category keyword → Overpass tag filters. Overpass gives far better
   /// "nearby hotels / hospitals / ATMs" results than free geocoding.
   static const Map<String, List<(String, String)>> _categoryFilters =
@@ -52,6 +72,7 @@ class FreeGeoClient {
     'restaurant': <(String, String)>[('amenity', 'restaurant')],
     'food': <(String, String)>[('amenity', 'restaurant|fast_food|cafe')],
     'cafe': <(String, String)>[('amenity', 'cafe')],
+    'fast_food': <(String, String)>[('amenity', 'fast_food')],
     'park': <(String, String)>[('leisure', 'park')],
     'museum': <(String, String)>[('tourism', 'museum')],
     'attraction': <(String, String)>[('tourism', 'attraction')],
@@ -74,6 +95,9 @@ class FreeGeoClient {
       ('amenity', 'bus_station'),
       ('railway', 'station'),
       ('amenity', 'ferry_terminal'),
+      ('highway', 'bus_stop'),
+      ('public_transport', 'platform'),
+      ('public_transport', 'stop_position'),
     ],
     'station': <(String, String)>[
       ('amenity', 'bus_station'),
@@ -100,12 +124,17 @@ class FreeGeoClient {
     'cafe': <(String, String)>[('amenity', 'cafe')],
     'restaurant': <(String, String)>[('amenity', 'restaurant')],
     'food': <(String, String)>[('amenity', 'restaurant|fast_food|cafe')],
+    'fast_food': <(String, String)>[('amenity', 'fast_food')],
     'hotel': <(String, String)>[('tourism', 'hotel|hostel|guest_house|motel')],
     'park': <(String, String)>[('leisure', 'park')],
     'museum': <(String, String)>[('tourism', 'museum')],
     'transit': <(String, String)>[
       ('amenity', 'bus_station'),
       ('railway', 'station'),
+      ('amenity', 'ferry_terminal'),
+      ('highway', 'bus_stop'),
+      ('public_transport', 'platform'),
+      ('public_transport', 'stop_position'),
     ],
     'fuel': <(String, String)>[('amenity', 'fuel')],
     'tourist_attraction': <(String, String)>[
@@ -837,81 +866,131 @@ class FreeGeoClient {
     }
     b.write(');out center 80;');
 
-    // Distinguish an unreachable host (network) from a host that responded
-    // but wasn't usable JSON (provider/parser), so the caller can surface the
-    // right typed error instead of one generic "unreachable" message.
-    bool responded = false;
-    bool serverError = false;
-    for (final String host in const <String>[
+    final String query = b.toString();
+
+    // 429 cooldown: fail fast to the cached fallback instead of hammering the
+    // public server while it is still rate-limiting us.
+    final DateTime? limited = _overpassRateLimitedUntil;
+    if (limited != null && DateTime.now().isBefore(limited)) {
+      throw const ApiException(ApiErrorKind.rateLimited,
+          'Nearby search is temporarily limited. Try again shortly.');
+    }
+
+    // In-flight dedup: one shared request for identical queries.
+    final Future<_ProviderResult>? pending = _overpassInFlight[query];
+    if (pending != null) return pending;
+
+    final Future<_ProviderResult> run = _overpassRun(query, hotelFilter);
+    _overpassInFlight[query] = run;
+    try {
+      return await run;
+    } finally {
+      if (identical(_overpassInFlight[query], run)) {
+        _overpassInFlight.remove(query);
+      }
+    }
+  }
+
+  Future<_ProviderResult> _overpassRun(String query, bool hotelFilter) async {
+    final List<dynamic> elements = await _overpassElements(query);
+    final List<Place> out = <Place>[];
+    for (final dynamic e in elements) {
+      if (e is! Map) continue;
+      final (double?, double?) coords = _coordsOf(e);
+      if (coords.$1 == null || coords.$2 == null) continue;
+      final Object? tags = e['tags'];
+      String name = '';
+      String phone = '';
+      String website = '';
+      String address = '';
+      if (tags is Map) {
+        name = _tagOf(tags, 'name');
+        phone = _tagOf(tags, 'phone') + _tagOf(tags, 'contact:phone');
+        if (phone.isEmpty) phone = _tagOf(tags, 'contact:mobile');
+        website = _tagOf(tags, 'website');
+        if (website.isEmpty) website = _tagOf(tags, 'contact:website');
+        final String street = _tagOf(tags, 'addr:street');
+        final String city = _tagOf(tags, 'addr:city');
+        address = <String>[street, city].where((String s) => s.isNotEmpty).join(', ');
+      }
+      if (name.trim().isEmpty) continue;
+      if (hotelFilter && !_looksLikeHotel(name)) continue;
+      out.add(Place(
+        placeId:
+            'osm-${e['type'] ?? 'node'}-${e['id'] ?? '${coords.$1},${coords.$2}'}',
+        name: name,
+        lat: coords.$1!,
+        lng: coords.$2!,
+        address: address.isEmpty ? null : address,
+        phone: phone.isEmpty ? null : phone,
+        website: website.isEmpty ? null : website,
+        primaryType: 'poi',
+        types: const <String>['point_of_interest'],
+        provider: 'overpass',
+      ));
+    }
+    return _ProviderResult(
+      provider: 'overpass',
+      places: out,
+      responded: true,
+      error: null,
+      raw: elements.length,
+    );
+  }
+
+  /// Single Overpass request runner shared by the per-category search and the
+  /// grouped nearby fetch. Throttles to [_overpassMinGap], rotates hosts,
+  /// honors the 429 cooldown, and classifies network/server/parser failures
+  /// as distinct typed errors — so callers never collapse a provider failure
+  /// into "no results".
+  Future<List<dynamic>> _overpassElements(String query) async {
+    final DateTime? last = _lastOverpassAt;
+    if (last != null) {
+      final int waitMs = _overpassMinGap.inMilliseconds -
+          DateTime.now().difference(last).inMilliseconds;
+      if (waitMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: waitMs));
+      }
+    }
+    _lastOverpassAt = DateTime.now();
+
+    const List<String> hosts = <String>[
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
-    ]) {
+    ];
+    final List<String> ordered = <String>[
+      hosts[_overpassHostBias % hosts.length],
+      hosts[(_overpassHostBias + 1) % hosts.length],
+    ];
+
+    bool responded = false;
+    bool serverError = false;
+    ApiException? rateLimited;
+    for (final String host in ordered) {
       try {
         final Response<dynamic> resp = await _dio.get<dynamic>(
           host,
-          queryParameters: <String, dynamic>{'data': b.toString()},
+          queryParameters: <String, dynamic>{'data': query},
         );
         responded = true;
         final Object? data = resp.data;
-        if (resp.statusCode == 429) {
-          // Let the caller classify this as rate-limited.
-          throw DioException(
-            requestOptions: resp.requestOptions,
-            response: resp,
-            type: DioExceptionType.badResponse,
-          );
-        }
         if (data is! Map || data['elements'] is! List) {
-          // Non-JSON (gateway error page) — try the next host.
-          continue;
+          continue; // Non-JSON (gateway error page) — try the next host.
         }
-        final List<dynamic> elements = data['elements'] as List;
-        final List<Place> out = <Place>[];
-        for (final dynamic e in elements) {
-          if (e is! Map) continue;
-          final (double?, double?) coords = _coordsOf(e);
-          if (coords.$1 == null || coords.$2 == null) continue;
-          final Object? tags = e['tags'];
-          String name = '';
-          String phone = '';
-          String website = '';
-          String address = '';
-          if (tags is Map) {
-            name = _tagOf(tags, 'name');
-            phone = _tagOf(tags, 'phone') + _tagOf(tags, 'contact:phone');
-            if (phone.isEmpty) phone = _tagOf(tags, 'contact:mobile');
-            website = _tagOf(tags, 'website');
-            if (website.isEmpty) website = _tagOf(tags, 'contact:website');
-            final String street = _tagOf(tags, 'addr:street');
-            final String city = _tagOf(tags, 'addr:city');
-            address = <String>[street, city].where((String s) => s.isNotEmpty).join(', ');
-          }
-          if (name.trim().isEmpty) continue;
-          if (hotelFilter && !_looksLikeHotel(name)) continue;
-          out.add(Place(
-            placeId:
-                'osm-${e['type'] ?? 'node'}-${e['id'] ?? '${coords.$1},${coords.$2}'}',
-            name: name,
-            lat: coords.$1!,
-            lng: coords.$2!,
-            address: address.isEmpty ? null : address,
-            phone: phone.isEmpty ? null : phone,
-            website: website.isEmpty ? null : website,
-            primaryType: 'poi',
-            types: const <String>['point_of_interest'],
-          ));
-        }
-        return _ProviderResult(
-          provider: 'overpass',
-          places: out,
-          responded: true,
-          error: null,
-          raw: elements.length,
-        );
+        _overpassHostBias = hosts.indexOf(host);
+        _overpassRateLimitedUntil = null;
+        return data['elements'] as List;
       } on DioException catch (e) {
-        // A 429 (rate limit) is a real, distinct outcome — let the caller
-        // classify it instead of masking it as "try the next host".
-        if (e.response?.statusCode == 429) rethrow;
+        // 429 = rate limit: remember it (so the next caller fails fast to its
+        // cached fallback) and stop trying the other mirror — hammering it
+        // now would only make the cooldown worse.
+        if (e.response?.statusCode == 429) {
+          _overpassRateLimitedUntil =
+              DateTime.now().add(const Duration(seconds: 20));
+          rateLimited = const ApiException(ApiErrorKind.rateLimited,
+              'Nearby search is temporarily limited. Try again shortly.');
+          break;
+        }
         if (e.response != null) {
           responded = true;
           if ((e.response!.statusCode ?? 0) >= 500) serverError = true;
@@ -920,6 +999,7 @@ class FreeGeoClient {
         // Try the next host.
       }
     }
+    if (rateLimited != null) throw rateLimited;
     if (serverError) {
       throw const ApiException(ApiErrorKind.server,
           'The nearby data service is unavailable. Please try again shortly.');
@@ -930,6 +1010,225 @@ class FreeGeoClient {
     }
     throw const ApiException(
         ApiErrorKind.network, 'Overpass is unreachable right now.');
+  }
+
+  /// Canonical OSM-derived nearby categories and their tag predicates.
+  ///
+  /// UI categories (Hotels / Hospitals / …) map to these. 'food' is a roll-up
+  /// of restaurant|fast_food|cafe and is derived at classification time, so it
+  /// has no tag clause of its own. 'shopping' matches any `shop` key (the
+  /// value is null = key-existence), per the `shop=*` spec.
+  static const Map<String, List<(String, String?)>> _nearbyCategoryTags =
+      <String, List<(String, String?)>>{
+    'hospital': <(String, String?)>[('amenity', 'hospital'), ('amenity', 'clinic')],
+    'police': <(String, String?)>[('amenity', 'police')],
+    'pharmacy': <(String, String?)>[('amenity', 'pharmacy')],
+    'atm': <(String, String?)>[('amenity', 'atm')],
+    'fuel': <(String, String?)>[('amenity', 'fuel')],
+    'restaurant': <(String, String?)>[('amenity', 'restaurant')],
+    'cafe': <(String, String?)>[('amenity', 'cafe')],
+    'fast_food': <(String, String?)>[('amenity', 'fast_food')],
+    'hotel': <(String, String?)>[
+      ('tourism', 'hotel'),
+      ('tourism', 'hostel'),
+      ('tourism', 'guest_house'),
+      ('tourism', 'motel'),
+    ],
+    'park': <(String, String?)>[('leisure', 'park')],
+    'museum': <(String, String?)>[('tourism', 'museum')],
+    'attraction': <(String, String?)>[
+      ('tourism', 'attraction'),
+      ('tourism', 'gallery'),
+      ('tourism', 'viewpoint'),
+      ('tourism', 'zoo'),
+      ('tourism', 'theme_park'),
+      ('tourism', 'aquarium'),
+      ('historic', 'monument'),
+      ('historic', 'memorial'),
+      ('historic', 'castle'),
+      ('historic', 'fort'),
+      ('historic', 'ruins'),
+      ('historic', 'archaeological_site'),
+      ('amenity', 'place_of_worship'),
+    ],
+    'shopping': <(String, String?)>[('shop', null)],
+    'transit': <(String, String?)>[
+      ('highway', 'bus_stop'),
+      ('public_transport', 'platform'),
+      ('public_transport', 'stop_position'),
+      ('railway', 'station'),
+      ('railway', 'halt'),
+      ('amenity', 'bus_station'),
+      ('amenity', 'ferry_terminal'),
+    ],
+  };
+
+  /// Semantic `Place.types` aliases per dataset category, so existing UI
+  /// helpers (PlaceCard icons/colours, isFood/isTourist/isEmergency) keep
+  /// working unchanged.
+  static const Map<String, List<String>> _categorySemanticTypes =
+      <String, List<String>>{
+    'hospital': <String>['hospital'],
+    'police': <String>['police_station'],
+    'pharmacy': <String>['pharmacy'],
+    'atm': <String>['atm'],
+    'fuel': <String>['fuel'],
+    'restaurant': <String>['restaurant', 'food'],
+    'cafe': <String>['cafe', 'food'],
+    'fast_food': <String>['fast_food', 'food'],
+    'hotel': <String>['hotel', 'lodging'],
+    'park': <String>['park'],
+    'museum': <String>['museum'],
+    'attraction': <String>['tourist_attraction'],
+    'shopping': <String>['store', 'shopping'],
+    'transit': <String>['transit_station'],
+  };
+
+  /// One grouped Overpass query for the whole nearby area (every category),
+  /// parsed, deduplicated, filtered to the exact radius and sorted nearest
+  /// first. Callers cache the result and then filter it locally by category,
+  /// so switching categories never triggers another network request.
+  Future<List<Place>> nearbyAround(
+    LatLng near, {
+    double radiusMeters = 10000,
+    bool includeShopping = false,
+  }) {
+    return _nearbyCategories(
+      near,
+      radiusMeters: radiusMeters,
+      categories: includeShopping
+          ? null
+          : <String>[
+              for (final String c in _nearbyCategoryTags.keys)
+                if (c != 'shopping') c,
+            ],
+    );
+  }
+
+  /// Shops only (`shop=*`) — kept as a separate on-demand query so the dense
+  /// shop layer never crowds essential POIs out of the grouped query.
+  Future<List<Place>> nearbyShopping(LatLng near, {double radiusMeters = 10000}) =>
+      _nearbyCategories(
+        near,
+        radiusMeters: radiusMeters,
+        categories: const <String>['shopping'],
+      );
+
+  Future<List<Place>> _nearbyCategories(
+    LatLng near, {
+    required double radiusMeters,
+    List<String>? categories,
+  }) async {
+    final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
+    final StringBuffer b = StringBuffer('[out:json][timeout:25];(');
+    for (final MapEntry<String, List<(String, String?)>> entry
+        in _nearbyCategoryTags.entries) {
+      if (categories != null && !categories.contains(entry.key)) continue;
+      for (final (String key, String? value) in entry.value) {
+        final String sel = value == null ? '["$key"]' : '["$key"="$value"]';
+        b.write('node$sel(around:${radius.round()},${near.latitude},${near.longitude});');
+        b.write('way$sel(around:${radius.round()},${near.latitude},${near.longitude});');
+      }
+    }
+    b.write(');out center 400;');
+
+    final List<dynamic> elements = await _overpassElements(b.toString());
+    final Map<String, Place> dedup = <String, Place>{};
+    for (final dynamic e in elements) {
+      if (e is! Map) continue;
+      final (double?, double?) coords = _coordsOf(e);
+      if (coords.$1 == null || coords.$2 == null) continue;
+      final Object? tagsObj = e['tags'];
+      if (tagsObj is! Map) continue;
+      final String name = _tagOf(tagsObj, 'name');
+      if (name.trim().isEmpty) continue;
+
+      final List<String> cats = _categoriesOf(tagsObj);
+      if (cats.isEmpty) continue;
+      if (cats.contains('hotel') && !_looksLikeHotel(name)) continue;
+
+      final double dist = GeoUtils.distanceMetersLL(
+          near.latitude, near.longitude, coords.$1!, coords.$2!);
+      if (dist > radius) continue;
+
+      final Set<String> types = <String>{'point_of_interest'};
+      for (final String c in cats) {
+        types.addAll(_categorySemanticTypes[c] ?? const <String>[]);
+      }
+      final String primary =
+          cats.contains('food') || cats.length <= 1
+              ? cats.first
+              : cats.firstWhere((String c) => c != 'food');
+      final Place p = Place(
+        placeId:
+            'osm-${e['type'] ?? 'node'}-${e['id'] ?? '${coords.$1},${coords.$2}'}',
+        name: name,
+        lat: coords.$1!,
+        lng: coords.$2!,
+        address: _addressOf(tagsObj),
+        phone: _phoneOf(tagsObj),
+        website: _websiteOf(tagsObj),
+        primaryType: primary,
+        category: primary,
+        provider: 'overpass',
+        distanceMeters: dist,
+        types: types.toList(),
+      );
+      final String key = _dedupKey(p);
+      final Place? existing = dedup[key];
+      if (existing == null || _isRicher(p, existing)) dedup[key] = p;
+    }
+    final List<Place> out = dedup.values.toList()
+      ..sort((Place a, Place b) =>
+          (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
+    debugPrint('[places] nearbyAround radius=${radius.round()}m '
+        'raw=${elements.length} final=${out.length}');
+    return out;
+  }
+
+  /// Maps an OSM element's tags to the dataset categories it belongs to.
+  static List<String> _categoriesOf(Map tags) {
+    final List<String> out = <String>[];
+    for (final MapEntry<String, List<(String, String?)>> entry
+        in _nearbyCategoryTags.entries) {
+      for (final (String key, String? value) in entry.value) {
+        final Object? tv = tags[key];
+        if (tv == null) continue;
+        if (value == null || tv.toString() == value) {
+          out.add(entry.key);
+          break;
+        }
+      }
+    }
+    // 'food' roll-up for the restaurant/café/fast-food family.
+    if (out.any((String c) =>
+        c == 'restaurant' || c == 'cafe' || c == 'fast_food')) {
+      out.insert(0, 'food');
+    }
+    return out;
+  }
+
+  static String _phoneOf(Map tags) {
+    final String phone = _tagOf(tags, 'phone') + _tagOf(tags, 'contact:phone');
+    if (phone.isNotEmpty) return phone;
+    return _tagOf(tags, 'contact:mobile');
+  }
+
+  static String _websiteOf(Map tags) {
+    final String website = _tagOf(tags, 'website');
+    if (website.isNotEmpty) return website;
+    return _tagOf(tags, 'contact:website');
+  }
+
+  static String _addressOf(Map tags) {
+    final String street = _tagOf(tags, 'addr:street');
+    final String housenumber = _tagOf(tags, 'addr:housenumber');
+    final String city = _tagOf(tags, 'addr:city');
+    final List<String> line = <String>[
+      [housenumber, street].where((String s) => s.isNotEmpty).join(' '),
+      city,
+    ].where((String s) => s.isNotEmpty).toList();
+    return line.join(', ');
   }
 
   /// Overpass returns nodes with `lat`/`lon` but ways with `center` — read
