@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../data/models/places.dart';
@@ -38,6 +39,10 @@ class FreeGeoClient {
 
   String get _mtKey => AppConfig.mapTilerApiKey;
 
+  /// Nominatim rate-limit guard: public Nominatim allows at most 1 req/sec.
+  /// Shared per process so debounced typing can never exceed it.
+  static DateTime? _lastNominatimAt;
+
   /// Category keyword → Overpass tag filters. Overpass gives far better
   /// "nearby hotels / hospitals / ATMs" results than free geocoding.
   static const Map<String, List<(String, String)>> _categoryFilters =
@@ -61,6 +66,23 @@ class FreeGeoClient {
     'fuel': <(String, String)>[('amenity', 'fuel')],
     'petrol': <(String, String)>[('amenity', 'fuel')],
     'bank': <(String, String)>[('amenity', 'bank')],
+    'bus': <(String, String)>[
+      ('amenity', 'bus_station'),
+      ('railway', 'station'),
+    ],
+    'transit': <(String, String)>[
+      ('amenity', 'bus_station'),
+      ('railway', 'station'),
+      ('amenity', 'ferry_terminal'),
+    ],
+    'station': <(String, String)>[
+      ('amenity', 'bus_station'),
+      ('railway', 'station'),
+    ],
+    'landmark': <(String, String)>[
+      ('tourism', 'attraction|viewpoint|monument|memorial'),
+      ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
+    ],
     'temple': <(String, String)>[('amenity', 'place_of_worship')],
     'mosque': <(String, String)>[('amenity', 'place_of_worship')],
     'church': <(String, String)>[('amenity', 'place_of_worship')],
@@ -71,14 +93,21 @@ class FreeGeoClient {
   static const Map<String, List<(String, String)>> _typeFilters =
       <String, List<(String, String)>>{
     'hospital': <(String, String)>[('amenity', 'hospital|clinic')],
+    'police': <(String, String)>[('amenity', 'police')],
     'police_station': <(String, String)>[('amenity', 'police')],
     'fire_station': <(String, String)>[('amenity', 'fire_station')],
     'pharmacy': <(String, String)>[('amenity', 'pharmacy')],
     'cafe': <(String, String)>[('amenity', 'cafe')],
     'restaurant': <(String, String)>[('amenity', 'restaurant')],
+    'food': <(String, String)>[('amenity', 'restaurant|fast_food|cafe')],
     'hotel': <(String, String)>[('tourism', 'hotel|hostel|guest_house|motel')],
     'park': <(String, String)>[('leisure', 'park')],
     'museum': <(String, String)>[('tourism', 'museum')],
+    'transit': <(String, String)>[
+      ('amenity', 'bus_station'),
+      ('railway', 'station'),
+    ],
+    'fuel': <(String, String)>[('amenity', 'fuel')],
     'tourist_attraction': <(String, String)>[
       ('tourism', 'attraction|museum|viewpoint|zoo|gallery|theme_park|aquarium'),
       ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
@@ -86,6 +115,7 @@ class FreeGeoClient {
       ('amenity', 'place_of_worship'),
     ],
     'shopping_mall': <(String, String)>[('shop', 'mall')],
+    'shopping': <(String, String)>[('shop', 'mall|department_store|supermarket')],
     'atm': <(String, String)>[('amenity', 'atm')],
   };
 
@@ -97,89 +127,199 @@ class FreeGeoClient {
     String query, {
     LatLng? near,
     List<String>? types,
-    double radiusMeters = 5000,
+    double radiusMeters = 10000,
+    bool filterToRadius = false,
   }) async {
     final String q = query.trim();
     final List<(String, String)>? filters = _filtersFor(q, types);
 
-    // Category searches (types != null) must return results for the requested
-    // category. Overpass (real OSM POIs) is tried first; when it has no
-    // coverage or is unreachable we fall back to MapTiler geocoding (biased
-    // to the user's location) and then Nominatim, so a transient Overpass
-    // outage doesn't masquerade as "nothing found". Only when every provider
-    // genuinely fails do we surface a network error to the UI.
-    if (types != null) {
-      if (filters != null && near != null) {
-        bool anyProviderSucceeded = false;
-        List<Place> results = const <Place>[];
-        try {
-          results = await _overpass(filters, near, radiusMeters);
-          anyProviderSucceeded = true;
-          if (results.isNotEmpty) return results;
-        } catch (_) {}
-        try {
-          results = await _maptilerSearch(q, near);
-          anyProviderSucceeded = true;
-          if (results.isNotEmpty) return results;
-        } catch (_) {}
-        try {
-          results = await _nominatimSearch(q, near);
-          anyProviderSucceeded = true;
-          if (results.isNotEmpty) return results;
-        } catch (_) {}
-        if (!anyProviderSucceeded) {
-          throw ApiException(
-            ApiErrorKind.network,
-            'Could not search for "$q" nearby. Check your connection and try again.',
-          );
-        }
-        return const <Place>[];
-      }
-      return const <Place>[];
+    // A requested category/type we have no mapping for is an unsupported
+    // category — an honest, distinct outcome, never "nothing found".
+    if (types != null && filters == null) {
+      throw const ApiException(
+        ApiErrorKind.validation,
+        'This category is not supported yet.',
+        retryable: false,
+      );
     }
 
-    // Free-text: run every provider IN PARALLEL and MERGE the results, so a
-    // sparse Overpass response doesn't hide the extra places MapTiler and
-    // Nominatim found. Results are deduped by name and sorted by distance.
-    final bool attraction = _isAttractionQuery(q, null);
-    final List<List<Place>> all = await Future.wait(<Future<List<Place>>>[
+    // Run every provider IN PARALLEL and MERGE. A sparse/failed Overpass
+    // response never hides what MapTiler/Nominatim found, and vice-versa.
+    final bool attraction = _isAttractionQuery(q, types);
+    final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
-        _safe(() => _overpass(filters, near, radiusMeters))
+        _guard('overpass', () => _overpass(filters, near, radiusMeters))
       else
-        Future<List<Place>>.value(const <Place>[]),
+        Future<_ProviderResult>.value(_ProviderResult.skipped('overpass')),
       if (attraction && near != null)
-        _safe(() => _wikipediaNearby(near, radiusMeters))
+        _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters))
       else
-        Future<List<Place>>.value(const <Place>[]),
-      _safe(() => _maptilerSearch(q, near)),
-      _safe(() => _nominatimSearch(q, near)),
+        Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
+      if (AppConfig.mapTilerConfigured)
+        _guard('maptiler', () => _maptilerSearch(q, near))
+      else
+        Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
+      _guard('nominatim', () => _nominatimSearch(q, near)),
     ]);
 
-    final Map<String, Place> merged = <String, Place>{};
-    for (final List<Place> r in all) {
-      for (final Place p in r) {
-        final String nameKey = p.name.trim().toLowerCase();
-        final String key =
-            nameKey.isEmpty ? p.placeId : nameKey;
-        merged.putIfAbsent(key, () => p);
-      }
-    }
-    final List<Place> out = merged.values.toList();
+    List<Place> out = _mergeAndDedup(results);
     if (near != null) {
       out.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
           .compareTo(GeoUtils.distanceMeters(near, b.coords)));
+      if (filterToRadius && radiusMeters > 0) {
+        out = out
+            .where((Place p) =>
+                GeoUtils.distanceMeters(near, p.coords) <= radiusMeters + 20)
+            .toList();
+      }
     }
+    debugPrint('[places] query="$q" providers='
+        '${results.map((_ProviderResult r) => '${r.provider}:${r.raw}/${r.parsed}').join(', ')} '
+        'final=${out.length}');
     if (out.isNotEmpty) return out;
-    throw ApiException(
-        ApiErrorKind.server, 'Could not search places right now.');
+
+    // Nothing returned — classify the failure honestly instead of silently
+    // returning [] (which would masquerade as "no places found").
+    final bool anyResponded = results.any((_ProviderResult r) => r.responded);
+    final Set<ApiErrorKind> errs = <ApiErrorKind>{
+      for (final _ProviderResult r in results)
+        if (r.error != null) r.error!,
+    };
+    if (!anyResponded) {
+      if (errs.contains(ApiErrorKind.rateLimited)) {
+        throw const ApiException(ApiErrorKind.rateLimited,
+            'Nearby search is temporarily limited. Try again shortly.');
+      }
+      if (errs.contains(ApiErrorKind.unauthorized) &&
+          !errs.contains(ApiErrorKind.network)) {
+        throw const ApiException(ApiErrorKind.unauthorized,
+            'The place/map service key was rejected. Please check the key and rebuild the app.',
+            retryable: false);
+      }
+      if (errs.contains(ApiErrorKind.network) ||
+          errs.contains(ApiErrorKind.timeout)) {
+        throw const ApiException(ApiErrorKind.network,
+            'Unable to load nearby places. Check your internet connection.');
+      }
+      throw const ApiException(ApiErrorKind.server,
+          'Search service temporarily unavailable. Please try again.');
+    }
+    return const <Place>[]; // Providers responded, genuinely zero results.
   }
 
-  Future<List<Place>> _safe(Future<List<Place>> Function() fn) async {
-    try {
-      return await fn();
-    } catch (_) {
-      return const <Place>[];
+  /// Autocomplete suggestions while typing. Uses MapTiler Geocoding (which
+  /// permits autocomplete) — never public Nominatim, which forbids it. When
+  /// no MapTiler key is compiled in, it falls back to a single Overpass
+  /// category query for recognised keywords only.
+  Future<List<Place>> suggest(String query, {LatLng? near, int limit = 8}) async {
+    final String q = query.trim();
+    if (q.isEmpty) return const <Place>[];
+    if (AppConfig.mapTilerConfigured) {
+      try {
+        final _ProviderResult r = await _maptilerSearch(q, near, limit: limit);
+        if (r.places.isNotEmpty) return r.places;
+      } on DioException catch (e) {
+        final ApiErrorKind k = _kindOf(e);
+        if (k == ApiErrorKind.rateLimited) {
+          throw const ApiException(ApiErrorKind.rateLimited,
+              'Search is temporarily limited. Try again shortly.');
+        }
+        if (k == ApiErrorKind.unauthorized) {
+          throw const ApiException(ApiErrorKind.unauthorized,
+              'The place search key was rejected. Please check the key and rebuild the app.',
+              retryable: false);
+        }
+        // Network/server → fall through to the Overpass keyword fallback.
+      }
     }
+    final List<(String, String)>? filters = _filtersFor(q, null);
+    if (filters != null && near != null) {
+      final _ProviderResult r = await _overpass(filters, near, 10000);
+      if (r.places.isNotEmpty) return r.places.take(limit).toList();
+    }
+    return const <Place>[];
+  }
+
+  /// Runs [fn] and normalises every failure mode into a [_ProviderResult]
+  /// (success/empty/network/rate-limit/unauthorized/server), logging a
+  /// sanitized diagnostic line per provider (never the API key).
+  Future<_ProviderResult> _guard(
+    String provider,
+    Future<_ProviderResult> Function() fn,
+  ) async {
+    final Stopwatch sw = Stopwatch()..start();
+    try {
+      final _ProviderResult r = await fn();
+      sw.stop();
+      debugPrint('[places] $provider raw=${r.raw} parsed=${r.parsed} '
+          'responded=${r.responded} err=${r.error?.name ?? '-'} '
+          '${sw.elapsedMilliseconds}ms');
+      return r;
+    } on DioException catch (e) {
+      sw.stop();
+      final ApiErrorKind k = _kindOf(e);
+      debugPrint('[places] $provider HTTP ${e.response?.statusCode} '
+          'err=${k.name} ${sw.elapsedMilliseconds}ms');
+      return _ProviderResult(
+          provider: provider, places: const <Place>[], responded: false, error: k, raw: 0);
+    } on ApiException catch (e) {
+      sw.stop();
+      debugPrint('[places] $provider err=${e.kind.name} ${sw.elapsedMilliseconds}ms');
+      return _ProviderResult(
+          provider: provider, places: const <Place>[], responded: false, error: e.kind, raw: 0);
+    } catch (e) {
+      sw.stop();
+      debugPrint('[places] $provider unexpected=${e.runtimeType} ${sw.elapsedMilliseconds}ms');
+      return _ProviderResult(
+          provider: provider, places: const <Place>[], responded: false, error: ApiErrorKind.server, raw: 0);
+    }
+  }
+
+  /// Maps a Dio exception to a typed error kind.
+  ApiErrorKind _kindOf(DioException e) {
+    final int? code = e.response?.statusCode;
+    if (code == 401 || code == 403) return ApiErrorKind.unauthorized;
+    if (code == 429) return ApiErrorKind.rateLimited;
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return ApiErrorKind.timeout;
+      case DioExceptionType.connectionError:
+        return ApiErrorKind.network;
+      default:
+        return ApiErrorKind.server;
+    }
+  }
+
+  /// Merges provider results and deduplicates by normalized name + rounded
+  /// coordinates (a small geographic tolerance), keeping the richest record.
+  List<Place> _mergeAndDedup(List<_ProviderResult> results) {
+    final Map<String, Place> byKey = <String, Place>{};
+    for (final _ProviderResult r in results) {
+      for (final Place p in r.places) {
+        final String key = _dedupKey(p);
+        final Place? existing = byKey[key];
+        if (existing == null || _isRicher(p, existing)) byKey[key] = p;
+      }
+    }
+    return byKey.values.toList();
+  }
+
+  static String _dedupKey(Place p) {
+    final String name = p.name.trim().toLowerCase();
+    final String coord = '${p.lat.toStringAsFixed(4)},${p.lng.toStringAsFixed(4)}';
+    return '$name|$coord';
+  }
+
+  static bool _isRicher(Place a, Place b) {
+    int score(Place p) =>
+        (p.address != null && p.address!.isNotEmpty ? 1 : 0) +
+        (p.phone != null && p.phone!.isNotEmpty ? 1 : 0) +
+        (p.website != null && p.website!.isNotEmpty ? 1 : 0) +
+        (p.rating != null ? 1 : 0) +
+        (p.photoUrls.isNotEmpty ? 1 : 0);
+    return score(a) > score(b);
   }
 
   List<(String, String)>? _filtersFor(String query, List<String>? types) {
@@ -189,44 +329,68 @@ class FreeGeoClient {
         if (f != null) return f;
       }
     }
-    final String q = query.toLowerCase();
+    final String q = query
+        .toLowerCase()
+        .replaceAll('near me', ' ')
+        .replaceAll('near here', ' ')
+        .replaceAll('nearby', ' ')
+        .trim();
+    if (q.isEmpty) return null;
+    // Broad attraction-style queries (the Explore default "nearby") map to the
+    // full tourism/historic/natural filter, not just `tourism=attraction`.
+    if (q.contains('attraction') ||
+        q.contains('tourist') ||
+        q.contains('sightsee') ||
+        q.contains('landmark') ||
+        q.contains('hidden') ||
+        q.contains('gem') ||
+        q.contains('things to do') ||
+        q.contains('places to visit')) {
+      return _attractionFilters;
+    }
     for (final MapEntry<String, List<(String, String)>> e
         in _categoryFilters.entries) {
       if (q.contains(e.key)) return e.value;
     }
-    // "Hidden gems / things to do nearby" style queries → local attractions.
-    if (q.contains('hidden') ||
-        q.contains('gem') ||
-        q.contains('things to do') ||
-        q.contains('near me')) {
-      return const <(String, String)>[
-        ('tourism', 'attraction|museum|viewpoint|zoo|gallery|theme_park|aquarium'),
-        ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
-        ('leisure', 'park|garden|nature_reserve'),
-        ('amenity', 'place_of_worship'),
-      ];
-    }
     return null;
   }
 
+  /// Broad "attractions" filter: tourism attractions + historic sites +
+  /// natural places, matching the Explore "Attractions" category mapping.
+  static const List<(String, String)> _attractionFilters =
+      <(String, String)>[
+    ('tourism', 'attraction|museum|gallery|viewpoint|zoo|theme_park|aquarium'),
+    ('historic',
+        'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
+    ('natural',
+        'peak|beach|water|waterfall|cave|valley|volcano|cliff|coastline|bay'),
+    ('leisure', 'park|garden|nature_reserve'),
+    ('amenity', 'place_of_worship'),
+  ];
+
   bool _isAttractionQuery(String q, List<String>? types) {
     if (types != null) return types.contains('tourist_attraction');
-    final String s = q.toLowerCase();
+    final String s = q
+        .toLowerCase()
+        .replaceAll('near me', ' ')
+        .replaceAll('near here', ' ')
+        .replaceAll('nearby', ' ')
+        .trim();
     return s.contains('attraction') ||
         s.contains('famous') ||
         s.contains('things to do') ||
-        s.contains('near me') ||
         s.contains('hidden') ||
         s.contains('gem') ||
         s.contains('tourist') ||
         s.contains('landmark') ||
-        s.contains('sightsee');
+        s.contains('sightsee') ||
+        s.contains('places to visit');
   }
 
   /// Wikipedia GeoSearch: real encyclopaedia articles with coordinates near
   /// the user — the best free "famous places near me" source for towns where
   /// OSM tourism data is thin. Returns 0–20 results.
-  Future<List<Place>> _wikipediaNearby(LatLng near, double radiusMeters) async {
+  Future<_ProviderResult> _wikipediaNearby(LatLng near, double radiusMeters) async {
     final int radius =
         (radiusMeters <= 0 ? 5000 : radiusMeters).round().clamp(10, 10000).toInt();
     // ONE combined request: geosearch (coordinates) + categories, so we can
@@ -246,9 +410,15 @@ class FreeGeoClient {
       },
     );
     final Object? data = resp.data;
-    if (data is! Map) return const <Place>[];
+    if (data is! Map) {
+      return _ProviderResult(
+          provider: 'wikipedia', places: const <Place>[], responded: true, error: null, raw: 0);
+    }
     final Object? query = data['query'];
-    if (query is! Map || query['pages'] is! Map) return const <Place>[];
+    if (query is! Map || query['pages'] is! Map) {
+      return _ProviderResult(
+          provider: 'wikipedia', places: const <Place>[], responded: true, error: null, raw: 0);
+    }
     final List<Map> pages = (query['pages'] as Map).values
         .whereType<Map>()
         .toList()
@@ -295,7 +465,13 @@ class FreeGeoClient {
             'https://en.wikipedia.org/wiki/${Uri.encodeComponent(title.replaceAll(' ', '_'))}',
       ));
     }
-    return out;
+    return _ProviderResult(
+      provider: 'wikipedia',
+      places: out,
+      responded: true,
+      error: null,
+      raw: pages.length,
+    );
   }
 
   static bool _isNonTouristTitle(String t) {
@@ -455,20 +631,46 @@ class FreeGeoClient {
     }
   }
 
-  Future<List<Place>> _maptilerSearch(String q, LatLng? near) async {
+  Future<_ProviderResult> _maptilerSearch(String q, LatLng? near,
+      {int limit = 25}) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'key': _mtKey,
-      'limit': 25,
+      'limit': limit,
     };
     if (near != null) qp['proximity'] = '${near.longitude},${near.latitude}';
     final Response<dynamic> resp = await _dio.get<dynamic>(
       'https://api.maptiler.com/geocoding/${Uri.encodeComponent(q)}.json',
       queryParameters: qp,
     );
-    return _parseGeocoding(resp.data);
+    final Object? data = resp.data;
+    // MapTiler sometimes returns 200 with an "Invalid key" body — treat it
+    // as an explicit rejection so it never masquerades as "no results".
+    if (data is String && data.toLowerCase().contains('invalid key')) {
+      throw const ApiException(ApiErrorKind.unauthorized,
+          'The place search key was rejected.', retryable: false);
+    }
+    final List<dynamic> feats = _features(data);
+    return _ProviderResult(
+      provider: 'maptiler',
+      places: _parseGeocoding(data),
+      responded: true,
+      error: null,
+      raw: feats.length,
+    );
   }
 
-  Future<List<Place>> _nominatimSearch(String q, LatLng? near) async {
+  Future<_ProviderResult> _nominatimSearch(String q, LatLng? near) async {
+    // Respect Nominatim's 1 request/second usage policy.
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastNominatimAt;
+    if (last != null) {
+      final int waitMs = 1000 - now.difference(last).inMilliseconds;
+      if (waitMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: waitMs));
+      }
+    }
+    _lastNominatimAt = DateTime.now();
+
     final Map<String, dynamic> qp = <String, dynamic>{
       'q': q,
       'format': 'jsonv2',
@@ -477,7 +679,9 @@ class FreeGeoClient {
       'countrycodes': 'in',
     };
     if (near != null) {
-      final double d = 0.5; // ~55 km box — generous for tourist searches.
+      // Latitude-aware box (~0.5°) only biases ranking; results are still
+      // distance-sorted and radius-filtered after parsing.
+      final double d = 0.5;
       qp['viewbox'] = '${near.longitude - d},${near.latitude + d},'
           '${near.longitude + d},${near.latitude - d}';
       qp['bounded'] = 0;
@@ -486,9 +690,9 @@ class FreeGeoClient {
         await _nominatim.get<dynamic>('https://nominatim.openstreetmap.org/search',
             queryParameters: qp);
     final Object? data = resp.data;
-    if (data is! List) return const <Place>[];
+    final List<dynamic> raw = data is List ? data : const <dynamic>[];
     final List<Place> out = <Place>[];
-    for (final dynamic item in data) {
+    for (final dynamic item in raw) {
       if (item is! Map) continue;
       final double? lat = (item['lat'] as num?)?.toDouble();
       final double? lon = (item['lon'] as num?)?.toDouble();
@@ -507,30 +711,35 @@ class FreeGeoClient {
         primaryType: 'poi',
       ));
     }
-    return out;
+    return _ProviderResult(
+      provider: 'nominatim',
+      places: out,
+      responded: true,
+      error: null,
+      raw: raw.length,
+    );
   }
 
   // ---------------------------------------------------------------------
   // Overpass POI search (keyless, real OSM data)
   // ---------------------------------------------------------------------
 
-  Future<List<Place>> _overpass(
+  Future<_ProviderResult> _overpass(
     List<(String, String)> filters,
     LatLng near,
     double radiusMeters,
   ) async {
     final bool hotelFilter =
         filters.any((f) => f.$2.contains('hotel'));
-    final int radius = (radiusMeters <= 0 ? 5000 : radiusMeters).round();
+    final int radius = (radiusMeters <= 0 ? 10000 : radiusMeters).round();
     final StringBuffer b = StringBuffer('[out:json][timeout:20];(');
     for (final (String key, String regex) in filters) {
       final String clause =
           '["$key"~"$regex"](around:$radius,${near.latitude},${near.longitude})';
       b.write('node$clause;way$clause;');
     }
-    b.write(');out center 60;');
+    b.write(');out center 80;');
 
-    final List<Place> out = <Place>[];
     for (final String host in const <String>[
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -541,8 +750,21 @@ class FreeGeoClient {
           queryParameters: <String, dynamic>{'data': b.toString()},
         );
         final Object? data = resp.data;
-        if (data is! Map || data['elements'] is! List) continue;
-        for (final dynamic e in data['elements'] as List) {
+        if (resp.statusCode == 429) {
+          // Let the caller classify this as rate-limited.
+          throw DioException(
+            requestOptions: resp.requestOptions,
+            response: resp,
+            type: DioExceptionType.badResponse,
+          );
+        }
+        if (data is! Map || data['elements'] is! List) {
+          // Non-JSON (gateway error page) — try the next host.
+          continue;
+        }
+        final List<dynamic> elements = data['elements'] as List;
+        final List<Place> out = <Place>[];
+        for (final dynamic e in elements) {
           if (e is! Map) continue;
           final (double?, double?) coords = _coordsOf(e);
           if (coords.$1 == null || coords.$2 == null) continue;
@@ -576,12 +798,23 @@ class FreeGeoClient {
             types: const <String>['point_of_interest'],
           ));
         }
-        if (out.isNotEmpty) return out;
+        return _ProviderResult(
+          provider: 'overpass',
+          places: out,
+          responded: true,
+          error: null,
+          raw: elements.length,
+        );
+      } on DioException catch (e) {
+        // A 429 (rate limit) is a real, distinct outcome — let the caller
+        // classify it instead of masking it as "try the next host".
+        if (e.response?.statusCode == 429) rethrow;
       } catch (_) {
         // Try the next host.
       }
     }
-    return out;
+    throw const ApiException(
+        ApiErrorKind.network, 'Overpass is unreachable right now.');
   }
 
   /// Overpass returns nodes with `lat`/`lon` but ways with `center` — read
@@ -1033,4 +1266,40 @@ class FreeGeoClient {
     }
     return ApiException(ApiErrorKind.server, fallback, statusCode: code);
   }
+}
+
+/// Normalised outcome for one place provider, used to merge results across
+/// providers and to classify failures honestly (network / rate-limit /
+/// unauthorized / server / empty) instead of collapsing everything to [].
+class _ProviderResult {
+  const _ProviderResult({
+    required this.provider,
+    required this.places,
+    required this.responded,
+    required this.error,
+    required this.raw,
+  });
+
+  final String provider;
+  final List<Place> places;
+
+  /// True when the provider returned an HTTP response (even zero results).
+  final bool responded;
+
+  /// Error kind when the request failed; null on success.
+  final ApiErrorKind? error;
+
+  /// Raw feature/element count returned by the provider (before filtering).
+  final int raw;
+
+  int get parsed => places.length;
+
+  const _ProviderResult.skipped(String provider)
+      : this(
+          provider: provider,
+          places: <Place>[],
+          responded: false,
+          error: null,
+          raw: 0,
+        );
 }

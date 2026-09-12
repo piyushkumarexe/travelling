@@ -39,7 +39,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     _Category('Fuel', Icons.local_gas_station, 'fuel', <String>['fuel']),
     _Category('Food', Icons.restaurant, 'restaurant', <String>['restaurant']),
     _Category('Hotel', Icons.hotel, 'hotel', <String>['hotel']),
-    _Category('Transit', Icons.directions_bus, 'bus station', null),
+    _Category('Transit', Icons.directions_bus, 'transit', <String>['transit']),
     _Category('Attractions', Icons.attractions, 'attractions',
         <String>['tourist_attraction']),
   ];
@@ -123,7 +123,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
       final List<Place> places = await _c.placesRepository.search(
         c.query,
         location: LatLng(pos.latitude, pos.longitude),
-        radiusMeters: 8000,
+        radiusMeters: 10000,
         types: c.types,
       );
       if (!mounted) return;
@@ -217,7 +217,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         icon: Icons.search_off,
         title: 'No $label found nearby',
         message:
-            'No $label results within 8 km. Try a different category or '
+            'No $label results within 10 km. Try a different category or '
             'move to a larger town.',
         actionLabel: 'Retry',
         onAction: () => _search(_selected!),

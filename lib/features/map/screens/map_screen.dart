@@ -832,12 +832,13 @@ class _MapScreenState extends State<MapScreen> {
         _ => 'Streets',
       };
 
-  /// Satellite/hybrid imagery tops out at a lower zoom than street vector
-  /// tiles, so cap the camera there — over-zooming beyond the source's native
-  /// resolution is what makes satellite look blurry.
-  int get _maxNativeZoom => _mapStyle == 'streets-v2' ? 19 : 18;
+  /// MapTiler's TileJSON reports maxzoom 22 for `satellite`, `hybrid` and
+  /// `streets-v2`. Native zoom is set to the source's real maximum so tiles
+  /// are never upscaled/stretched; streets-v2 is capped at 19 to avoid
+  /// fetching an excessive number of tiny street tiles.
+  int get _maxNativeZoom => _mapStyle == 'streets-v2' ? 19 : 22;
 
-  double get _maxZoom => _mapStyle == 'streets-v2' ? 19 : 18;
+  double get _maxZoom => _mapStyle == 'streets-v2' ? 19 : 22;
 
   IconData get _styleIcon => switch (_mapStyle) {
         'satellite' => Icons.satellite_alt,
@@ -997,6 +998,15 @@ class _MapScreenState extends State<MapScreen> {
               ),
               CircleLayer(circles: _circles),
               PolylineLayer(polylines: _polylines),
+              SimpleAttributionWidget(
+                source: Text(
+                  useMaptiler
+                      ? 'MapTiler © OpenStreetMap contributors'
+                      : 'OpenStreetMap contributors',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                backgroundColor: scheme.surface.withValues(alpha: 0.85),
+              ),
             ],
           ),
           Positioned(

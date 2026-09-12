@@ -41,7 +41,24 @@ class PlacesRepository {
     double? radiusMeters,
     List<String>? types,
   }) async {
-    final Map<String, dynamic> body = <String, dynamic>{'query': query.trim()};
+    final String q = query.trim();
+    // Free providers FIRST (Overpass + MapTiler + Nominatim, merged and
+    // distance-sorted) — this is the real working data on the Spark plan,
+    // with no Cloud Functions dependency. Typed failures (network / rate
+    // limit / unauthorized) propagate with honest messages.
+    final List<Place> free = await _freeSearchWithCache(
+      q,
+      near: location,
+      types: types,
+      radiusMeters: radiusMeters ?? 10000,
+    );
+    if (free.isNotEmpty) return free;
+
+    // Backend (Google Places proxy) only when configured AND the free
+    // providers genuinely returned zero results — it is never a silent
+    // fallback for provider errors.
+    if (!configured) return free;
+    final Map<String, dynamic> body = <String, dynamic>{'query': q};
     if (location != null) {
       body['location'] = <String, double>{
         'lat': location.latitude,
@@ -54,14 +71,18 @@ class PlacesRepository {
       final Map<String, dynamic> data = await _api.post('/placesSearch', body);
       return _decode(data);
     } on ApiException {
-      return _freeSearchWithCache(
-        query.trim(),
-        near: location,
-        types: types,
-        radiusMeters: radiusMeters ?? 5000,
-      );
+      return free; // empty — the UI shows the honest zero-results state.
     }
   }
+
+  /// Autocomplete suggestions while typing. Uses MapTiler Geocoding (which
+  /// permits autocomplete) — never public Nominatim, which forbids it.
+  Future<List<Place>> suggest(
+    String query, {
+    LatLng? location,
+    int limit = 8,
+  }) =>
+      _free.suggest(query, near: location, limit: limit);
 
   /// Free-provider search with a short on-device cache so repeat searches in
   /// the same area are instant (no repeated network round-trips).
@@ -69,7 +90,7 @@ class PlacesRepository {
     String query, {
     LatLng? near,
     List<String>? types,
-    double radiusMeters = 5000,
+    double radiusMeters = 10000,
   }) async {
     final String cacheKey = SearchCache.key(
       query,
@@ -85,6 +106,7 @@ class PlacesRepository {
       near: near,
       types: types,
       radiusMeters: radiusMeters,
+      filterToRadius: types != null,
     );
     if (result.isNotEmpty) {
       unawaited(SearchCache.write(cacheKey, result));

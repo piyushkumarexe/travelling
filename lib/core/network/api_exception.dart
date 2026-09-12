@@ -9,6 +9,7 @@ enum ApiErrorKind {
   validation,
   upstream,
   server,
+  location,
   unknown,
 }
 

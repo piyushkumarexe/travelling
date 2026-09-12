@@ -156,11 +156,16 @@ class AppConfig {
         'keyLength=${key.length}, keyPrefix=$prefix';
   }
 
-  /// Raster tile URL template for [style] (e.g. 'streets-v2', 'satellite',
-  /// 'hybrid'). `{r}` becomes `@2x` on high-DPI screens so tiles stay sharp.
-  /// Only used when [mapTilerConfigured] is true.
-  static String mapTilerTileUrl(String style) =>
-      'https://api.maptiler.com/maps/$style/{z}/{x}/{y}{r}.png?key=$mapTilerApiKey';
+  /// Raster tile URL template for [style], matching MapTiler's official
+  /// TileJSON: `satellite` and `hybrid` serve JPEG tiles, everything else
+  /// (streets-v2, …) serves PNG. `{r}` becomes `@2x` on high-DPI screens so
+  /// tiles stay sharp. Only used when [mapTilerConfigured] is true.
+  static String mapTilerTileUrl(String style) {
+    final String ext = (style == 'satellite' || style == 'hybrid')
+        ? 'jpg'
+        : 'png';
+    return 'https://api.maptiler.com/maps/$style/{z}/{x}/{y}{r}.$ext?key=$mapTilerApiKey';
+  }
 
   /// The primary tile URL for the given [style]: MapTiler when a key is
   /// compiled in, otherwise keyless OpenStreetMap tiles. In keyless mode the

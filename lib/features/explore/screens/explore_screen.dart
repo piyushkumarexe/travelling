@@ -17,7 +17,7 @@ import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
 import '../../../data/repositories/places_repository.dart'
-    show kExploreCategories, kExploreCategoryLabels, kHiddenGemsQueries;
+    show kExploreCategories, kExploreCategoryLabels;
 
 /// Explore: real Google Places search (attractions, hidden gems, food,
 /// nearby) with distance from current location and map actions.
@@ -38,11 +38,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Position? _position;
   bool _locationDone = false;
+  bool _locationDenied = false;
 
   List<Place> _results = const <Place>[];
   bool _loading = false;
   String? _error;
   bool _searchedOnce = false;
+
+  /// Pagination: show the first 20 nearest results, then a "Load more" button
+  /// — never an arbitrary tiny cap, and never hundreds of cards at once.
+  int _shown = 20;
 
   Timer? _debounce;
   bool _initialized = false;
@@ -65,11 +70,26 @@ class _ExploreScreenState extends State<ExploreScreen> {
         });
       }
     } catch (_) {}
-    // 2) Run the first search with whatever location we have (cached or
-    //    null). Never block the UI on a cold GPS fix.
-    if (!_searchedOnce) _runDefaultSearch();
-    // 3) Refresh the fix in the background; re-run nearby ONLY when we had no
-    //    location at all, so a successful search is never wiped out.
+    // 2) Record the permission state up-front so the UI can distinguish
+    //    "permission denied" from "GPS unavailable".
+    try {
+      final LocationPermission perm =
+          await _c.locationService.checkPermission();
+      if (mounted) {
+        setState(() {
+          _locationDenied = perm == LocationPermission.denied ||
+              perm == LocationPermission.deniedForever;
+        });
+      }
+    } catch (_) {}
+    // 3) Never run a "nearby" search without a real location — a global
+    //    search would return unrelated far-away results.
+    if (_position != null && !_searchedOnce) {
+      _runDefaultSearch();
+    }
+    // 4) Refresh the fix (prompting for permission if needed); re-run nearby
+    //    only when we had no location at all, so a successful search is never
+    //    wiped out.
     try {
       final Position? pos = await _c.locationService.currentPosition();
       if (!mounted || pos == null) return;
@@ -77,11 +97,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
       setState(() {
         _position = pos;
         _locationDone = true;
+        _locationDenied = false;
       });
       if (!hadLocation) unawaited(_runSearch(preserveOnEmpty: true));
     } catch (_) {
       if (mounted) setState(() => _locationDone = true);
-      if (!_searchedOnce) _runDefaultSearch();
     }
   }
 
@@ -114,8 +134,41 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // A typed search is a brand-new query — clear stale results so the UI
       // never keeps showing a previous category's list.
       if (_results.isNotEmpty) setState(() => _results = const <Place>[]);
-      _runSearch();
+      _runSuggestions(q);
     });
+  }
+
+  /// Autocomplete suggestions while typing (MapTiler Geocoding — permitted;
+  /// never public Nominatim). Shows real matching places as the user types.
+  Future<void> _runSuggestions(String q) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _shown = 20;
+    });
+    try {
+      final Position? pos = _position;
+      final List<Place> places = await _c.placesRepository.suggest(
+        q,
+        location: pos == null
+            ? null
+            : LatLng(pos.latitude, pos.longitude),
+      );
+      if (!mounted) return;
+      setState(() {
+        _results = places;
+        _loading = false;
+        _searchedOnce = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+        _searchedOnce = true;
+      });
+    }
   }
 
   void _setScope(String scope) {
@@ -125,19 +178,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _activeCategory = null;
       _results = const <Place>[];
       _error = null;
+      _shown = 20;
     });
     if (scope == 'saved') {
       unawaited(_loadSaved());
       return;
     }
-    if (scope == 'hidden') {
-      _queryController.text = kHiddenGemsQueries.first;
-    }
     _runSearch();
   }
 
   Future<void> _loadSaved() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _shown = 20;
+    });
     try {
       final List<Place> saved = await FavoritesStore.all();
       if (!mounted) return;
@@ -162,6 +216,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // list").
       _results = const <Place>[];
       _error = null;
+      _shown = 20;
     });
     _runSearch();
   }
@@ -201,6 +256,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _shown = 20;
     });
     // Special "5★ hotels" mode: real OSM hotel data + on-device price estimate.
     if (_activeCategory == 'luxury_hotels') {
@@ -240,8 +296,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(_position!.latitude, _position!.longitude),
         radiusMeters: switch (_scope) {
-          'nearby' => 8000.0,
-          'hidden' => 8000.0,
+          'nearby' => 10000.0,
+          'hidden' => 10000.0,
           'anywhere' => 30000.0,
           _ => null,
         },
@@ -388,13 +444,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
       return const LoadingView(message: 'Finding your location…');
     }
     if (_locationDone && _position == null && _scope == 'nearby') {
-      return EmptyState(
-        icon: Icons.location_off,
-        title: 'Location not available',
-        message:
-            'Enable location to see attractions, food and hotels near you.',
-        actionLabel: 'Enable location',
-        onAction: _enableLocation,
+      if (_locationDenied) {
+        return EmptyState(
+          icon: Icons.location_off,
+          title: 'Location permission required',
+          message: 'Location permission is required to discover nearby places.',
+          actionLabel: 'Enable location',
+          onAction: _enableLocation,
+        );
+      }
+      return ErrorState(
+        message: 'Could not get your location. Check that GPS is enabled and '
+            'try again.',
+        retryLabel: 'Retry',
+        onRetry: _enableLocation,
       );
     }
     if (_error != null && _results.isEmpty) {
@@ -424,7 +487,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           icon: Icons.search_off,
           title: 'No ${label.toLowerCase()} found near you',
           message:
-              'Nothing in this category is mapped within 8 km yet. Try '
+              'Nothing in this category is mapped within 10 km yet. Try '
               'widening to "Anywhere", or search a bigger nearby city.',
           actionLabel: 'Search anywhere',
           onAction: () => _setScope('anywhere'),
@@ -443,10 +506,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: _results.length,
+      itemCount: (_results.length < _shown ? _results.length : _shown) +
+          (_results.length > _shown ? 1 : 0),
       separatorBuilder: (BuildContext context, int i) =>
           const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int i) {
+        if (i >= _shown) {
+          return Center(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.expand_more),
+              label: Text('Load ${_results.length - _shown} more'),
+              onPressed: () => setState(() => _shown += 20),
+            ),
+          );
+        }
         final Place p = _results[i];
         if (_activeCategory == 'luxury_hotels') {
           return _LuxuryHotelCard(
