@@ -63,7 +63,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
   @override
   void initState() {
     super.initState();
+    _voice.addListener(_onVoiceState);
     _loadContext();
+  }
+
+  void _onVoiceState() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadContext() async {
@@ -142,6 +147,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
         _loading = false;
       });
       _scrollToBottom();
+      // Auto-read the reply aloud when enabled in Settings (errors are never
+      // spoken). Fire-and-forget so it doesn't block the chat.
+      if (_c.settings.autoReadReplies) {
+        unawaited(_startSpeech(_messages.last));
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -200,17 +210,95 @@ class _AssistantScreenState extends State<AssistantScreen> {
     );
   }
 
-  /// Speak/stop a reply aloud (text-to-speech).
+  /// Speak/stop a reply aloud (manual speaker button).
   Future<void> _toggleSpeak(_ChatMessage m) async {
-    if (_speakingId == m.id) {
+    if (_speakingId == m.id && (_voice.isSpeaking || _voice.isPaused)) {
       await _voice.stopSpeaking();
       if (mounted) setState(() => _speakingId = null);
       return;
     }
+    await _startSpeech(m);
+  }
+
+  /// Starts speaking [m]'s reply and keeps [_speakingId] in sync until the
+  /// utterance finishes (or is stopped).
+  Future<void> _startSpeech(_ChatMessage m) async {
     await _voice.stopSpeaking();
-    if (mounted) setState(() => _speakingId = m.id);
+    if (!mounted) return;
+    setState(() => _speakingId = m.id);
     await _voice.speak(m.text);
     if (mounted && _speakingId == m.id) setState(() => _speakingId = null);
+  }
+
+  /// Listen / Pause-Resume / Stop controls for a reply bubble.
+  Widget _speechControls(_ChatMessage m, Color fg) {
+    final bool active = _speakingId == m.id;
+    final bool speaking = active && _voice.isSpeaking;
+    final bool paused = active && _voice.isPaused;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (!active)
+          _speechButton(
+            icon: Icons.volume_up,
+            label: 'Listen',
+            color: fg,
+            onTap: () => _toggleSpeak(m),
+          )
+        else ...<Widget>[
+          if (speaking)
+            _speechButton(
+              icon: Icons.pause,
+              label: 'Pause',
+              color: fg,
+              onTap: _voice.pause,
+            ),
+          if (paused)
+            _speechButton(
+              icon: Icons.play_arrow,
+              label: 'Resume',
+              color: fg,
+              onTap: _voice.resume,
+            ),
+          _speechButton(
+            icon: Icons.stop,
+            label: 'Stop',
+            color: fg,
+            onTap: () => _toggleSpeak(m),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _speechButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 15, color: color.withValues(alpha: 0.65)),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color.withValues(alpha: 0.65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -227,6 +315,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   @override
   void dispose() {
+    _voice.removeListener(_onVoiceState);
     _voice.dispose();
     _input.dispose();
     _scroll.dispose();
@@ -541,34 +630,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                       const SizedBox(height: 2),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: () => _toggleSpeak(m),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Icon(
-                                  _speakingId == m.id
-                                      ? Icons.volume_off
-                                      : Icons.volume_up,
-                                  size: 15,
-                                  color: fg.withValues(alpha: 0.65),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _speakingId == m.id ? 'Stop' : 'Listen',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: fg.withValues(alpha: 0.65),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        child: _speechControls(m, fg),
                       ),
                     ],
                   ],

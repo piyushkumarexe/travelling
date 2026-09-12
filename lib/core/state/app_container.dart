@@ -19,6 +19,7 @@ import '../services/eco_tracker.dart';
 import '../services/geofence_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
 import '../services/storage_service.dart';
 import 'auth_state.dart';
 
@@ -65,6 +66,7 @@ class AppContainer {
   late final LocationService locationService = LocationService();
   late final StorageService storageService = StorageService();
   late final NotificationService notificationService = NotificationService();
+  late final SettingsService settings = SettingsService();
   late final EcoTrackerService ecoTracker =
       EcoTrackerService(locationService: locationService);
 

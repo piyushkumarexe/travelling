@@ -36,6 +36,10 @@ Future<void> main() async {
     app: app,
   );
 
+  // Local device settings (e.g. auto-read AI replies) — independent of
+  // Firebase, so they load even when Firebase/Cloud Functions are absent.
+  unawaited(container.settings.load());
+
   if (firebaseReady) {
     // Best effort: create notification channels + ask for permission.
     await container.notificationService.init();

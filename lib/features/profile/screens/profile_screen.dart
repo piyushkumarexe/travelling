@@ -386,6 +386,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
           Text(
+            'Settings',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          AppCard(
+            child: ListenableBuilder(
+              listenable: _c.settings,
+              builder: (BuildContext context, Widget? _) => SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.record_voice_over),
+                title: const Text('Auto-read AI replies'),
+                subtitle: const Text(
+                  'Speak every AI assistant answer aloud using your device '
+                  'text-to-speech. Off by default.',
+                ),
+                value: _c.settings.autoReadReplies,
+                onChanged: (bool v) {
+                  _c.settings.setAutoReadReplies(v);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
             'Your data',
             style: Theme.of(context)
                 .textTheme

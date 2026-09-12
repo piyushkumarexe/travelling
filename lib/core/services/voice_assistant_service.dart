@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -10,19 +11,68 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// • [listen] — speech-to-text via the device recognizer. Uses the system
 ///   speech locale so travelers (including foreign visitors) can ask in their
 ///   own language; live partial text is streamed through [onPartial].
-/// • [speak] — text-to-speech so the assistant can read its answer aloud.
+/// • [speak] / [pause] / [resume] / [stopSpeaking] — text-to-speech playback
+///   with session tracking, so the UI can render Pause / Resume / Stop
+///   controls and never overlap two utterances.
 ///
 /// Both paths fail gracefully: [VoiceException] carries a user-friendly
 /// message and the UI falls back to typed input / on-screen text.
-class VoiceAssistantService {
+class VoiceAssistantService extends ChangeNotifier {
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
 
+  // ---- Speech-to-text state ----
   bool _initialized = false;
   bool _initializing = false;
   Completer<String?>? _pending;
 
+  // ---- Text-to-speech session state ----
+  bool _speaking = false;
+  bool _paused = false;
+  String? _lastText;
+  Completer<void>? _session;
+
   bool get isListening => _speech.isListening;
+  bool get isSpeaking => _speaking;
+  bool get isPaused => _paused;
+
+  VoiceAssistantService() {
+    _tts.setStartHandler(() {
+      _speaking = true;
+      _paused = false;
+      _notify();
+    });
+    _tts.setCompletionHandler(_onSessionEnd);
+    _tts.setCancelHandler(() => _onSessionEnd());
+    _tts.setErrorHandler((dynamic _) => _onSessionEnd());
+    _tts.setPauseHandler(() {
+      _paused = true;
+      _speaking = false;
+      _notify();
+    });
+    _tts.setContinueHandler(() {
+      _paused = false;
+      _speaking = true;
+      _notify();
+    });
+  }
+
+  void _notify() {
+    notifyListeners();
+  }
+
+  void _onSessionEnd() {
+    _speaking = false;
+    _paused = false;
+    final Completer<void>? s = _session;
+    if (s != null && !s.isCompleted) s.complete();
+    _session = null;
+    _notify();
+  }
+
+  // ---------------------------------------------------------------------
+  // Speech-to-text
+  // ---------------------------------------------------------------------
 
   Future<bool> _ensureInitialized() async {
     if (_initialized) return true;
@@ -88,6 +138,9 @@ class VoiceAssistantService {
 
   /// Starts one recognition session and completes with the recognized text
   /// (trimmed), or null when nothing was recognized.
+  ///
+  /// Stops any in-progress TTS first so speech output never overlaps the
+  /// microphone.
   Future<String?> listen({
     void Function(String partial)? onPartial,
   }) async {
@@ -97,6 +150,7 @@ class VoiceAssistantService {
         'You can still type your question below.',
       );
     }
+    await stopSpeaking();
     if (_pending != null && !_pending!.isCompleted) {
       // Second tap while listening = "finish now" (accept what was heard).
       await _speech.stop();
@@ -162,32 +216,73 @@ class VoiceAssistantService {
     } catch (_) {}
   }
 
-  /// Reads [text] aloud. Defaults to English, auto-switching to Hindi when
-  /// the reply contains Devanagari script.
+  // ---------------------------------------------------------------------
+  // Text-to-speech
+  // ---------------------------------------------------------------------
+
+  /// Reads [text] aloud (English by default, Hindi when the reply contains
+  /// Devanagari script). Returns a future that completes when the utterance
+  /// finishes (or is stopped) — it stays pending while paused.
   Future<void> speak(String text, {String? language}) async {
-    final String clean = text.replaceAll(RegExp(r'[*_#`>]'), '').trim();
+    final String clean = _strip(text);
     if (clean.isEmpty) return;
+    await stopSpeaking();
+    _lastText = clean;
+    final String lang = language ??
+        (RegExp(r'[\u0900-\u097F]').hasMatch(clean) ? 'hi-IN' : 'en-US');
+    final Completer<void> session = Completer<void>();
+    _session = session;
     try {
-      final String lang = language ??
-          (RegExp(r'[\u0900-\u097F]').hasMatch(clean) ? 'hi-IN' : 'en-US');
-      await _tts.awaitSpeakCompletion(true);
+      await _tts.awaitSpeakCompletion(false);
       await _tts.setLanguage(lang);
       await _tts.setSpeechRate(0.5);
       await _tts.speak(clean);
     } catch (_) {
-      // TTS is a convenience; never block the chat on it.
+      _onSessionEnd();
+      return;
+    }
+    await session.future;
+  }
+
+  /// Pauses the current utterance (best-effort on Android, SDK 26+).
+  Future<void> pause() async {
+    if (!_speaking) return;
+    try {
+      await _tts.pause();
+    } catch (_) {
+      await stopSpeaking();
     }
   }
 
+  /// Resumes a paused utterance.
+  Future<void> resume() async {
+    final String? text = _lastText;
+    if (text == null || !_paused) return;
+    _paused = false;
+    _speaking = true;
+    _notify();
+    try {
+      await _tts.speak(text);
+    } catch (_) {
+      _onSessionEnd();
+    }
+  }
+
+  /// Stops any in-progress utterance.
   Future<void> stopSpeaking() async {
     try {
       await _tts.stop();
     } catch (_) {}
+    _onSessionEnd();
   }
 
+  String _strip(String text) => text.replaceAll(RegExp(r'[*_#`>]'), '').trim();
+
+  @override
   void dispose() {
     unawaited(cancel());
     unawaited(stopSpeaking());
+    super.dispose();
   }
 }
 
