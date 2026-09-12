@@ -37,7 +37,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     _Category('Pharmacy', Icons.local_pharmacy, 'pharmacy', <String>['pharmacy']),
     _Category('ATM', Icons.local_atm, 'atm', <String>['atm']),
     _Category('Fuel', Icons.local_gas_station, 'fuel', <String>['fuel']),
-    _Category('Food', Icons.restaurant, 'restaurant', <String>['restaurant']),
+    _Category('Food', Icons.restaurant, 'food', <String>['food']),
     _Category('Hotel', Icons.hotel, 'hotel', <String>['hotel']),
     _Category('Transit', Icons.directions_bus, 'transit', <String>['transit']),
     _Category('Attractions', Icons.attractions, 'attractions',

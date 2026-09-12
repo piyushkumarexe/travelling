@@ -240,25 +240,29 @@ String placesErrorMessage(Object e) {
   return 'Could not load places. Please try again.';
 }
 
-/// Fallback icon list (Material-style, no external assets needed).
+/// Explore category chips: Attractions, Museums, Parks, Hotels, Food,
+/// Shopping, Tourist places and Landmarks — each with an explicit OSM filter
+/// mapping (see FreeGeoClient._typeFilters), never just a UI label.
 const List<String> kExploreCategories = <String>[
   'tourist_attraction',
-  'restaurant',
-  'cafe',
-  'park',
   'museum',
+  'park',
   'hotel',
-  'shopping_mall',
+  'food',
+  'shopping',
+  'tourist_places',
+  'landmark',
 ];
 
 const Map<String, String> kExploreCategoryLabels = <String, String>{
   'tourist_attraction': 'Attractions',
-  'restaurant': 'Restaurants',
-  'cafe': 'Cafés',
-  'park': 'Parks',
   'museum': 'Museums',
+  'park': 'Parks',
   'hotel': 'Hotels',
-  'shopping_mall': 'Shopping',
+  'food': 'Food',
+  'shopping': 'Shopping',
+  'tourist_places': 'Tourist places',
+  'landmark': 'Landmarks',
 };
 
 /// "Hidden / local" queries are real Places queries, not a fake list.

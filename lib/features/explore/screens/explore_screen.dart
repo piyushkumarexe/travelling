@@ -232,16 +232,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return 'tourist attractions near me';
   }
 
-  /// Google Places type ids for a category, so both the backend and the free
-  /// fallback (Overpass) return the right kind of place (hotels, museums…).
+  /// Type id for a category, mapped to real OSM/provider filters by
+  /// FreeGeoClient._typeFilters (hotels, museums, food, shopping…).
   List<String>? _categoryTypes(String? category) => switch (category) {
         'tourist_attraction' => const <String>['tourist_attraction'],
-        'restaurant' => const <String>['restaurant'],
-        'cafe' => const <String>['cafe'],
-        'park' => const <String>['park'],
         'museum' => const <String>['museum'],
+        'park' => const <String>['park'],
         'hotel' => const <String>['hotel'],
-        'shopping_mall' => const <String>['shopping_mall'],
+        'food' => const <String>['food'],
+        'shopping' => const <String>['shopping'],
+        'tourist_places' => const <String>['tourist_places'],
+        'landmark' => const <String>['landmark'],
         _ => null,
       };
 

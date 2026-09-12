@@ -109,13 +109,25 @@ class FreeGeoClient {
     ],
     'fuel': <(String, String)>[('amenity', 'fuel')],
     'tourist_attraction': <(String, String)>[
-      ('tourism', 'attraction|museum|viewpoint|zoo|gallery|theme_park|aquarium'),
-      ('historic', 'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
+      ('tourism', 'attraction|museum|gallery|viewpoint|zoo|theme_park|aquarium'),
+      ('historic', '.*'),
+      ('natural', '.*'),
       ('leisure', 'park|garden|nature_reserve'),
       ('amenity', 'place_of_worship'),
     ],
+    'tourist_places': <(String, String)>[
+      ('tourism', 'attraction|museum|gallery|viewpoint|zoo|theme_park|aquarium'),
+      ('historic', '.*'),
+      ('natural', '.*'),
+      ('leisure', 'park|garden|nature_reserve'),
+      ('amenity', 'place_of_worship'),
+    ],
+    'landmark': <(String, String)>[
+      ('tourism', 'attraction|viewpoint|monument|memorial'),
+      ('historic', '.*'),
+    ],
     'shopping_mall': <(String, String)>[('shop', 'mall')],
-    'shopping': <(String, String)>[('shop', 'mall|department_store|supermarket')],
+    'shopping': <(String, String)>[('shop', '.*')],
     'atm': <(String, String)>[('amenity', 'atm')],
   };
 
@@ -356,20 +368,23 @@ class FreeGeoClient {
   }
 
   /// Broad "attractions" filter: tourism attractions + historic sites +
-  /// natural places, matching the Explore "Attractions" category mapping.
+  /// natural places (`historic=*` + `natural=*`), matching the Explore
+  /// "Attractions / Tourist places" category mapping.
   static const List<(String, String)> _attractionFilters =
       <(String, String)>[
     ('tourism', 'attraction|museum|gallery|viewpoint|zoo|theme_park|aquarium'),
-    ('historic',
-        'castle|monument|memorial|fort|ruins|archaeological_site|tower|manor'),
-    ('natural',
-        'peak|beach|water|waterfall|cave|valley|volcano|cliff|coastline|bay'),
+    ('historic', '.*'),
+    ('natural', '.*'),
     ('leisure', 'park|garden|nature_reserve'),
     ('amenity', 'place_of_worship'),
   ];
 
   bool _isAttractionQuery(String q, List<String>? types) {
-    if (types != null) return types.contains('tourist_attraction');
+    if (types != null) {
+      return types.contains('tourist_attraction') ||
+          types.contains('tourist_places') ||
+          types.contains('landmark');
+    }
     final String s = q
         .toLowerCase()
         .replaceAll('near me', ' ')
