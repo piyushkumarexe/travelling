@@ -54,3 +54,7 @@ android/keystore.properties
 *.jks
 *.p12
 *.pfx
+
+# local ppt tooling
+.venv-pptx/
+docs/ppt/assets/
