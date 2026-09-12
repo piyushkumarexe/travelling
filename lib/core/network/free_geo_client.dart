@@ -123,11 +123,11 @@ class FreeGeoClient {
     final bool attraction = _isAttractionQuery(q, null);
     final List<List<Place>> all = await Future.wait(<Future<List<Place>>>[
       if (filters != null && near != null)
-        _safe(() => _overpass(filters!, near!, radiusMeters))
+        _safe(() => _overpass(filters, near, radiusMeters))
       else
         Future<List<Place>>.value(const <Place>[]),
       if (attraction && near != null)
-        _safe(() => _wikipediaNearby(near!, radiusMeters))
+        _safe(() => _wikipediaNearby(near, radiusMeters))
       else
         Future<List<Place>>.value(const <Place>[]),
       _safe(() => _maptilerSearch(q, near)),
