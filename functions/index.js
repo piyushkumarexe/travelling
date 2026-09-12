@@ -649,40 +649,67 @@ async function googlePlacesSearch(body) {
     Number.isFinite(body.location.lat) &&
     Number.isFinite(body.location.lng);
   const hasTypes = Array.isArray(body.types) && body.types.length > 0;
-  let url;
-  let params;
+
   if (hasLoc && hasTypes) {
+    // Legacy Places API "nearbysearch" accepts ONE type per request (a
+    // pipe-joined list returns INVALID_REQUEST). Query each type separately
+    // and merge, de-duplicated by place_id.
     const radius =
       body.radiusMeters && Number.isFinite(body.radiusMeters)
         ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
         : 5000;
-    params = [
-      `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}`,
-      `radius=${radius}`,
-      `type=${encodeURIComponent(body.types.slice(0, 5).join('|'))}`,
-    ];
-    url = `${PLACES_URL}/nearbysearchjson?${params.join('&')}`;
-  } else {
-    params = [
-      `input=${encodeURIComponent(query)}`,
-      'inputtype=textquery',
-    ];
-    if (hasLoc) {
-      const radius =
-        body.radiusMeters && Number.isFinite(body.radiusMeters)
-          ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-          : 5000;
-      params.push(
-        `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
-      );
+    const base =
+      `${PLACES_URL}/nearbysearchjson?` +
+      `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}` +
+      `&radius=${radius}&key=${encodeURIComponent(key)}`;
+    const seen = new Set();
+    const merged = [];
+    for (const type of body.types.slice(0, 4)) {
+      const d = await fetchJson(`${base}&type=${encodeURIComponent(type)}`);
+      if (d.status === 'ZERO_RESULTS') continue;
+      if (d.status !== 'OK') {
+        throw new HttpError(
+          502,
+          `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200),
+          'upstream',
+        );
+      }
+      for (const r of Array.isArray(d.results) ? d.results : []) {
+        if (!r || !r.place_id || seen.has(r.place_id)) continue;
+        seen.add(r.place_id);
+        merged.push(r);
+        if (merged.length >= 20) break;
+      }
+      if (merged.length >= 20) break;
     }
-    url = `${PLACES_URL}/findplacefromtext/json?${params.join('&')}`;
+    return merged.map((r) => mapPlace(r, functionBaseUrl({}))).filter(Boolean);
   }
-  url += `&key=${encodeURIComponent(key)}`;
+
+  // Free-text search: legacy Places "findplacefromtext".
+  const params = [
+    `input=${encodeURIComponent(query)}`,
+    'inputtype=textquery',
+  ];
+  if (hasLoc) {
+    const radius =
+      body.radiusMeters && Number.isFinite(body.radiusMeters)
+        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
+        : 5000;
+    params.push(
+      `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
+    );
+  }
+  const url =
+    `${PLACES_URL}/findplacefromtext/json?${params.join('&')}` +
+    `&key=${encodeURIComponent(key)}`;
   const d = await fetchJson(url);
   if (d.status === 'ZERO_RESULTS') return [];
-  if (d.status !== 'OK' && d.status !== 'ZERO_RESULTS') {
-    throw new HttpError(502, `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200), 'upstream');
+  if (d.status !== 'OK') {
+    throw new HttpError(
+      502,
+      `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200),
+      'upstream',
+    );
   }
   return (Array.isArray(d.results) ? d.results : [])
     .slice(0, 20)
