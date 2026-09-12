@@ -1,7 +1,7 @@
 name: yatrawise
 description: "Tourism - Smart Tourism & Safety Assistant for Android."
 publish_to: "none"
-version: 1.0.7+8
+version: 1.0.8+9
 
 environment:
   sdk: ">=3.5.0 <5.0.0"
@@ -39,6 +39,10 @@ dependencies:
   flutter_local_notifications: ^17.2.3
   flutter_markdown: ^0.7.4+3
   shared_preferences: ^2.3.2
+
+  # --- Voice assistant (speech-to-text input + text-to-speech replies) ---
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

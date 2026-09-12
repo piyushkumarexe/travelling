@@ -6,6 +6,7 @@ import '../../data/models/weather.dart';
 import '../app_config.dart';
 import '../utils/geo.dart';
 import 'api_exception.dart';
+import 'osrm_client.dart';
 
 /// Real, free (key-light) data clients used as a fallback when the Tourism
 /// Cloud Functions backend is not deployed yet — so Explore, Map, Weather and
@@ -812,55 +813,18 @@ class FreeGeoClient {
   // OSRM routing (real road routing, no key) — driving / walking / cycling
   // ---------------------------------------------------------------------
 
-  /// OSRM profile for a travel mode: walk→foot, bike→bike, car/auto→driving.
-  static String osrmProfile(String mode) => switch (mode) {
-        'walk' => 'foot',
-        'bike' => 'bike',
-        _ => 'driving',
-      };
+  final OsrmClient _osrm = OsrmClient();
 
+  /// Real road route from the free OSRM router. When OSRM is unreachable or
+  /// cannot route (no road coverage, etc.) this falls back to an honest
+  /// straight-line estimate clearly labelled as approximate, so the map keeps
+  /// working everywhere.
   Future<RouteInfo> route(LatLng from, LatLng to, {String mode = 'car'}) async {
-    final String profile = osrmProfile(mode);
     try {
-      final String url = 'https://router.project-osrm.org/route/v1/$profile/'
-          '${from.longitude},${from.latitude};'
-          '${to.longitude},${to.latitude}'
-          '?overview=full&geometries=geojson';
-      final Response<dynamic> resp = await _dio.get<dynamic>(url);
-      final Object? data = resp.data;
-      if (data is Map && data['code'] == 'Ok' && data['routes'] is List) {
-        final List<dynamic> routes = data['routes'] as List;
-        if (routes.isNotEmpty && routes[0] is Map) {
-          final Map<dynamic, dynamic> r0 =
-              routes[0] as Map<dynamic, dynamic>;
-          final double dist = (r0['distance'] as num?)?.toDouble() ?? 0;
-          final double dur = (r0['duration'] as num?)?.toDouble() ?? 0;
-          final Object? geo = r0['geometry'];
-          final List<LatLng> pts = <LatLng>[];
-          if (geo is Map && geo['coordinates'] is List) {
-            for (final dynamic c in geo['coordinates'] as List) {
-              if (c is List && c.length >= 2) {
-                pts.add(LatLng(
-                  (c[1] as num).toDouble(),
-                  (c[0] as num).toDouble(),
-                ));
-              }
-            }
-          }
-          if (pts.length >= 2 && dist > 0) {
-            return RouteInfo(
-              distanceMeters: dist,
-              durationSeconds: dur,
-              polyline: pts,
-              provider: 'osrm',
-            );
-          }
-        }
-      }
-    } on DioException {
-      // Fall through to the honest straight-line estimate.
+      return await _osrm.route(origin: from, destination: to, mode: mode);
+    } on OsrmException {
+      return _straightLine(from, to, mode: mode);
     }
-    return _straightLine(from, to, mode: mode);
   }
 
   RouteInfo _straightLine(LatLng from, LatLng to, {String mode = 'car'}) {

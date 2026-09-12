@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/free_geo_client.dart';
+import '../../core/network/osrm_client.dart';
 import '../local/search_cache.dart';
 import '../models/places.dart';
 
@@ -16,11 +17,14 @@ import '../models/places.dart';
 /// key). When the backend is not deployed/unreachable, everything falls back
 /// to free, real providers so Explore and the map keep working on-device:
 /// MapTiler geocoding (search + reverse) and the OSRM public router.
+///
+/// Routing is always OSRM (free, keyless) — Google Routes is not used.
 class PlacesRepository {
   PlacesRepository(this._api);
 
   final ApiClient _api;
   final FreeGeoClient _free = FreeGeoClient();
+  final OsrmClient _osrm = OsrmClient();
 
   List<Place> _decode(Map<String, dynamic> data) {
     final List<dynamic> raw =
@@ -137,22 +141,16 @@ class PlacesRepository {
     }
   }
 
-  Future<RouteInfo> route(LatLng from, LatLng to, {String mode = 'car'}) async {
-    try {
-      final Map<String, dynamic> data =
-          await _api.post('/route', <String, dynamic>{
-        'origin': <String, double>{'lat': from.latitude, 'lng': from.longitude},
-        'destination': <String, double>{
-          'lat': to.latitude,
-          'lng': to.longitude,
-        },
-        'mode': mode,
-      });
-      return RouteInfo.fromJson(data);
-    } on ApiException {
-      return _free.route(from, to, mode: mode);
-    }
-  }
+  Future<RouteInfo> route(LatLng from, LatLng to, {String mode = 'car'}) =>
+      _free.route(from, to, mode: mode);
+
+  /// Strict OSRM routing for the "Get Directions" flow: real road distance,
+  /// ETA and a full GeoJSON polyline. Unlike [route], this throws
+  /// [OsrmException] on failure (NoRoute / NoSegment / network / invalid
+  /// coordinates) so the UI can show a specific, actionable message instead
+  /// of a silent straight-line estimate.
+  Future<RouteInfo> osrmRoute(LatLng from, LatLng to, {String mode = 'car'}) =>
+      _osrm.route(origin: from, destination: to, mode: mode);
 
   Future<String?> reverseGeocode(LatLng location) async {
     try {

@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/services/voice_assistant_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/repositories/ai_repository.dart';
@@ -12,6 +13,10 @@ import '../../../data/repositories/ai_repository.dart';
 /// Real AI tourism assistant (NVIDIA API via the Tourism backend).
 /// No canned responses: every answer comes from the live model with the
 /// user's location and preferences as context.
+///
+/// Voice-enabled: a mic button lets travelers ask by voice (speech-to-text)
+/// and each reply can be read aloud (text-to-speech) — handy for foreign
+/// visitors who prefer to speak instead of type.
 class AssistantScreen extends StatefulWidget {
   const AssistantScreen({super.key});
 
@@ -20,7 +25,13 @@ class AssistantScreen extends StatefulWidget {
 }
 
 class _ChatMessage {
-  _ChatMessage({required this.role, required this.text, this.isError = false});
+  _ChatMessage({
+    required this.id,
+    required this.role,
+    required this.text,
+    this.isError = false,
+  });
+  final int id;
   final String role; // user | assistant
   final String text;
   final bool isError;
@@ -31,8 +42,13 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
+  final VoiceAssistantService _voice = VoiceAssistantService();
   List<_ChatMessage> _messages = <_ChatMessage>[];
   bool _loading = false;
+  int _nextId = 0;
+  bool _listening = false;
+  String _liveSpeech = '';
+  int? _speakingId;
   String? _locationLabel;
   String? _profileContext;
 
@@ -93,7 +109,10 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final String clean = text.trim();
     if (clean.isEmpty || _loading) return;
     setState(() {
-      _messages = <_ChatMessage>[..._messages, _ChatMessage(role: 'user', text: clean)];
+      _messages = <_ChatMessage>[
+        ..._messages,
+        _ChatMessage(id: _nextId++, role: 'user', text: clean),
+      ];
       _loading = true;
     });
     _input.clear();
@@ -118,7 +137,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
       setState(() {
         _messages = <_ChatMessage>[
           ..._messages,
-          _ChatMessage(role: 'assistant', text: reply),
+          _ChatMessage(id: _nextId++, role: 'assistant', text: reply),
         ];
         _loading = false;
       });
@@ -129,6 +148,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
         _messages = <_ChatMessage>[
           ..._messages,
           _ChatMessage(
+            id: _nextId++,
             role: 'assistant',
             text: e.toString(),
             isError: true,
@@ -137,6 +157,60 @@ class _AssistantScreenState extends State<AssistantScreen> {
         _loading = false;
       });
     }
+  }
+
+  /// Mic tap: start listening, or (while listening) finish and accept what
+  /// was heard. The recognized text is sent as a normal chat message.
+  Future<void> _toggleVoice() async {
+    if (_loading) return;
+    if (_listening) {
+      setState(() => _listening = false);
+      await _voice.stop();
+      return;
+    }
+    setState(() {
+      _listening = true;
+      _liveSpeech = '';
+    });
+    try {
+      final String? text = await _voice.listen(
+        onPartial: (String p) {
+          if (mounted) setState(() => _liveSpeech = p);
+        },
+      );
+      if (!mounted) return;
+      setState(() => _listening = false);
+      if (text != null && text.trim().isNotEmpty) {
+        await _send(text.trim());
+      }
+    } on VoiceException catch (e) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _showVoiceError(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _showVoiceError('Voice input failed. Please type your question.');
+    }
+  }
+
+  void _showVoiceError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Speak/stop a reply aloud (text-to-speech).
+  Future<void> _toggleSpeak(_ChatMessage m) async {
+    if (_speakingId == m.id) {
+      await _voice.stopSpeaking();
+      if (mounted) setState(() => _speakingId = null);
+      return;
+    }
+    await _voice.stopSpeaking();
+    if (mounted) setState(() => _speakingId = m.id);
+    await _voice.speak(m.text);
+    if (mounted && _speakingId == m.id) setState(() => _speakingId = null);
   }
 
   void _scrollToBottom() {
@@ -153,6 +227,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   @override
   void dispose() {
+    _voice.dispose();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -225,41 +300,94 @@ class _AssistantScreenState extends State<AssistantScreen> {
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText:
-                            'Ask about places, food, safety, transport…',
+                  if (_listening) _listeningBanner(scheme),
+                  Row(
+                    children: <Widget>[
+                      Material(
+                        color: _listening ? scheme.error : scheme.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _toggleVoice,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Icon(
+                              _listening ? Icons.stop : Icons.mic,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
-                      onSubmitted: (String v) => _send(v),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: scheme.primary,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _loading ? null : () => _send(_input.text),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.send, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _input,
+                          minLines: 1,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: _listening
+                                ? 'Listening… speak now'
+                                : 'Ask or tap the mic to speak…',
+                          ),
+                          onSubmitted: (String v) => _send(v),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: scheme.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _loading ? null : () => _send(_input.text),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.send, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _listeningBanner(ColorScheme scheme) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _liveSpeech.isEmpty ? 'Listening… speak your question' : _liveSpeech,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ],
@@ -400,10 +528,50 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   m.text,
                   style: TextStyle(color: fg, fontSize: 14.5),
                 )
-              : MarkdownBody(
-                  data: m.text,
-                  selectable: true,
-                  styleSheet: _mdStyle(scheme, fg),
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    MarkdownBody(
+                      data: m.text,
+                      selectable: true,
+                      styleSheet: _mdStyle(scheme, fg),
+                    ),
+                    if (!m.isError) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () => _toggleSpeak(m),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Icon(
+                                  _speakingId == m.id
+                                      ? Icons.volume_off
+                                      : Icons.volume_up,
+                                  size: 15,
+                                  color: fg.withValues(alpha: 0.65),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  _speakingId == m.id ? 'Stop' : 'Listen',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: fg.withValues(alpha: 0.65),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
         ),
       ),

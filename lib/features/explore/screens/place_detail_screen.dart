@@ -2,11 +2,15 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_config.dart';
+import '../../../core/network/osrm_client.dart';
 import '../../../core/services/favorites_store.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
@@ -169,106 +173,162 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     );
   }
 
-  Future<void> _loadRoute() async {
-    final Position? pos = _position;
+  /// "Get Directions": current GPS → destination via the free OSRM router,
+  /// then draws the full road polyline on a map with distance + ETA. Every
+  /// failure mode (permission denied, GPS unavailable, network, NoRoute /
+  /// NoSegment, invalid coordinates) surfaces a specific message.
+  Future<void> _getDirections() async {
     final Place? p = _place;
     if (p == null) return;
-    if (pos == null) {
+
+    // 1) Validate destination coordinates (never fabricate a route).
+    if (!OsrmClient.validLatitude(p.lat) ||
+        !OsrmClient.validLongitude(p.lng)) {
+      _showDirectionsError(
+        'This place has invalid coordinates, so a route can\'t be drawn.',
+      );
+      return;
+    }
+
+    // 2) Resolve the origin (current GPS) with proper permission handling.
+    if (_position == null) {
       final LocationPermission perm =
           await _c.locationService.ensurePermission();
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content:
-                    Text('Location permission is required to get a route.')),
-          );
-        }
+        _showDirectionsError(
+          'Location permission is required to get directions. Enable it in '
+          'Settings, or open the map and set a start point.',
+        );
         return;
       }
       try {
         final Position? fixed = await _c.locationService.currentPosition();
         if (mounted) setState(() => _position = fixed);
       } catch (_) {}
-      if (mounted && _position == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Could not get your current location.')),
+      if (_position == null) {
+        _showDirectionsError(
+          'GPS is unavailable. Turn on location services, or open the map '
+          'and set a start point.',
         );
         return;
       }
     }
+
+    // 3) Fetch the real road route from OSRM (keyless, no Google Routes).
     if (mounted) setState(() => _routeLoading = true);
     try {
-      final RouteInfo r = await _c.placesRepository.route(
+      final RouteInfo r = await _c.placesRepository.osrmRoute(
         LatLng(_position!.latitude, _position!.longitude),
         p.coords,
       );
-      if (mounted) {
-        setState(() {
-          _routeLoading = false;
-        });
-        _showRouteSheet(r, p);
-      }
+      if (!mounted) return;
+      setState(() => _routeLoading = false);
+      _showDirectionsSheet(r, p);
+    } on OsrmException catch (e) {
+      if (!mounted) return;
+      setState(() => _routeLoading = false);
+      _showDirectionsError(e.message);
     } catch (e) {
-      if (mounted) {
-        setState(() => _routeLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not get a route: $e')),
-        );
-      }
+      if (!mounted) return;
+      setState(() => _routeLoading = false);
+      _showDirectionsError('Could not get a route: $e');
     }
   }
 
-  void _showRouteSheet(RouteInfo r, Place p) {
+  void _showDirectionsError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _showDirectionsSheet(RouteInfo r, Place p) {
+    final LatLng origin = _position == null
+        ? LatLng(r.polyline.first.latitude, r.polyline.first.longitude)
+        : LatLng(_position!.latitude, _position!.longitude);
     showModalBottomSheet<void>(
       context: context,
-      builder: (BuildContext ctx) => StatefulBuilder(
-        builder: (BuildContext ctx, StateSetter setSheet) => Padding(
-          padding: const EdgeInsets.all(20),
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Directions to ${p.name}',
+                      style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  _stat(GeoUtils.formatDistance(r.distanceMeters), 'distance'),
+                  const SizedBox(width: 28),
+                  _stat(GeoUtils.formatDuration(r.durationSeconds),
+                      'estimated travel time'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  height: 240,
+                  child: _DirectionsMap(
+                    route: r,
+                    origin: origin,
+                    destination: p.coords,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Text(
-                'Route to ${p.name}',
-                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
+                'Route drawn with free OSRM road routing from your location '
+                'to ${p.name}.',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
               ),
               const SizedBox(height: 12),
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  _stat(GeoUtils.formatDistance(r.distanceMeters),
-                      r.isApproximate ? 'approx. distance' : 'distance'),
-                  const SizedBox(width: 24),
-                  _stat(
-                      GeoUtils.formatDuration(r.durationSeconds),
-                      r.isApproximate ? 'est. time' : 'travel time'),
-                ],
-              ),
-              if (r.isApproximate)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Live routing is not available on your backend yet — '
-                    'showing a straight-line estimate. Turn-by-turn '
-                    'navigation opens in Google Maps.',
-                    style: Theme.of(ctx).textTheme.bodySmall,
-                    textAlign: TextAlign.center,
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'Navigate',
+                      icon: Icons.navigation,
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _openNavigation(p);
+                      },
+                    ),
                   ),
-                ),
-              const SizedBox(height: 16),
-              PrimaryButton(
-                label: 'Open in Google Maps',
-                icon: Icons.navigation,
-                onPressed: () => _openNavigation(p),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: PrimaryButton(
+                      label: 'Full map',
+                      icon: Icons.map,
+                      outlined: true,
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _viewOnMap();
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -457,14 +517,16 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: <Widget>[
-                    Expanded(
-                      child: PrimaryButton(
-                        label: _routeLoading ? 'Getting route…' : 'Get route',
-                        icon: _routeLoading ? null : Icons.route,
-                        loading: _routeLoading,
-                        onPressed: _loadRoute,
+                      Expanded(
+                        child: PrimaryButton(
+                          label: _routeLoading
+                              ? 'Getting directions…'
+                              : 'Get Directions',
+                          icon: _routeLoading ? null : Icons.directions,
+                          loading: _routeLoading,
+                          onPressed: _getDirections,
+                        ),
                       ),
-                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: PrimaryButton(
@@ -515,9 +577,10 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Tip: “Get route” calculates the distance and travel '
-                          'time, and “Open in Google Maps” starts real '
-                          'turn-by-turn navigation on this device.',
+                          'Tip: “Get Directions” draws the real road route '
+                          '(free OSRM routing, no API key) with distance and '
+                          'travel time, and “Navigate” starts turn-by-turn '
+                          'navigation on this device.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -595,6 +658,76 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           color: PlaceCard.colorFor(context, p).withValues(alpha: 0.6),
         ),
       ),
+    );
+  }
+}
+
+/// Small map that renders the OSRM route polyline between the origin and the
+/// destination, with both endpoints pinned.
+class _DirectionsMap extends StatelessWidget {
+  const _DirectionsMap({
+    required this.route,
+    required this.origin,
+    required this.destination,
+  });
+
+  final RouteInfo route;
+
+  /// google_maps_flutter [LatLng] of the start point.
+  final LatLng origin;
+
+  /// google_maps_flutter [LatLng] of the destination.
+  final LatLng destination;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ll.LatLng> pts = route.polyline
+        .map((LatLng lp) => ll.LatLng(lp.latitude, lp.longitude))
+        .toList();
+    final ll.LatLngBounds bounds = ll.LatLngBounds.fromPoints(
+      <ll.LatLng>[
+        ll.LatLng(origin.latitude, origin.longitude),
+        ...pts,
+      ],
+    );
+    return fm.FlutterMap(
+      options: fm.MapOptions(
+        initialCenter: bounds.center,
+        initialZoom: 13,
+      ),
+      children: <Widget>[
+        fm.TileLayer(
+          urlTemplate: AppConfig.mapTilerTileUrl('streets-v2'),
+          userAgentPackageName: 'app.roamio.tourism',
+        ),
+        fm.PolylineLayer(
+          polylines: <fm.Polyline>[
+            fm.Polyline(
+              points: pts,
+              color: const Color(0xFF2563EB),
+              strokeWidth: 5,
+            ),
+          ],
+        ),
+        fm.MarkerLayer(
+          markers: <fm.Marker>[
+            fm.Marker(
+              point: ll.LatLng(origin.latitude, origin.longitude),
+              width: 30,
+              height: 30,
+              child: const Icon(Icons.trip_origin,
+                  color: Color(0xFF16A34A), size: 30),
+            ),
+            fm.Marker(
+              point: ll.LatLng(destination.latitude, destination.longitude),
+              width: 36,
+              height: 36,
+              child: const Icon(Icons.location_pin,
+                  color: Color(0xFFDC2626), size: 36),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
