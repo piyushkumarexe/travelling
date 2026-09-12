@@ -69,7 +69,7 @@ class NearbyStore {
     try {
       return await run;
     } finally {
-      if (identical(_inFlight[key], run)) _inFlight.remove(key);
+      if (identical(_inFlight[key], run)) unawaited(_inFlight.remove(key));
     }
   }
 

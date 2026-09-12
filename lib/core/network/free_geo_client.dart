@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -886,7 +888,7 @@ class FreeGeoClient {
       return await run;
     } finally {
       if (identical(_overpassInFlight[query], run)) {
-        _overpassInFlight.remove(query);
+        unawaited(_overpassInFlight.remove(query));
       }
     }
   }
