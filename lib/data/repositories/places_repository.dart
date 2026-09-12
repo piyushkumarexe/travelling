@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -6,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/free_geo_client.dart';
+import '../local/search_cache.dart';
 import '../models/places.dart';
 
 /// Places / routes / geocoding.
@@ -48,13 +50,42 @@ class PlacesRepository {
       final Map<String, dynamic> data = await _api.post('/placesSearch', body);
       return _decode(data);
     } on ApiException {
-      return _free.searchPlaces(
+      return _freeSearchWithCache(
         query.trim(),
         near: location,
         types: types,
         radiusMeters: radiusMeters ?? 5000,
       );
     }
+  }
+
+  /// Free-provider search with a short on-device cache so repeat searches in
+  /// the same area are instant (no repeated network round-trips).
+  Future<List<Place>> _freeSearchWithCache(
+    String query, {
+    LatLng? near,
+    List<String>? types,
+    double radiusMeters = 5000,
+  }) async {
+    final String cacheKey = SearchCache.key(
+      query,
+      types,
+      near?.latitude,
+      near?.longitude,
+      radiusMeters,
+    );
+    final List<Place>? cached = await SearchCache.read(cacheKey);
+    if (cached != null && cached.isNotEmpty) return cached;
+    final List<Place> result = await _free.searchPlaces(
+      query,
+      near: near,
+      types: types,
+      radiusMeters: radiusMeters,
+    );
+    if (result.isNotEmpty) {
+      unawaited(SearchCache.write(cacheKey, result));
+    }
+    return result;
   }
 
   /// Best-rated hotels (4–5★) nearby, with star rating + estimated price

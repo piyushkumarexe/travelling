@@ -101,21 +101,10 @@ class FreeGeoClient {
     final String q = query.trim();
     final List<(String, String)>? filters = _filtersFor(q, types);
 
-    // Category searches get Overpass POIs first — by far the best free
-    // "hotels / hospitals / ATMs near me" results.
-    if (filters != null && near != null) {
-      try {
-        final List<Place> pois = await _overpass(filters, near, radiusMeters);
-        if (pois.isNotEmpty) return pois;
-      } catch (_) {
-        // Fall through to geocoding.
-      }
-    }
-
-    // A category search (types != null) must stay in the requested category:
-    // free-text geocoding would return far-away or unrelated matches, so if
-    // Overpass has nothing mapped nearby we return empty (the UI shows an
-    // honest "No X found near you") instead of another city's results.
+    // Category searches (types != null) stay in the requested category via
+    // Overpass only — free-text geocoding would return far-away or unrelated
+    // matches, so if nothing is mapped nearby we return empty (the UI shows
+    // an honest "No X found near you") instead of another city's results.
     if (types != null) {
       if (filters != null && near != null) {
         try {
@@ -127,41 +116,36 @@ class FreeGeoClient {
       return const <Place>[];
     }
 
-    // "Famous places near me" in data-sparse towns: Wikipedia geosearch has
-    // real articles with coordinates where OSM has almost no POIs.
-    if (_isAttractionQuery(q, types) && near != null) {
-      try {
-        final List<Place> wiki = await _wikipediaNearby(near, radiusMeters);
-        if (wiki.isNotEmpty) return wiki;
-      } catch (_) {
-        // Fall through to geocoding.
-      }
-    }
-
-    try {
-      final List<Place> r = await _maptilerSearch(q, near);
+    // Free-text: run every provider IN PARALLEL and return the first
+    // non-empty result in preference order (Overpass → Wikipedia → MapTiler
+    // → Nominatim). This makes search feel fast instead of summing up each
+    // provider's timeout.
+    final bool attraction = _isAttractionQuery(q, null);
+    final List<List<Place>> all = await Future.wait(<Future<List<Place>>>[
+      if (filters != null && near != null)
+        _safe(() => _overpass(filters!, near!, radiusMeters))
+      else
+        Future<List<Place>>.value(const <Place>[]),
+      if (attraction && near != null)
+        _safe(() => _wikipediaNearby(near!, radiusMeters))
+      else
+        Future<List<Place>>.value(const <Place>[]),
+      _safe(() => _maptilerSearch(q, near)),
+      _safe(() => _nominatimSearch(q, near)),
+    ]);
+    for (final List<Place> r in all) {
       if (r.isNotEmpty) return r;
-    } catch (_) {
-      // Fall through.
     }
-
-    try {
-      final List<Place> r = await _nominatimSearch(q, near);
-      if (r.isNotEmpty) return r;
-    } catch (_) {
-      // Fall through.
-    }
-
-    // A free-text attraction query with no geocoding match still deserves
-    // Overpass results.
-    if (filters != null && near != null) {
-      try {
-        return await _overpass(filters, near, radiusMeters);
-      } catch (_) {}
-    }
-
     throw ApiException(
         ApiErrorKind.server, 'Could not search places right now.');
+  }
+
+  Future<List<Place>> _safe(Future<List<Place>> Function() fn) async {
+    try {
+      return await fn();
+    } catch (_) {
+      return const <Place>[];
+    }
   }
 
   List<(String, String)>? _filtersFor(String query, List<String>? types) {
@@ -211,55 +195,66 @@ class FreeGeoClient {
   Future<List<Place>> _wikipediaNearby(LatLng near, double radiusMeters) async {
     final int radius =
         (radiusMeters <= 0 ? 5000 : radiusMeters).round().clamp(10, 10000).toInt();
+    // ONE combined request: geosearch (coordinates) + categories, so we can
+    // keep only real sightseeing topics (a village, college or medical
+    // university has no tourism category) without a second round-trip.
     final Response<dynamic> resp = await _dio.get<dynamic>(
       'https://en.wikipedia.org/w/api.php',
       queryParameters: <String, dynamic>{
         'action': 'query',
-        'list': 'geosearch',
-        'gscoord': '${near.latitude}|${near.longitude}',
-        'gsradius': radius,
-        'gslimit': 30,
+        'generator': 'geosearch',
+        'ggscoord': '${near.latitude}|${near.longitude}',
+        'ggsradius': radius,
+        'ggslimit': 30,
+        'prop': 'coordinates|categories',
+        'cllimit': 'max',
         'format': 'json',
       },
     );
     final Object? data = resp.data;
     if (data is! Map) return const <Place>[];
     final Object? query = data['query'];
-    if (query is! Map || query['geosearch'] is! List) return const <Place>[];
-    final List<Map> candidates = <Map>[];
-    for (final dynamic e in query['geosearch'] as List) {
-      if (e is! Map) continue;
-      final double? lat = (e['lat'] as num?)?.toDouble();
-      final double? lon = (e['lon'] as num?)?.toDouble();
-      final String title = (e['title'] as String?) ?? '';
-      if (lat == null || lon == null || title.isEmpty) continue;
-      // Drop clearly non-tourist entries (administrative units, schools,
-      // hospitals, universities, train lines…).
-      final String t = title.toLowerCase();
-      if (_isNonTouristTitle(t)) continue;
-      candidates.add(<String, dynamic>{
-        'pageid': (e['pageid'] as num?)?.toInt() ?? 0,
-        'title': title,
-        'lat': lat,
-        'lon': lon,
-        'dist': (e['dist'] as num?)?.toDouble() ?? 0,
+    if (query is! Map || query['pages'] is! Map) return const <Place>[];
+    final List<Map> pages = (query['pages'] as Map).values
+        .whereType<Map>()
+        .toList()
+      ..sort((Map a, Map b) {
+        final int ai = (a['index'] as num?)?.toInt() ?? 0;
+        final int bi = (b['index'] as num?)?.toInt() ?? 0;
+        return ai.compareTo(bi);
       });
-    }
-    if (candidates.isEmpty) return const <Place>[];
-    // Fetch categories and keep only real sightseeing topics (a village or
-    // a medical university has no tourism category).
-    final Set<String> tourismTitles =
-        await _wikiTourismTitles(candidates.map((Map m) => m['title'] as String).toList());
     final List<Place> out = <Place>[];
-    for (final Map m in candidates) {
-      final String title = m['title'] as String;
-      if (!tourismTitles.contains(title)) continue;
+    for (final Map page in pages) {
+      final String title = (page['title'] as String?) ?? '';
+      if (title.isEmpty || _isNonTouristTitle(title.toLowerCase())) continue;
+      // Keep only pages that belong to a tourism category.
+      final Object? cats = page['categories'];
+      bool tourism = false;
+      if (cats is List) {
+        for (final dynamic c in cats) {
+          if (c is Map && _isTourismCategory((c['title'] as String?) ?? '')) {
+            tourism = true;
+            break;
+          }
+        }
+      }
+      if (!tourism) continue;
+      final Object? coords = page['coordinates'];
+      double? lat;
+      double? lon;
+      if (coords is List && coords.isNotEmpty && coords.first is Map) {
+        lat = ((coords.first as Map)['lat'] as num?)?.toDouble();
+        lon = ((coords.first as Map)['lon'] as num?)?.toDouble();
+      }
+      if (lat == null || lon == null) continue;
+      final double dist =
+          GeoUtils.distanceMetersLL(near.latitude, near.longitude, lat, lon);
       out.add(Place(
-        placeId: 'wiki-${m['pageid']}',
+        placeId: 'wiki-${page['pageid'] ?? title.hashCode}',
         name: title,
-        lat: m['lat'] as double,
-        lng: m['lon'] as double,
-        address: 'Wikipedia · ${_distLabel(m['dist'] as double)}',
+        lat: lat,
+        lng: lon,
+        address: 'Wikipedia · ${_distLabel(dist)}',
         primaryType: 'tourist_attraction',
         types: const <String>['tourist_attraction', 'point_of_interest'],
         website:
@@ -296,47 +291,6 @@ class FreeGeoClient {
         t.contains('court') ||
         t.contains('prison') ||
         t.contains('post office');
-  }
-
-  /// Returns the subset of [titles] whose Wikipedia article belongs to a
-  /// tourism category (temples, forts, museums, lakes, national parks…).
-  Future<Set<String>> _wikiTourismTitles(List<String> titles) async {
-    final Set<String> kept = <String>{};
-    if (titles.isEmpty) return kept;
-    try {
-      final Response<dynamic> resp = await _dio.get<dynamic>(
-        'https://en.wikipedia.org/w/api.php',
-        queryParameters: <String, dynamic>{
-          'action': 'query',
-          'prop': 'categories',
-          'titles': titles.join('|'),
-          'cllimit': 'max',
-          'format': 'json',
-        },
-      );
-      final Object? data = resp.data;
-      if (data is! Map) return kept;
-      final Object? query = data['query'];
-      if (query is! Map || query['pages'] is! Map) return kept;
-      for (final dynamic page in (query['pages'] as Map).values) {
-        if (page is! Map) continue;
-        final String title = (page['title'] as String?) ?? '';
-        if (title.isEmpty) continue;
-        final Object? cats = page['categories'];
-        if (cats is! List) continue;
-        for (final dynamic c in cats) {
-          if (c is! Map) continue;
-          final String cat = (c['title'] as String?) ?? '';
-          if (_isTourismCategory(cat)) {
-            kept.add(title);
-            break;
-          }
-        }
-      }
-    } catch (_) {
-      // Fall through with what we have.
-    }
-    return kept;
   }
 
   static bool _isTourismCategory(String cat) {

@@ -982,6 +982,16 @@ class _MapScreenState extends State<MapScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: <Widget>[
+                  _chip(
+                    _origin == null ? '📍 Set start' : 'Start: ${_originName ?? 'Pin'}',
+                    _toggleSetOrigin,
+                    active: _settingOrigin || _origin != null,
+                  ),
+                  if (_origin != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    _chip('✕ start', _clearOrigin),
+                  ],
+                  const SizedBox(width: 8),
                   _chip('Attractions', () => _searchCategory(
                       'Attractions', 'tourist attractions',
                       types: const <String>['tourist_attraction'])),
@@ -1012,15 +1022,6 @@ class _MapScreenState extends State<MapScreen> {
                     active: _showZones,
                   ),
                   const SizedBox(width: 8),
-                  _chip(
-                    _origin == null ? 'Set start' : 'Start: ${_originName ?? 'Pin'}',
-                    _toggleSetOrigin,
-                    active: _settingOrigin || _origin != null,
-                  ),
-                  if (_origin != null) ...<Widget>[
-                    const SizedBox(width: 8),
-                    _chip('✕ start', _clearOrigin),
-                  ],
                 ],
               ),
             ),
