@@ -83,7 +83,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     // 3) Never run a "nearby" search without a real location — a global
     //    search would return unrelated far-away results.
     if (_position != null && !_searchedOnce) {
-      _runDefaultSearch();
+      unawaited(_runNearbyDefault());
     }
     // 4) Refresh the fix (prompting for permission if needed); re-run nearby
     //    only when we had no location at all, so a successful search is never
@@ -97,7 +97,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _locationDone = true;
         _locationDenied = false;
       });
-      if (!hadLocation) unawaited(_runSearch(preserveOnEmpty: true));
+      if (!hadLocation) unawaited(_runNearbyDefault());
     } catch (_) {
       // The fix failed — re-check the permission so the UI distinguishes
       // "permission denied" from "GPS unavailable" instead of guessing.
@@ -201,7 +201,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       unawaited(_loadSaved());
       return;
     }
-    _runSearch();
+    if (scope == 'nearby') {
+      // "Nearby" is the cached, grouped, fast path — never the slow free-text
+      // multi-provider search.
+      _runNearbyDefault();
+    } else {
+      _runSearch();
+    }
   }
 
   Future<void> _loadSaved() async {
@@ -236,9 +242,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _shown = 20;
     });
     // Category chips fetch the combined nearby dataset ONCE and filter it
-    // locally (no new Overpass request per chip). The "Anywhere" scope still
+    // locally (no new Overpass request per chip). Deselecting a chip returns
+    // to the default all-categories nearby list. The "Anywhere" scope still
     // runs a wider free-provider search.
-    if (category != null && _scope != 'anywhere') {
+    if (category == null) {
+      _runNearbyDefault();
+    } else if (_scope != 'anywhere') {
       _runCategoryNearby(category);
     } else {
       _runSearch();
@@ -331,9 +340,48 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _ => null,
       };
 
-  void _runDefaultSearch() {
-    _searchedOnce = true;
-    _runSearch();
+  /// The DEFAULT "Nearby" view: load the combined nearby dataset (every
+  /// category — hotels, museums, parks, food, shopping, transit…) in ONE
+  /// cached Overpass request and show it nearest-first. This is what makes
+  /// Explore "auto-detect nearby places" on open, instead of a slow
+  /// free-text multi-provider search.
+  Future<void> _runNearbyDefault() async {
+    final Position? pos = _position;
+    if (pos == null || _loading) return;
+    setState(() {
+      _activeCategory = null;
+      _loading = true;
+      _error = null;
+      _shown = 20;
+    });
+    try {
+      final LatLng here = LatLng(pos.latitude, pos.longitude);
+      final NearbyResult dataset = await _c.placesRepository.nearbyAround(here);
+      if (!mounted) return;
+      const Set<String> tourist = <String>{
+        'attraction', 'museum', 'park', 'hotel',
+        'food', 'restaurant', 'cafe', 'fast_food',
+      };
+      final List<Place> sorted = dataset.places
+          .where((Place p) =>
+              tourist.contains(p.category) ||
+              p.types.any(tourist.contains))
+          .toList()
+        ..sort((Place a, Place b) => (a.distanceMeters ?? double.infinity)
+            .compareTo(b.distanceMeters ?? double.infinity));
+      setState(() {
+        _results = sorted;
+        _loading = false;
+        _searchedOnce = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (_results.isEmpty) _error = placesErrorMessage(e);
+        _loading = false;
+        _searchedOnce = true;
+      });
+    }
   }
 
   Future<void> _runSearch({bool preserveOnEmpty = false}) async {
@@ -537,6 +585,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
           message:
               'Nothing in this category is mapped within 10 km yet. Try '
               'widening to "Anywhere", or search a bigger nearby city.',
+          actionLabel: 'Search anywhere',
+          onAction: () => _setScope('anywhere'),
+        );
+      }
+      if (_scope == 'nearby') {
+        return EmptyState(
+          icon: Icons.search_off,
+          title: 'No nearby places found within 10 km.',
+          message:
+              'Nothing is mapped within 10 km of your location yet. Try '
+              'switching to "Anywhere", or move to a larger town.',
           actionLabel: 'Search anywhere',
           onAction: () => _setScope('anywhere'),
         );
