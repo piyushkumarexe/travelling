@@ -9,6 +9,14 @@ class SettingsService extends ChangeNotifier {
   static const String _kAutoReadReplies = 'settings.auto_read_replies';
   static const String _kPowerOffSafety = 'power_off_safety.enabled';
 
+  // SOS contact: device-local source of truth shared by the SOS screen and
+  // Profile (Power-Off Safety Location). Stored locally so adding/editing/
+  // removing a contact ALWAYS works offline and survives restart, regardless
+  // of Firestore rules/auth state. Firestore profiles/{uid} is mirrored
+  // best-effort for cross-device sync.
+  static const String _kSosContactName = 'sos_contact.name';
+  static const String _kSosContactPhone = 'sos_contact.phone';
+
   // Payload keys mirrored for the native Android shutdown receiver. The
   // SharedPreferences plugin prefixes keys with "flutter." on Android.
   static const String _kPowerOffPhone = 'power_off_safety.sos_phone';
@@ -19,6 +27,8 @@ class SettingsService extends ChangeNotifier {
 
   bool _autoReadReplies = false;
   bool _powerOffSafety = false;
+  String _sosContactName = '';
+  String _sosContactPhone = '';
 
   /// Whether the AI assistant should speak every new reply aloud.
   /// Defaults to OFF.
@@ -30,14 +40,24 @@ class SettingsService extends ChangeNotifier {
   /// is shutting down. It NEVER claims a fresh GPS fix after power-off.
   bool get powerOffSafety => _powerOffSafety;
 
+  /// SOS contact (device-local source of truth).
+  String get sosContactName => _sosContactName;
+  String get sosContactPhone => _sosContactPhone;
+  bool get hasSosContact =>
+      _sosContactName.trim().isNotEmpty || _sosContactPhone.trim().isNotEmpty;
+
   Future<void> load() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       _autoReadReplies = prefs.getBool(_kAutoReadReplies) ?? false;
       _powerOffSafety = prefs.getBool(_kPowerOffSafety) ?? false;
+      _sosContactName = prefs.getString(_kSosContactName) ?? '';
+      _sosContactPhone = prefs.getString(_kSosContactPhone) ?? '';
     } catch (_) {
       _autoReadReplies = false;
       _powerOffSafety = false;
+      _sosContactName = '';
+      _sosContactPhone = '';
     }
     notifyListeners();
   }
@@ -63,6 +83,36 @@ class SettingsService extends ChangeNotifier {
         // Turning OFF must never leave a stale share payload behind.
         await prefs.remove(_kPowerOffToken);
       }
+    } catch (_) {
+      // Persistence is best-effort; the in-memory value still applies.
+    }
+  }
+
+  /// Saves the SOS contact locally (instant, offline-safe, survives restart).
+  /// Setting a contact also powers the Power-Off Safety Location share payload.
+  Future<void> setSosContact(String name, String phone) async {
+    _sosContactName = name.trim();
+    _sosContactPhone = phone.trim();
+    notifyListeners();
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kSosContactName, _sosContactName);
+      await prefs.setString(_kSosContactPhone, _sosContactPhone);
+    } catch (_) {
+      // Persistence is best-effort; the in-memory value still applies.
+    }
+  }
+
+  /// Clears the SOS contact. Power-Off Safety Location must be turned off
+  /// separately (it requires a contact).
+  Future<void> clearSosContact() async {
+    _sosContactName = '';
+    _sosContactPhone = '';
+    notifyListeners();
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kSosContactName);
+      await prefs.remove(_kSosContactPhone);
     } catch (_) {
       // Persistence is best-effort; the in-memory value still applies.
     }

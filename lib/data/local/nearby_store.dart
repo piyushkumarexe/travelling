@@ -67,6 +67,27 @@ class NearbyStore {
           '${DateTime.now().difference(mem.fetchedAt).inSeconds}s old)');
       return NearbyResult(places: mem.places, fromCache: true);
     }
+
+    // Stale-while-revalidate: show the last dataset IMMEDIATELY (even if
+    // expired) and refresh in the background, so Explore/Essentials never
+    // block on a slow Overpass round-trip when we already have real data.
+    if (!force) {
+      if (mem != null && mem.places.isNotEmpty) {
+        debugPrint('[places] nearbyStore STALE-SWR $key '
+            '(${mem.places.length} places, serving instantly + refreshing)');
+        _backgroundRefresh(key, fetch);
+        return NearbyResult(places: mem.places, fromCache: true, stale: true);
+      }
+      final List<Place>? persisted = await _read(key);
+      if (persisted != null && persisted.isNotEmpty) {
+        debugPrint('[places] nearbyStore DISK-SWR $key '
+            '(${persisted.length} places, serving instantly + refreshing)');
+        _backgroundRefresh(key, fetch);
+        return NearbyResult(
+            places: persisted, fromCache: true, stale: true);
+      }
+    }
+
     final Future<NearbyResult>? pending = _inFlight[key];
     if (pending != null) {
       debugPrint('[places] nearbyStore DEDUP $key (shared in-flight fetch)');
@@ -81,6 +102,21 @@ class NearbyStore {
     } finally {
       if (identical(_inFlight[key], run)) unawaited(_inFlight.remove(key));
     }
+  }
+
+  /// Fires a background refresh (deduplicated) without blocking the caller;
+  /// the fresh result replaces the in-memory bucket for the next open.
+  void _backgroundRefresh(String key, Future<List<Place>> Function() fetch) {
+    final Future<NearbyResult>? pending = _inFlight[key];
+    if (pending != null) return; // already refreshing
+    final Future<NearbyResult> run = _run(key, fetch);
+    _inFlight[key] = run;
+    unawaited(run.then(
+      (NearbyResult _) {},
+      onError: (Object _) {},
+    ).whenComplete(() {
+      if (identical(_inFlight[key], run)) _inFlight.remove(key);
+    }));
   }
 
   Future<NearbyResult> _run(

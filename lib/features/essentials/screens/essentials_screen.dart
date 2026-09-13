@@ -312,9 +312,9 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     if (_results.isEmpty) {
       return EmptyState(
         icon: Icons.search_off,
-        title: 'No nearby places found within 10 km.',
+        title: 'No nearby places found within 25 km.',
         message:
-            'No ${_selected!.label.toLowerCase()} is mapped within 10 km of '
+            'No ${_selected!.label.toLowerCase()} is mapped within 25 km of '
             'your location. Try another category or a larger town.',
         actionLabel: 'Retry',
         onAction: () => _refresh(),

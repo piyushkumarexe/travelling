@@ -376,7 +376,7 @@ class _MapScreenState extends State<MapScreen> {
       final List<Place> places = await _c.placesRepository.search(
         q,
         location: target,
-        radiusMeters: 10000,
+        radiusMeters: 25000,
       );
       if (!mounted) return;
       setState(() {
@@ -415,7 +415,7 @@ class _MapScreenState extends State<MapScreen> {
       final List<Place> places = await _c.placesRepository.search(
         q,
         location: target,
-        radiusMeters: 8000,
+        radiusMeters: 25000,
         types: types,
       );
       if (!mounted) return;

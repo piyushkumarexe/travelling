@@ -67,7 +67,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
   StreamSubscription<Profile?>? _profileSub;
   Profile? _profile;
   bool _contactSaving = false;
-  bool _autoOpenedContact = false;
 
   @override
   void initState() {
@@ -76,7 +75,21 @@ class _SafetyScreenState extends State<SafetyScreen> {
     // shell on sign-in), so the card and buttons update without a manual
     // rebuild.
     _c.geofenceService.addListener(_onGeofenceChanged);
+    // SOS contact is device-local (SettingsService) — rebuild whenever it
+    // changes so Add/Edit/Remove reflects immediately without Firestore.
+    _c.settings.addListener(_onSettingsChanged);
     _init();
+    if (widget.openSosContact) {
+      // Direct route from Settings → "Add SOS Contact" works with or without
+      // a signed-in profile (local storage is the source of truth).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showContactEditor();
+      });
+    }
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onGeofenceChanged() {
@@ -96,15 +109,23 @@ class _SafetyScreenState extends State<SafetyScreen> {
           .listen((List<Incident> items) {
         if (mounted) setState(() => _incidents = items);
       }, onError: (Object _) {});
-      // SOS contact: single source of truth is profiles/{uid}.emergencyContact*.
+      // Firestore profile is a best-effort mirror of the SOS contact. Seed
+      // local storage from it when a signed-in profile has a contact and the
+      // device has none yet (migration for existing accounts).
       _profileSub = _c.profileRepository
           .watch(uid)
           .listen((Profile? p) {
         if (!mounted) return;
         setState(() => _profile = p);
+        final String phone = (p?.emergencyContactPhone ?? '').trim();
+        if (phone.isNotEmpty && !_c.settings.hasSosContact) {
+          _c.settings.setSosContact(
+            (p?.emergencyContactName ?? '').trim(),
+            phone,
+          );
+        }
         // If the contact is removed while Power-Off Safety Location is on,
         // disable it automatically and explain why.
-        final String phone = (p?.emergencyContactPhone ?? '').trim();
         if (_c.settings.powerOffSafety && phone.isEmpty) {
           _c.settings.setPowerOffSafety(false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -113,12 +134,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
                     'Power-Off Safety Location was turned off because an SOS '
                     'contact is required.')),
           );
-        }
-        if (widget.openSosContact && !_autoOpenedContact) {
-          _autoOpenedContact = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _showContactEditor();
-          });
         }
       }, onError: (Object _) {});
     }
@@ -333,6 +348,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   @override
   void dispose() {
     _c.geofenceService.removeListener(_onGeofenceChanged);
+    _c.settings.removeListener(_onSettingsChanged);
     _posSub?.cancel();
     _zonesSub?.cancel();
     _incidentsSub?.cancel();
@@ -386,8 +402,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
   Widget _sosContactSection() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final String name = (_profile?.emergencyContactName ?? '').trim();
-    final String phone = (_profile?.emergencyContactPhone ?? '').trim();
+    final String name = _c.settings.sosContactName.trim();
+    final String phone = _c.settings.sosContactPhone.trim();
     final bool hasContact = name.isNotEmpty || phone.isNotEmpty;
 
     return Container(
@@ -456,30 +472,34 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   Future<void> _showContactEditor() async {
-    final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Sign in to add an SOS contact.')),
-      );
-      return;
-    }
     final Profile? p = _profile;
     final (String, String)? saved = await showDialog<(String, String)>(
       context: context,
       builder: (BuildContext ctx) => _ContactEditorDialog(
-        name: p?.emergencyContactName ?? '',
-        phone: p?.emergencyContactPhone ?? '',
+        name: _c.settings.sosContactName.isEmpty
+            ? (p?.emergencyContactName ?? '')
+            : _c.settings.sosContactName,
+        phone: _c.settings.sosContactPhone.isEmpty
+            ? (p?.emergencyContactPhone ?? '')
+            : _c.settings.sosContactPhone,
       ),
     );
     if (saved == null || !mounted) return;
     setState(() => _contactSaving = true);
     try {
-      await _c.profileRepository.setEmergencyContact(
-        uid,
-        name: saved.$1.trim(),
-        phone: saved.$2.trim(),
-      );
+      final String name = saved.$1.trim();
+      final String phone = saved.$2.trim();
+      // Local save is the source of truth — instant, offline-safe, and never
+      // blocked by Firestore rules or auth state.
+      await _c.settings.setSosContact(name, phone);
+      // Best-effort mirror to Firestore profiles/{uid} (cross-device sync).
+      // A permission/network failure here must NEVER fail the save.
+      final String? uid = _c.authRepository.currentUser?.uid;
+      if (uid != null) {
+        unawaited(_c.profileRepository
+            .setEmergencyContact(uid, name: name, phone: phone)
+            .catchError((Object _) {}));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('SOS contact saved.')),
@@ -495,8 +515,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
   }
 
   Future<void> _removeContact() async {
-    final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -517,9 +535,16 @@ class _SafetyScreenState extends State<SafetyScreen> {
     if (ok != true || !mounted) return;
     setState(() => _contactSaving = true);
     try {
-      await _c.profileRepository.clearEmergencyContact(uid);
+      await _c.settings.clearSosContact();
       // Auto-disable the safety feature — it requires a contact.
       await _c.settings.setPowerOffSafety(false);
+      // Best-effort Firestore mirror clear (never blocks the local remove).
+      final String? uid = _c.authRepository.currentUser?.uid;
+      if (uid != null) {
+        unawaited(_c.profileRepository
+            .clearEmergencyContact(uid)
+            .catchError((Object _) {}));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

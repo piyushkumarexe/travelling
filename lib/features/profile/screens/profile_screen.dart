@@ -33,14 +33,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final bool _saving = false;
   bool _uploadingPhoto = false;
 
-  String get profileContactName => (_profile?.emergencyContactName ?? '').trim();
+  String get profileContactName =>
+      _c.settings.sosContactName.isNotEmpty
+          ? _c.settings.sosContactName.trim()
+          : (_profile?.emergencyContactName ?? '').trim();
   String get profileContactPhone =>
-      (_profile?.emergencyContactPhone ?? '').trim();
+      _c.settings.sosContactPhone.isNotEmpty
+          ? _c.settings.sosContactPhone.trim()
+          : (_profile?.emergencyContactPhone ?? '').trim();
 
   @override
   void initState() {
     super.initState();
+    // Rebuild when the device-local SOS contact changes (added/removed on the
+    // SOS screen) so the toggle gate and "Your details" stay in sync even
+    // when Firestore sync is unavailable.
+    _c.settings.addListener(_onSettingsChanged);
     _listen();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   void _listen() {
@@ -61,8 +74,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
       final String phone = (p?.emergencyContactPhone ?? '').trim();
+      // Migration: a signed-in profile that already has a contact seeds the
+      // device-local source of truth (so SOS/toggle work even if Firestore
+      // rules are not deployed yet).
+      if (phone.isNotEmpty && !_c.settings.hasSosContact) {
+        _c.settings.setSosContact(
+          (p?.emergencyContactName ?? '').trim(),
+          phone,
+        );
+      }
       // Contact removed elsewhere → Power-Off Safety Location must turn off.
-      if (_c.settings.powerOffSafety && phone.isEmpty) {
+      if (_c.settings.powerOffSafety && !_c.settings.hasSosContact) {
         _c.settings.setPowerOffSafety(false);
       } else if (_c.settings.powerOffSafety) {
         unawaited(_refreshPowerOffPayload());
@@ -107,17 +129,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
         profile: p,
         saving: _saving,
         onSave: (Profile next) async {
-          await _c.profileRepository.update(
-            next.uid,
-            name: next.name,
-            photoUrl: next.photoUrl,
-            language: next.language,
-            emergencyContactName: next.emergencyContactName,
-            emergencyContactPhone: next.emergencyContactPhone,
-            interests: next.interests,
-            budget: next.budget,
-            travelStyle: next.travelStyle,
+          // Device-local SOS contact first — instant and never blocked by
+          // Firestore rules or auth.
+          await _c.settings.setSosContact(
+            next.emergencyContactName,
+            next.emergencyContactPhone,
           );
+          try {
+            await _c.profileRepository.update(
+              next.uid,
+              name: next.name,
+              photoUrl: next.photoUrl,
+              language: next.language,
+              emergencyContactName: next.emergencyContactName,
+              emergencyContactPhone: next.emergencyContactPhone,
+              interests: next.interests,
+              budget: next.budget,
+              travelStyle: next.travelStyle,
+            );
+          } catch (e) {
+            if (ctx.mounted) {
+              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                  content: Text(
+                      'Saved on this device, but cloud sync failed: $e')));
+            }
+          }
           if (ctx.mounted) Navigator.of(ctx).pop();
         },
       ),
@@ -159,6 +195,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _c.settings.removeListener(_onSettingsChanged);
     _sub?.cancel();
     super.dispose();
   }
@@ -200,8 +237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// feature is on (the native receiver can only use the last token it was
   /// given, and tokens expire after ~1h).
   Future<void> _refreshPowerOffPayload() async {
-    final Profile? profile = _profile;
-    final String phone = (profile?.emergencyContactPhone ?? '').trim();
+    final String phone = profileContactPhone;
     if (phone.isEmpty) return;
     String? token;
     try {
@@ -212,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final String? projectId = _c.app?.options.projectId;
     await _c.settings.syncPowerOffSafetyPayload(
       sosPhone: phone,
-      sosName: (profile?.emergencyContactName ?? '').trim(),
+      sosName: profileContactName,
       projectId: projectId ?? '',
       idToken: token,
     );
@@ -229,8 +265,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) setState(() {});
       return;
     }
-    final Profile? profile = _profile;
-    final String phone = (profile?.emergencyContactPhone ?? '').trim();
+    final String phone = profileContactPhone;
     if (phone.isEmpty) {
       final bool? goAdd = await showDialog<bool>(
         context: context,
@@ -265,7 +300,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await _c.settings.setPowerOffSafety(true);
     await _c.settings.syncPowerOffSafetyPayload(
       sosPhone: phone,
-      sosName: (profile?.emergencyContactName ?? '').trim(),
+      sosName: profileContactName,
       projectId: projectId ?? '',
       idToken: token,
     );
@@ -431,8 +466,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _infoRow(Icons.translate,
                       'Language', kLanguageNames[p.language] ?? p.language),
                   _infoRow(Icons.contacts, 'Emergency contact',
-                      p.emergencyContactName.isNotEmpty
-                          ? '${p.emergencyContactName} (${p.emergencyContactPhone})'
+                      profileContactName.isNotEmpty
+                          ? '$profileContactName ($profileContactPhone)'
                           : 'Not set'),
                   _infoRow(Icons.account_balance_wallet, 'Budget',
                       _budgetLabel(p.budget)),

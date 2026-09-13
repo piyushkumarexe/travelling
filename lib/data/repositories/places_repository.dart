@@ -137,7 +137,8 @@ class PlacesRepository {
   /// failures a stale cached dataset is returned (flagged) instead of an
   /// error.
   Future<NearbyResult> nearbyAround(LatLng location,
-      {double radiusMeters = 10000, bool force = false}) {
+      {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
+      bool force = false}) {
     return _nearby.load(
       location,
       force: force,
@@ -149,7 +150,8 @@ class PlacesRepository {
   /// Shops only (`shop=*`) for the Shopping category — fetched on demand so
   /// the dense shop layer never crowds the essential POI dataset.
   Future<NearbyResult> nearbyShopping(LatLng location,
-      {double radiusMeters = 10000, bool force = false}) {
+      {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
+      bool force = false}) {
     return _nearby.load(
       location,
       force: force,

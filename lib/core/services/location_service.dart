@@ -104,14 +104,14 @@ class LocationService {
           p == LocationPermission.deniedForever) {
         return await lastKnown();
       }
-      // Try progressively more tolerant settings — a cold GPS can take longer
-      // than a single best-accuracy attempt allows.
+      // Two quick tiers instead of a long ladder: the common case gets a fix
+      // in seconds, and the OS location-manager fallback covers devices whose
+      // fused provider is unreliable — without ever stalling the UI for ~1 min
+      // on a cold start (the old 4-tier ladder did).
       for (final (LocationAccuracy accuracy, int seconds, bool forceManager)
           in const <(LocationAccuracy, int, bool)>[
         (LocationAccuracy.best, 10, false),
-        (LocationAccuracy.high, 12, false),
-        (LocationAccuracy.medium, 15, false),
-        (LocationAccuracy.high, 20, true), // OS location manager fallback
+        (LocationAccuracy.high, 10, true), // OS location manager fallback
       ]) {
         try {
           final LocationSettings settings = forceManager

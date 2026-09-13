@@ -41,6 +41,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   List<Place> _results = const <Place>[];
   bool _loading = false;
+  bool _stale = false;
   String? _error;
   bool _searchedOnce = false;
 
@@ -162,6 +163,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (_loading) return;
     setState(() {
       _loading = true;
+      _stale = false;
       _error = null;
       _shown = 20;
     });
@@ -214,6 +216,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Future<void> _loadSaved() async {
     setState(() {
       _loading = true;
+      _stale = false;
       _shown = 20;
     });
     try {
@@ -286,6 +289,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     setState(() {
       _loading = true;
+      _stale = false;
       _error = null;
       _shown = 20;
     });
@@ -305,6 +309,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       setState(() {
         _results = filtered;
         _loading = false;
+        _stale = dataset.stale;
         _searchedOnce = true;
       });
     } catch (e) {
@@ -353,6 +358,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _activeCategory = null;
       _loading = true;
+      _stale = false;
       _error = null;
       _shown = 20;
     });
@@ -375,6 +381,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       setState(() {
         _results = sorted;
         _loading = false;
+        _stale = dataset.stale;
         _searchedOnce = true;
       });
     } catch (e) {
@@ -392,6 +399,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (_loading) return;
     setState(() {
       _loading = true;
+      _stale = false;
       _error = null;
       _shown = 20;
     });
@@ -401,10 +409,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
         location: _position == null
             ? null
             : LatLng(_position!.latitude, _position!.longitude),
+        // No more hard 10 km cap: nearby/hidden cover a full metro area, and
+        // "Anywhere" is effectively unlimited so a searched place is found
+        // even far away. Text search is additionally never radius-filtered.
         radiusMeters: switch (_scope) {
-          'nearby' => 10000.0,
-          'hidden' => 10000.0,
-          'anywhere' => 30000.0,
+          'nearby' => 25000.0,
+          'hidden' => 25000.0,
+          'anywhere' => 50000.0,
           _ => null,
         },
         types: _categoryTypes(_activeCategory),
@@ -627,7 +638,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           icon: Icons.search_off,
           title: 'No ${label.toLowerCase()} found near you',
           message:
-              'Nothing in this category is mapped within 10 km yet. Try '
+              'Nothing in this category is mapped within 25 km yet. Try '
               'widening to "Anywhere", or search a bigger nearby city.',
           actionLabel: 'Search anywhere',
           onAction: () => _setScope('anywhere'),
@@ -639,9 +650,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
             Expanded(
               child: EmptyState(
                 icon: Icons.search_off,
-                title: 'No nearby places found within 10 km.',
+                title: 'No nearby places found within 25 km.',
                 message:
-                    'Nothing is mapped within 10 km of your location yet. Try '
+                    'Nothing is mapped within 25 km of your location yet. Try '
                     'switching to "Anywhere", or move to a larger town.',
                 actionLabel: 'Search anywhere',
                 onAction: () => _setScope('anywhere'),
@@ -662,6 +673,39 @@ class _ExploreScreenState extends State<ExploreScreen> {
         },
       );
     }
+    if (_stale) {
+      return Column(
+        children: <Widget>[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF3E0),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              children: <Widget>[
+                Icon(Icons.cloud_off, size: 16, color: Color(0xFFB26A00)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Showing saved nearby places — refreshing…',
+                    style:
+                        TextStyle(fontSize: 12.5, color: Color(0xFFB26A00)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _resultsList()),
+        ],
+      );
+    }
+    return _resultsList();
+  }
+
+  Widget _resultsList() {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       itemCount: (_results.length < _shown ? _results.length : _shown) +

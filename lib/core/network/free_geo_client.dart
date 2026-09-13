@@ -48,6 +48,11 @@ class FreeGeoClient {
 
   String get _mtKey => AppConfig.mapTilerApiKey;
 
+  /// Default radius (metres) for the grouped nearby / essentials dataset.
+  /// Covers a whole metro area (not just the old 10 km) while staying inside
+  /// Overpass's fair-use envelope; results are re-sorted nearest-first.
+  static const double kNearbyRadiusMeters = 25000;
+
   /// Nominatim rate-limit guard: public Nominatim allows at most 1 req/sec.
   /// Shared per process so debounced typing can never exceed it.
   static DateTime? _lastNominatimAt;
@@ -194,7 +199,7 @@ class FreeGeoClient {
     String query, {
     LatLng? near,
     List<String>? types,
-    double radiusMeters = 10000,
+    double radiusMeters = kNearbyRadiusMeters,
     bool filterToRadius = false,
   }) async {
     final String q = query.trim();
@@ -245,7 +250,7 @@ class FreeGeoClient {
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
       if (AppConfig.mapTilerConfigured)
-        _guard('maptiler', () => _maptilerSearch(q, near))
+        _guard('maptiler', () => _maptilerSearch(q, near, limit: 40))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
       _guard('nominatim', () => _nominatimSearch(q, near)),
@@ -321,7 +326,7 @@ class FreeGeoClient {
     // 3) parse (already done by the provider) → dedup → 4) actual distance
     //    from the user → 5) drop anything beyond the radius → 6) nearest
     //    first.
-    final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
+    final double radius = radiusMeters <= 0 ? kNearbyRadiusMeters : radiusMeters;
     final List<Place> out = _mergeAndDedup(results)
         .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= radius)
         .toList()
@@ -902,8 +907,9 @@ class FreeGeoClient {
   ) async {
     final bool hotelFilter =
         filters.any((f) => f.$2.contains('hotel'));
-    final int radius = (radiusMeters <= 0 ? 10000 : radiusMeters).round();
-    final StringBuffer b = StringBuffer('[out:json][timeout:20];(');
+    final int radius =
+        (radiusMeters <= 0 ? kNearbyRadiusMeters : radiusMeters).round();
+    final StringBuffer b = StringBuffer('[out:json][timeout:15];(');
     for (final (String key, String regex) in filters) {
       final String clause =
           '["$key"~"$regex"](around:$radius,${near.latitude},${near.longitude})';
@@ -1231,7 +1237,7 @@ class FreeGeoClient {
   /// switching categories never triggers another network request.
   Future<List<Place>> nearbyAround(
     LatLng near, {
-    double radiusMeters = 10000,
+    double radiusMeters = kNearbyRadiusMeters,
     bool includeShopping = false,
   }) async {
     NearbyDebug.instance.reset(
@@ -1313,7 +1319,8 @@ class FreeGeoClient {
 
   /// Shops only (`shop=*`) — kept as a separate on-demand query so the dense
   /// shop layer never crowds essential POIs out of the grouped query.
-  Future<List<Place>> nearbyShopping(LatLng near, {double radiusMeters = 10000}) =>
+  Future<List<Place>> nearbyShopping(LatLng near,
+          {double radiusMeters = kNearbyRadiusMeters}) =>
       _nearbyCategories(
         near,
         radiusMeters: radiusMeters,
@@ -1326,7 +1333,7 @@ class FreeGeoClient {
     List<String>? categories,
     bool recordDebug = true,
   }) async {
-    final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
+    final double radius = radiusMeters <= 0 ? kNearbyRadiusMeters : radiusMeters;
     if (recordDebug) {
       NearbyDebug.instance.reset(
         phase: 'building-query',
@@ -1341,7 +1348,7 @@ class FreeGeoClient {
     // (hospital/clinic/police…) filled the cap. `qt 5000` keeps the whole
     // 10 km dataset for dense cities and drops only the far quadtiles in
     // pathological megacity cases; the client re-sorts by distance anyway.
-    final StringBuffer b = StringBuffer('[out:json][timeout:40];(');
+    final StringBuffer b = StringBuffer('[out:json][timeout:15];(');
     for (final MapEntry<String, List<(String, String?)>> entry
         in _nearbyCategoryTags.entries) {
       if (categories != null && !categories.contains(entry.key)) continue;
