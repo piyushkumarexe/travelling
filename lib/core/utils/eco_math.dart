@@ -1,7 +1,38 @@
 // Pure Eco Score math (unit-testable).
 
+import '../../data/models/eco.dart';
+
 class EcoMath {
   EcoMath._();
+
+  /// Applies one activity onto a score and returns the updated score. Shared
+  /// by the cloud and on-device (local fallback) stores so both compute
+  /// identical results.
+  static EcoScore applyActivity(EcoScore s, EcoActivity a) {
+    final int score = s.score + activityPoints(a.mode, a.distanceMeters);
+    final Map<String, double> byMode = Map<String, double>.from(s.byMode)
+      ..update(
+        a.mode,
+        (double v) => v + a.distanceMeters,
+        ifAbsent: () => a.distanceMeters,
+      );
+    final int sessions = s.sessions + 1;
+    final List<String> badges = badgesFor(
+      walkKm: (byMode['walk'] ?? 0) / 1000,
+      cycleKm: (byMode['cycle'] ?? 0) / 1000,
+      transitKm: (byMode['transit'] ?? 0) / 1000,
+      score: score,
+      sessions: sessions,
+    );
+    return EcoScore(
+      uid: s.uid,
+      score: score,
+      byMode: byMode,
+      badges: badges,
+      sessions: sessions,
+      updatedAt: DateTime.now(),
+    );
+  }
 
   /// Points per kilometer per travel mode. Walking and cycling are the
   /// zero-emission modes; public transport earns fewer points than

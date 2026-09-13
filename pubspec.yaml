@@ -1,7 +1,7 @@
 name: yatrawise
-description: "YatraWise - Smart Tourism & Safety Assistant for Android."
+description: "Tourism - Smart Tourism & Safety Assistant for Android."
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.8+9
 
 environment:
   sdk: ">=3.5.0 <5.0.0"
@@ -21,8 +21,10 @@ dependencies:
   # --- Google Sign-In ---
   google_sign_in: ^6.2.2
 
-  # --- Maps & location (real Google Maps SDK, real GPS) ---
+  # --- Maps & location (real GPS + MapTiler tiles, no Google Maps key) ---
   google_maps_flutter: ^2.12.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.9.1
   geolocator: ^13.0.1
 
   # --- Navigation, networking, UI ---
@@ -35,6 +37,12 @@ dependencies:
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
   flutter_local_notifications: ^17.2.3
+  flutter_markdown: ^0.7.4+3
+  shared_preferences: ^2.3.2
+
+  # --- Voice assistant (speech-to-text input + text-to-speech replies) ---
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

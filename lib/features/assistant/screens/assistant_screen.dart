@@ -1,16 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/services/voice_assistant_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/repositories/ai_repository.dart';
 
-/// Real AI tourism assistant (NVIDIA API via the YatraWise backend).
+/// Real AI tourism assistant (NVIDIA API via the Tourism backend).
 /// No canned responses: every answer comes from the live model with the
 /// user's location and preferences as context.
+///
+/// Voice-enabled: a mic button lets travelers ask by voice (speech-to-text)
+/// and each reply can be read aloud (text-to-speech) — handy for foreign
+/// visitors who prefer to speak instead of type.
 class AssistantScreen extends StatefulWidget {
   const AssistantScreen({super.key});
 
@@ -19,7 +25,13 @@ class AssistantScreen extends StatefulWidget {
 }
 
 class _ChatMessage {
-  _ChatMessage({required this.role, required this.text, this.isError = false});
+  _ChatMessage({
+    required this.id,
+    required this.role,
+    required this.text,
+    this.isError = false,
+  });
+  final int id;
   final String role; // user | assistant
   final String text;
   final bool isError;
@@ -30,8 +42,13 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
+  final VoiceAssistantService _voice = VoiceAssistantService();
   List<_ChatMessage> _messages = <_ChatMessage>[];
   bool _loading = false;
+  int _nextId = 0;
+  bool _listening = false;
+  String _liveSpeech = '';
+  int? _speakingId;
   String? _locationLabel;
   String? _profileContext;
 
@@ -46,22 +63,16 @@ class _AssistantScreenState extends State<AssistantScreen> {
   @override
   void initState() {
     super.initState();
+    _voice.addListener(_onVoiceState);
     _loadContext();
   }
 
+  void _onVoiceState() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _loadContext() async {
-    try {
-      final Position? pos = await _c.locationService.currentPosition();
-      if (pos != null) {
-        final String? label = await _c.placesRepository
-            .reverseGeocode(LatLng(pos.latitude, pos.longitude));
-        if (mounted && label != null) {
-          setState(() => _locationLabel = label);
-        }
-      }
-    } catch (_) {
-      // Location context is optional; the assistant still works without it.
-    }
+    await _refreshLocation();
     try {
       final String? uid = _c.authRepository.currentUser?.uid;
       if (uid != null) {
@@ -82,16 +93,39 @@ class _AssistantScreenState extends State<AssistantScreen> {
     }
   }
 
+  /// Auto-detects the traveler's location (prompting for permission on the
+  /// first call) and reverse-geocodes it so answers are location-aware.
+  Future<void> _refreshLocation() async {
+    try {
+      final Position? pos = await _c.locationService.currentPosition();
+      if (pos != null) {
+        final String? label = await _c.placesRepository
+            .reverseGeocode(LatLng(pos.latitude, pos.longitude));
+        if (mounted && label != null) {
+          setState(() => _locationLabel = label);
+        }
+      }
+    } catch (_) {
+      // Location context is optional; the assistant still works without it.
+    }
+  }
+
   Future<void> _send(String text) async {
     final String clean = text.trim();
     if (clean.isEmpty || _loading) return;
     setState(() {
-      _messages = <_ChatMessage>[..._messages, _ChatMessage(role: 'user', text: clean)];
+      _messages = <_ChatMessage>[
+        ..._messages,
+        _ChatMessage(id: _nextId++, role: 'user', text: clean),
+      ];
       _loading = true;
     });
     _input.clear();
     _scrollToBottom();
     try {
+      // Make sure location context is fresh so answers are location-aware
+      // (auto-detects instead of asking "where are you located?").
+      if (_locationLabel == null) await _refreshLocation();
       final List<AiChatMessage> apiMessages = _messages
           .where((_ChatMessage m) => !m.isError)
           .map((m) => AiChatMessage(role: m.role, content: m.text))
@@ -108,28 +142,163 @@ class _AssistantScreenState extends State<AssistantScreen> {
       setState(() {
         _messages = <_ChatMessage>[
           ..._messages,
-          _ChatMessage(role: 'assistant', text: reply),
+          _ChatMessage(id: _nextId++, role: 'assistant', text: reply),
         ];
         _loading = false;
       });
       _scrollToBottom();
+      // Auto-read the reply aloud when enabled in Settings (errors are never
+      // spoken). Fire-and-forget so it doesn't block the chat.
+      if (_c.settings.autoReadReplies) {
+        unawaited(_startSpeech(_messages.last));
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _messages = <_ChatMessage>[
           ..._messages,
           _ChatMessage(
+            id: _nextId++,
             role: 'assistant',
-            text:
-                'I could not reach the AI service: ${e.toString()}\n\n'
-                'Check your internet connection (and that the YatraWise '
-                'backend is deployed) and try again.',
+            text: e.toString(),
             isError: true,
           ),
         ];
         _loading = false;
       });
     }
+  }
+
+  /// Mic tap: start listening, or (while listening) finish and accept what
+  /// was heard. The recognized text is sent as a normal chat message.
+  Future<void> _toggleVoice() async {
+    if (_loading) return;
+    if (_listening) {
+      setState(() => _listening = false);
+      await _voice.stop();
+      return;
+    }
+    setState(() {
+      _listening = true;
+      _liveSpeech = '';
+    });
+    try {
+      final String? text = await _voice.listen(
+        onPartial: (String p) {
+          if (mounted) setState(() => _liveSpeech = p);
+        },
+      );
+      if (!mounted) return;
+      setState(() => _listening = false);
+      if (text != null && text.trim().isNotEmpty) {
+        await _send(text.trim());
+      }
+    } on VoiceException catch (e) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _showVoiceError(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _listening = false);
+      _showVoiceError('Voice input failed. Please type your question.');
+    }
+  }
+
+  void _showVoiceError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Speak/stop a reply aloud (manual speaker button).
+  Future<void> _toggleSpeak(_ChatMessage m) async {
+    if (_speakingId == m.id && (_voice.isSpeaking || _voice.isPaused)) {
+      await _voice.stopSpeaking();
+      if (mounted) setState(() => _speakingId = null);
+      return;
+    }
+    await _startSpeech(m);
+  }
+
+  /// Starts speaking [m]'s reply and keeps [_speakingId] in sync until the
+  /// utterance finishes (or is stopped).
+  Future<void> _startSpeech(_ChatMessage m) async {
+    await _voice.stopSpeaking();
+    if (!mounted) return;
+    setState(() => _speakingId = m.id);
+    await _voice.speak(m.text);
+    if (mounted && _speakingId == m.id) setState(() => _speakingId = null);
+  }
+
+  /// Listen / Pause-Resume / Stop controls for a reply bubble.
+  Widget _speechControls(_ChatMessage m, Color fg) {
+    final bool active = _speakingId == m.id;
+    final bool speaking = active && _voice.isSpeaking;
+    final bool paused = active && _voice.isPaused;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (!active)
+          _speechButton(
+            icon: Icons.volume_up,
+            label: 'Listen',
+            color: fg,
+            onTap: () => _toggleSpeak(m),
+          )
+        else ...<Widget>[
+          if (speaking)
+            _speechButton(
+              icon: Icons.pause,
+              label: 'Pause',
+              color: fg,
+              onTap: _voice.pause,
+            ),
+          if (paused)
+            _speechButton(
+              icon: Icons.play_arrow,
+              label: 'Resume',
+              color: fg,
+              onTap: _voice.resume,
+            ),
+          _speechButton(
+            icon: Icons.stop,
+            label: 'Stop',
+            color: fg,
+            onTap: () => _toggleSpeak(m),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _speechButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 2, 0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 15, color: color.withValues(alpha: 0.65)),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color.withValues(alpha: 0.65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -146,6 +315,8 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   @override
   void dispose() {
+    _voice.removeListener(_onVoiceState);
+    _voice.dispose();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -218,41 +389,94 @@ class _AssistantScreenState extends State<AssistantScreen> {
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText:
-                            'Ask about places, food, safety, transport…',
+                  if (_listening) _listeningBanner(scheme),
+                  Row(
+                    children: <Widget>[
+                      Material(
+                        color: _listening ? scheme.error : scheme.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _toggleVoice,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Icon(
+                              _listening ? Icons.stop : Icons.mic,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
-                      onSubmitted: (String v) => _send(v),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: scheme.primary,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _loading ? null : () => _send(_input.text),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.send, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _input,
+                          minLines: 1,
+                          maxLines: 4,
+                          decoration: InputDecoration(
+                            hintText: _listening
+                                ? 'Listening… speak now'
+                                : 'Ask or tap the mic to speak…',
+                          ),
+                          onSubmitted: (String v) => _send(v),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: scheme.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _loading ? null : () => _send(_input.text),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.send, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _listeningBanner(ColorScheme scheme) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.error.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _liveSpeech.isEmpty ? 'Listening… speak your question' : _liveSpeech,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ],
@@ -271,22 +495,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
-                ),
+                color: scheme.primary.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: const Color(0xFF0D9488).withValues(alpha: 0.30),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+                border: Border.all(color: scheme.outlineVariant),
               ),
-              child: const Icon(Icons.auto_awesome,
-                  size: 34, color: Colors.white),
+              child: Icon(Icons.auto_awesome, size: 34, color: scheme.primary),
             ),
             const SizedBox(height: 16),
             Text(
@@ -340,6 +553,23 @@ class _AssistantScreenState extends State<AssistantScreen> {
     );
   }
 
+  MarkdownStyleSheet _mdStyle(ColorScheme scheme, Color fg) {
+    final MarkdownStyleSheet base =
+        MarkdownStyleSheet.fromTheme(Theme.of(context));
+    return base.copyWith(
+      p: base.p?.copyWith(color: fg, fontSize: 14.5, height: 1.35),
+      strong: base.strong?.copyWith(color: fg, fontWeight: FontWeight.w800),
+      h1: base.h1
+          ?.copyWith(color: fg, fontWeight: FontWeight.w800, fontSize: 17),
+      h2: base.h2
+          ?.copyWith(color: fg, fontWeight: FontWeight.w800, fontSize: 16),
+      h3: base.h3
+          ?.copyWith(color: fg, fontWeight: FontWeight.w700, fontSize: 15),
+      listBullet: base.listBullet?.copyWith(color: scheme.primary),
+      em: base.em?.copyWith(color: fg.withValues(alpha: 0.9)),
+    );
+  }
+
   Widget _bubble(_ChatMessage m, ColorScheme scheme) {
     final bool isUser = m.role == 'user';
     final bool dark = Theme.of(context).brightness == Brightness.dark;
@@ -382,10 +612,29 @@ class _AssistantScreenState extends State<AssistantScreen> {
                     ),
                   ],
           ),
-          child: SelectableText(
-            m.text,
-            style: TextStyle(color: fg, fontSize: 14.5),
-          ),
+          child: isUser
+              ? SelectableText(
+                  m.text,
+                  style: TextStyle(color: fg, fontSize: 14.5),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    MarkdownBody(
+                      data: m.text,
+                      selectable: true,
+                      styleSheet: _mdStyle(scheme, fg),
+                    ),
+                    if (!m.isError) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _speechControls(m, fg),
+                      ),
+                    ],
+                  ],
+                ),
         ),
       ),
     );

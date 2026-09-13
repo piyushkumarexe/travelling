@@ -1,15 +1,16 @@
-# YatraWise — Smart Tourism & Safety Assistant (Android)
+# Tourism — Smart Tourism & Safety Assistant (Android)
 
-YatraWise is a native Android app (Flutter) that combines a premium travel
+Tourism is a native Android app (Flutter) that combines a premium travel
 experience with real safety tooling: live Google Maps, real AI assistance
 (NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
 zones with Android notifications, a one-tap SOS flow, a Digital Emergency
 ID with real QR verification, and an Eco Score for sustainable travel.
 
-Everything is real and wired end-to-end — there are no demo buttons, no
-fake data and no "coming soon" screens. All third-party secrets
-(NVIDIA, OpenWeather, Google Maps server key) live only in the Firebase
-Cloud Functions backend; the Android app ships with zero API keys.
+Everything is real and wired end-to-end — there are no demo buttons and no
+fake data. All third-party secrets (NVIDIA, OpenWeather, Google Maps server
+key) live only in the Firebase Cloud Functions backend; the Android app ships
+with no secret API keys (the MapTiler tile key is a public, client-side key,
+the same category as the Google Maps Android key).
 
 ---
 
@@ -19,8 +20,8 @@ Cloud Functions backend; the Android app ships with zero API keys.
 | --- | --- |
 | Home dashboard | Live location label, real weather, safety-zone status for your position, nearby tourist attractions, latest alerts, SOS button, emergency ID, report incident, AI assistant, itineraries, eco score — every card navigates to a working feature. |
 | Explore | Real Google Places text search + category browsing (attractions, food, hidden gems), place detail with real photos (proxied), rating, price level, open/closed, distance from you, and "navigate" that opens real Google Maps navigation. |
-| Map | Official Google Maps SDK for Flutter: live GPS blue dot, zoom/pan/rotate, place search markers, tourist attractions, safety zones (color-coded circles), emergency services, destination markers, distance + route info (real Directions API polyline when available, honestly-labelled straight-line fallback), current-location button, proper permission handling. |
-| AI assistant | Real conversational AI via NVIDIA (server-side key), with your current location and travel preferences injected as context. Typing indicator, error states, suggestion chips. |
+| Map | MapTiler tiles via `flutter_map` (satellite by default with a streets toggle): live GPS dot with real-time follow mode, zoom/pan, place search markers, tourist attractions, safety zones (color-coded circles), emergency services, destination markers, distance + route info (real Directions API polyline when available, honestly-labelled straight-line fallback), current-location button, proper permission handling. |
+| AI assistant | Real conversational AI with your current location and travel preferences as context: Cloud Functions backend first, then a direct NVIDIA key or any OpenAI-compatible provider compiled in at build time. Typing indicator, error states, suggestion chips. |
 | Itinerary generator | Destination + days + interests + budget + style → real AI-generated plan (NVIDIA JSON), preview, regenerate, save to Firestore, view by day, delete. |
 | Safety hub | Nearest active zone, zone list with details, geofence monitor (real background location while app runs), in-app warning + Android notification + notification history when entering a high-risk zone, nearby emergency services you can actually call (`tel:`) or get directions to. |
 | SOS | Confirm dialog → real GPS fix → `emergencyEvents` document → active status UI with coordinates/accuracy → nearby emergency services with call buttons → cancel/resolve. Never claims authorities were contacted. |
@@ -37,10 +38,12 @@ Cloud Functions backend; the Android app ships with zero API keys.
 ## Tech stack
 
 - **Flutter 3.32 / Dart 3.8** — Material 3, GoRouter, DI-free service container.
-- **Firebase** — Authentication (Google sign-in), Cloud Firestore, Storage,
+- **Firebase** — Authentication (Google + email/password sign-in), Cloud Firestore, Storage,
   Cloud Functions v2 (Node 20, CommonJS) as the secure API gateway.
-- **Google** — Maps SDK for Flutter (client key), Places/Directions/Geocoding
-  APIs (server key, proxied).
+- **MapTiler + flutter_map** — raster tiles (satellite + streets) with a
+  public client key; the map widget needs no Google Maps SDK key.
+- **Google** — Places/Directions/Geocoding APIs (server key, proxied) and
+  turn-by-turn navigation via the installed Google Maps app.
 - **OpenWeather** — current + forecast (server key, proxied).
 - **NVIDIA API** — Llama 3.1 70B instruct for chat, itinerary JSON and
   incident triage (server key only).
@@ -97,7 +100,9 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 ### 2. Firebase project
 
 1. Create the project in the Firebase console.
-2. **Authentication → Sign-in method → Google**: enable it.
+2. **Authentication → Sign-in method**:
+   - **Google**: enable it (see step 3 for the OAuth client).
+   - **Email/Password**: enable it to allow email sign-up/sign-in.
 3. **Project settings → Your apps → Add app (Android)** with
    package name `app.roamio.tourism`.
 4. Run `flutterfire configure` (or paste the downloaded config into
@@ -114,10 +119,26 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
    - SHA-1 fingerprint: for local debug builds use the debug keystore
      (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`);
      add your release fingerprint too if you sign your own builds.
-2. The Flutter app signs in with `google_sign_in` using this client —
-   no additional client-side keys are needed.
+   The SHA-1 of the exact APK you install must be registered here, otherwise
+   Google Sign-In fails instantly.
+2. Because this app uses `firebase_options.dart` (not `google-services.json`),
+   you must also provide the Google Sign-In **Web client ID** as the
+   `serverClientId`:
+   - Firebase console → **Project settings → Your apps → Web app** → copy the
+     `Web client ID` (ends with `.apps.googleusercontent.com`), or
+   - Google Cloud → **Credentials** → the "Web client (auto-created by Google
+     Service)" client.
+   Then either hardcode it in `lib/core/app_config.dart`
+   (`googleWebClientId`) or build with:
+   `flutter build apk --dart-define=GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com`
+   (in CI set the `GOOGLE_WEB_CLIENT_ID` secret).
 
 ### 4. Google Maps keys (two separate keys)
+
+> The interactive map widget now renders with **MapTiler** tiles, so the
+> Maps SDK **client key is optional** (the map shows without it). The
+> `MAPTILER_API_KEY` default is already compiled in; override it with
+> `--dart-define=MAPTILER_API_KEY=...` (CI secret `MAPTILER_API_KEY`).
 
 **Client key (Android manifest):**
 1. Credentials → Create API key → restrict to **Android apps** with your
@@ -134,13 +155,40 @@ rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
 2. Set it as the `GOOGLE_MAPS_API_KEY` function environment variable
    (see step 7). It never ships in the APK.
 
-### 5. OpenWeather + NVIDIA keys
+### 5. AI keys (free) + OpenWeather
 
-1. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
-2. NVIDIA: create an API key (build.nvidia.com) → set as `NVIDIA_API_KEY`
-   (optionally override `NVIDIA_MODEL`).
+> In 2026 every keyless AI provider shut down anonymous access (Pollinations,
+> Hack Club AI, DuckDuckGo AI all did), so the assistant needs ONE free key.
+> All of these work as a single GitHub secret; the app auto-prefers Groq →
+> NVIDIA → Gemini → generic.
+
+1. **Groq (fastest, recommended)**: get a free key at https://console.groq.com/keys
+   → set it as the `GROQ_API_KEY` GitHub secret (or build with
+   `--dart-define=GROQ_API_KEY=gsk_...`). Default model
+   `openai/gpt-oss-120b`; override with `GROQ_MODEL`.
+2. **Google Gemini**: get a free key at https://aistudio.google.com/apikey →
+   set it as the `GEMINI_API_KEY` GitHub secret (or build with
+   `--dart-define=GEMINI_API_KEY=AIza...`). Default model `gemini-2.5-flash`.
+3. **NVIDIA**: create a free key (build.nvidia.com) → set it as the
+   `NVIDIA_API_KEY` GitHub secret (or
+   `--dart-define=NVIDIA_API_KEY=nvapi-...`; optionally override
+   `NVIDIA_MODEL`).
+4. **Any OpenAI-compatible provider** (OpenRouter / Mistral / …):
+   `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` GitHub secrets / dart-defines.
+5. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
 
 ### 6. Deploy the secure backend
+
+> **Quick start:** `bash scripts/deploy-backend.sh` — one command that logs you
+> in, sets the three secrets and deploys functions + Firestore rules + Storage
+> rules. Full Hindi/Hinglish step-by-step (including the **Blaze plan** and
+> **Firestore database** requirements): see [`BACKEND_SETUP.md`](BACKEND_SETUP.md).
+
+**Two things that are easy to miss:**
+1. The project must be on the **Blaze (pay-as-you-go)** plan — v2 functions with
+   secrets don't run on the free Spark plan.
+2. A **Firestore database** must exist (console → Build → Firestore → Create
+   database) — the rate limiter and app data depend on it.
 
 ```bash
 firebase login
@@ -175,7 +223,8 @@ flutter run          # on a connected device / emulator
 ```
 
 First launch shows a short setup guide; sign in with Google (an account
-that has access to the OAuth client) and you land on the dashboard.
+that has access to the OAuth client) or create an account with your email
+and password, and you land on the dashboard.
 
 ## Building the APK
 
@@ -282,8 +331,8 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 
 | Symptom | Fix |
 | --- | --- |
-| Sign-in fails immediately | OAuth client missing the device's SHA-1, or account not allowed for the client. |
-| Map is blank | Client Maps key not set/restricted for the package + SHA-1. |
+| Sign-in fails immediately | OAuth client missing the device's SHA-1, Web client ID (`serverClientId`) not set, or account not allowed for the client. |
+| Map tiles don't load | Check your connection and the MapTiler key (default is compiled in; override with `--dart-define=MAPTILER_API_KEY=...`). |
 | "Backend is missing the X configuration" | Set the function secret and redeploy functions. |
 | Places search 403 | Server key not restricted/allowed properly for Places (legacy) API. |
 | Geofence never fires | Background location permission must be *While using* or *All the time*; zone must be active; keep the process alive (Android battery saver off while testing). |

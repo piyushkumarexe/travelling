@@ -40,4 +40,47 @@ class ProfileRepository {
       'updatedAt': Timestamp.now(),
     });
   }
+
+  /// Persists only the preferred vehicle (bike / car / auto) — used by the
+  /// dedicated Vehicle tab.
+  Future<void> setVehicle(String uid, String vehicle) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'vehicle': vehicle,
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Focused upsert of the SOS/emergency contact — the SINGLE source of truth
+  /// shared by the SOS screen, Profile and Power-Off Safety Location. Uses
+  /// merge so it never clobbers other profile fields, and creates the
+  /// profiles/{uid} document if it does not exist yet.
+  Future<void> setEmergencyContact(
+    String uid, {
+    required String name,
+    required String phone,
+  }) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'emergencyContactName': name,
+        'emergencyContactPhone': phone,
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Clears the SOS/emergency contact (same merge semantics).
+  Future<void> clearEmergencyContact(String uid) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'emergencyContactName': '',
+        'emergencyContactPhone': '',
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
 }

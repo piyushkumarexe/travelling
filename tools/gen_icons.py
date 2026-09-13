@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate YatraWise launcher icon PNGs (no external deps)."""
+"""Generate Tourism launcher icon PNGs (no external deps)."""
 import zlib, struct, os
 
 TOP = (0x0B, 0x39, 0x54)      # deep navy-teal

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart' show User;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +12,8 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/sos_fab.dart';
 import 'core/widgets/sos_sheet.dart';
 
-/// Main navigation shell: bottom bar + global SOS action.
+/// Main navigation shell: bottom bar + global SOS action + profile avatar at
+/// the top-right.
 ///
 /// Also owns the geofence lifecycle: monitoring starts when signed in and
 /// stops on sign-out. Geofence alerts raise a modal in-app warning with
@@ -35,7 +37,7 @@ class _AppShellState extends State<AppShell> {
     '/explore',
     '/map',
     '/safety',
-    '/profile',
+    '/vehicle',
   ];
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
@@ -163,6 +165,7 @@ class _AppShellState extends State<AppShell> {
     final String location = GoRouterState.of(context).matchedLocation;
     final int index = _indexOf(location);
     final bool onTab = _tabs.contains(location);
+    final AppContainer c = AppScope.of(context);
 
     return PopScope(
       canPop: false,
@@ -171,7 +174,22 @@ class _AppShellState extends State<AppShell> {
         _handleSystemBack();
       },
       child: Scaffold(
-        body: widget.child,
+        body: Stack(
+          children: <Widget>[
+            widget.child,
+            // Profile avatar pinned to the top-right on every tab.
+            Positioned(
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: _profileAvatar(c),
+                ),
+              ),
+            ),
+          ],
+        ),
         floatingActionButton: const SosFab(),
         bottomNavigationBar: onTab
             ? NavigationBar(
@@ -199,13 +217,69 @@ class _AppShellState extends State<AppShell> {
                     label: 'Safety',
                   ),
                   NavigationDestination(
-                    icon: Icon(Icons.person_outline),
-                    selectedIcon: Icon(Icons.person),
-                    label: 'Profile',
+                    icon: Icon(Icons.directions_car_outlined),
+                    selectedIcon: Icon(Icons.directions_car),
+                    label: 'Vehicle',
                   ),
                 ],
               )
             : null,
+      ),
+    );
+  }
+
+  Widget _profileAvatar(AppContainer c) {
+    final User? user = c.authRepository.currentUser;
+    final String? photo = user?.photoURL;
+    final String initial =
+        (user?.displayName?.isNotEmpty ?? false) ? user!.displayName![0].toUpperCase() : '?';
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => context.push('/profile'),
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: scheme.surface,
+            border: Border.all(color: scheme.outline),
+            boxShadow: AppTheme.softShadow(context),
+          ),
+          child: ClipOval(
+            child: (photo != null && photo.isNotEmpty)
+                ? Image.network(
+                    photo,
+                    width: 42,
+                    height: 42,
+                    fit: BoxFit.cover,
+                    errorBuilder: (BuildContext context, Object e,
+                            StackTrace? s) =>
+                        Center(
+                      child: Text(
+                        initial,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }

@@ -1,4 +1,4 @@
-// Firebase configuration for YatraWise.
+// Firebase configuration for Tourism.
 //
 // Project: tourism-39425 (project number 216165370573)
 // Android app: app.roamio.tourism
@@ -22,7 +22,7 @@ class DefaultFirebaseOptions {
       return android;
     }
     throw UnsupportedError(
-      'YatraWise currently only supports Android. '
+      'Tourism currently only supports Android. '
       'Run `flutterfire configure --platforms=android`.',
     );
   }

@@ -59,27 +59,30 @@ class _SosSheetViewState extends State<_SosSheetView> {
         return;
       }
       final user = _c.authRepository.currentUser;
-      if (user == null) {
-        setState(() {
-          _stage = _SosStage.confirm;
-          _error = 'You must be signed in to activate SOS.';
-        });
-        return;
-      }
-      final String uid = user.uid;
-      final String? profileName =
-          (await _c.profileRepository.get(uid))?.name;
-      final String name = (profileName == null || profileName.isEmpty)
-          ? (user.displayName ?? 'Unknown')
-          : profileName;
+      final String uid = user?.uid ?? 'guest';
+      String name = (user?.displayName?.isNotEmpty ?? false)
+          ? user!.displayName!
+          : 'Traveler';
+      try {
+        final String? profileName = (await _c.profileRepository.get(uid))?.name;
+        if (profileName != null && profileName.isNotEmpty) name = profileName;
+      } catch (_) {}
 
-      final String id = await _c.emergencyRepository.create(
-        uid: uid,
-        name: name,
-        lat: pos.latitude,
-        lng: pos.longitude,
-        accuracyMeters: pos.accuracy,
-      );
+      // Create the cloud event; if the cloud is unreachable (rules not
+      // deployed / offline), still proceed with a local id — the emergency
+      // flow (call services + share location) must never be blocked.
+      String id;
+      try {
+        id = await _c.emergencyRepository.create(
+          uid: uid,
+          name: name,
+          lat: pos.latitude,
+          lng: pos.longitude,
+          accuracyMeters: pos.accuracy,
+        );
+      } catch (_) {
+        id = 'local-${DateTime.now().millisecondsSinceEpoch}';
+      }
       if (!mounted) return;
 
       final EmergencyEvent event = EmergencyEvent(
@@ -161,8 +164,10 @@ class _SosSheetViewState extends State<_SosSheetView> {
   Future<void> _cancel() async {
     final EmergencyEvent? event = _event;
     if (event == null) return;
+    bool markedCancelled = false;
     try {
       await _c.emergencyRepository.updateStatus(event.id, 'cancelled');
+      markedCancelled = true;
     } catch (_) {
       // Even if the update fails we still close the sheet; the event
       // remains and the user can retry from the Safety screen.
@@ -170,7 +175,12 @@ class _SosSheetViewState extends State<_SosSheetView> {
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS cancelled. The event was marked as cancelled.')),
+        SnackBar(
+          content: Text(markedCancelled
+              ? 'SOS cancelled.'
+              : 'SOS closed, but the event could not be marked as cancelled. '
+                  'You can retry from the Safety screen.'),
+        ),
       );
     }
   }
@@ -221,6 +231,43 @@ class _SosSheetViewState extends State<_SosSheetView> {
         const SnackBar(content: Text('This device cannot place calls.')),
       );
     }
+  }
+
+  /// India emergency numbers (works nationwide from any SIM) — shown so the
+  /// user always has a real number to call, even before/without GPS.
+  Widget _emergencyNumbers(ColorScheme scheme) {
+    const List<(String, String)> numbers = <(String, String)>[
+      ('112', 'Emergency (all)'),
+      ('100', 'Police'),
+      ('101', 'Fire'),
+      ('102', 'Ambulance'),
+      ('108', 'Ambulance'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Emergency numbers (India)',
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final (String number, String label) in numbers)
+              ActionChip(
+                avatar: const Icon(Icons.call, size: 16),
+                label: Text('$number · $label'),
+                onPressed: () => _call(number),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
   @override
@@ -286,17 +333,19 @@ class _SosSheetViewState extends State<_SosSheetView> {
         ),
         const SizedBox(height: 12),
         Text(
-          'YatraWise will:\n'
+          'Tourism will:\n'
           '• Capture your current GPS location\n'
           '• Create an emergency event (visible to you and authorized '
           'administrators)\n'
           '• Show an on-device alert and nearby emergency services\n'
           '• Let you call police / hospital / fire directly\n\n'
-          'YatraWise does not automatically contact authorities. If you are in '
+          'Tourism does not automatically contact authorities. If you are in '
           'immediate danger, call your local emergency number first.',
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 16),
+        _emergencyNumbers(scheme),
         if (_error != null) ...<Widget>[
           const SizedBox(height: 12),
           Container(
@@ -428,6 +477,8 @@ class _SosSheetViewState extends State<_SosSheetView> {
               style: TextStyle(color: scheme.error),
               textAlign: TextAlign.center),
         ],
+        const SizedBox(height: 24),
+        _emergencyNumbers(scheme),
         const SizedBox(height: 24),
         Text(
           'Nearby emergency services',

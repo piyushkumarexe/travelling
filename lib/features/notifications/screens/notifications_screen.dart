@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart' show User;
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -25,17 +27,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<AppNotification> _items = const <AppNotification>[];
   bool _loading = true;
   String? _error;
+  bool _unauthenticated = false;
+  bool _permissionDenied = false;
   StreamSubscription<List<AppNotification>>? _sub;
+  StreamSubscription<User?>? _authSub;
 
   @override
   void initState() {
     super.initState();
     _listen();
+    // Re-resolve the screen if the user signs in/out while it is open.
+    _authSub = _c.authRepository.authStateChanges().listen((User? u) {
+      if (mounted) _listen();
+    });
   }
 
   void _listen() {
+    _sub?.cancel();
     final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null || uid.isEmpty) {
+      // Unauthenticated: an honest state, not a Firestore call that pretends
+      // a permission error is a normal empty list.
+      if (mounted) {
+        setState(() {
+          _items = const <AppNotification>[];
+          _loading = false;
+          _unauthenticated = true;
+          _permissionDenied = false;
+          _error = null;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _unauthenticated = false;
+      _permissionDenied = false;
+      _error = null;
+    });
     _sub = _c.notificationsRepository
         .watchMine(uid)
         .listen((List<AppNotification> items) {
@@ -43,15 +72,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         setState(() {
           _items = items;
           _loading = false;
+          _unauthenticated = false;
+          _permissionDenied = false;
+          _error = null;
         });
       }
     }, onError: (Object e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      final bool permDenied =
+          e is FirebaseException && e.code == 'permission-denied';
+      setState(() {
+        _permissionDenied = permDenied;
+        _error = permDenied
+            ? 'Your account cannot read notifications. Please sign out and '
+                'back in; if it persists, the Firestore rules for '
+                'users/{uid}/notifications need to be deployed.'
+            : 'Could not load notifications. Check your connection and retry.';
+        _loading = false;
+      });
     });
   }
 
@@ -97,6 +135,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    _authSub?.cancel();
     super.dispose();
   }
 
@@ -154,17 +193,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               padding: EdgeInsets.all(16),
               child: SkeletonList(count: 6, height: 84),
             )
-          : _error != null
-              ? ErrorState(message: _error!, onRetry: _listen)
-              : _items.isEmpty
-                  ? const EmptyState(
-                      icon: Icons.notifications_none,
-                      title: 'No notifications',
-                      message:
-                          'Safety alerts, zone entries, incident updates and '
-                          'weather warnings will appear here.',
+          : _unauthenticated
+              ? EmptyState(
+                  icon: Icons.lock_outline,
+                  title: 'Sign in to view your notifications.',
+                  message:
+                      'Safety alerts, zone entries and incident updates are '
+                      'stored per account.',
+                  actionLabel: 'Sign in',
+                  onAction: () => context.go('/login'),
+                )
+              : _permissionDenied
+                  ? ErrorState(
+                      message: _error ??
+                          'Your account cannot read notifications.',
+                      onRetry: _listen,
                     )
-                  : ListView.builder(
+                  : _error != null
+                      ? ErrorState(message: _error!, onRetry: _listen)
+                      : _items.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.notifications_none,
+                              title: 'No notifications yet.',
+                              message:
+                                  'Safety alerts, zone entries, incident '
+                                  'updates and weather warnings will appear '
+                                  'here.',
+                            )
+                          : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: _items.length,
                       itemBuilder: (BuildContext context, int i) {

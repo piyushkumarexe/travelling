@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Location: core YatraWise features (current location, routes, geofencing) -->
+    <!-- Location: core Tourism features (current location, routes, geofencing) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Background safety-zone monitoring (only used by the Geofence service).
@@ -22,7 +22,16 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- Voice assistant: on-device speech recognition (mic) + text-to-speech -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -47,7 +56,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="YatraWise"
+        android:label="Tourism"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
@@ -85,5 +94,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!--
+            Power-Off Safety Location: best-effort share of the latest
+            available location while the device is shutting down. A plain
+            manifest receiver — no foreground/background service and no extra
+            permissions. Fails safely when the OS/network does not allow the
+            operation; delivery is only recorded when actually confirmed.
+        -->
+        <receiver
+            android:name=".PowerOffReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
