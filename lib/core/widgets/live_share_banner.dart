@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../state/app_container.dart';
@@ -75,6 +77,12 @@ class LiveShareBanner extends StatelessWidget {
                         child: const Text('Enable SMS',
                             style: TextStyle(fontWeight: FontWeight.w800)),
                       ),
+                    IconButton(
+                      tooltip: 'Send current location on WhatsApp',
+                      icon: const Icon(Icons.chat, color: Colors.white, size: 20),
+                      onPressed: () =>
+                          unawaited(c.liveLocationShare.shareWhatsAppNow()),
+                    ),
                     TextButton(
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white,
@@ -150,6 +158,12 @@ class LiveShareBannerInline extends StatelessWidget {
                   },
                   child: const Text('Enable SMS'),
                 ),
+              IconButton(
+                tooltip: 'Send current location on WhatsApp',
+                icon: const Icon(Icons.chat, color: AppTheme.danger, size: 20),
+                onPressed: () =>
+                    unawaited(c.liveLocationShare.shareWhatsAppNow()),
+              ),
               TextButton(
                 onPressed: () async {
                   await c.liveLocationShare.stop();

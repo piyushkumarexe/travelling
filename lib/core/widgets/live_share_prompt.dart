@@ -34,6 +34,11 @@ Future<LiveShareStartResult> showLiveSharePrompt(
   String? destinationName,
 }) async {
   final AppContainer c = AppScope.of(context);
+  // Already sharing (e.g. resuming a navigation): never re-ask — just
+  // confirm the state so the UI can show the honest feedback.
+  if (c.liveLocationShare.active) {
+    return LiveShareStartResult.started;
+  }
   final bool hasContact = c.liveLocationShare.hasContact;
   final String contactLabel = c.liveLocationShare.sosContactName.isNotEmpty
       ? c.liveLocationShare.sosContactName
@@ -59,7 +64,9 @@ Future<LiveShareStartResult> showLiveSharePrompt(
             hasContact
                 ? 'While you navigate, $contactLabel will receive your '
                     'coordinates and a live map link by SMS, and your '
-                    'position will keep updating in this app. You can stop '
+                    'position will keep updating in this app. With internet '
+                    'on, your WhatsApp chat also opens automatically with '
+                    'the message ready — just press send. You can stop '
                     'sharing any time.'
                 : 'You have no SOS contact added yet. Add one to enable live '
                     'location sharing.',

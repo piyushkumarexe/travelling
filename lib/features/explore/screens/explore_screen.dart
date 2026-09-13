@@ -44,6 +44,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   bool _stale = false;
   String? _error;
   bool _searchedOnce = false;
+  String? _datasetKey;
+  StreamSubscription<NearbyUpdate>? _updatesSub;
 
   /// Pagination: show the first 20 nearest results, then a "Load more" button
   /// — never an arbitrary tiny cap, and never hundreds of cards at once.
@@ -52,10 +54,66 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Timer? _debounce;
   bool _initialized = false;
 
+  bool _subscribedUpdates = false;
+
   @override
   void initState() {
     super.initState();
     _queryController.addListener(_onQueryChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Subscribe once: a background refresh of the shown nearby dataset
+    // clears the "Showing saved nearby places" banner as soon as live
+    // data lands.
+    if (!_subscribedUpdates) {
+      _subscribedUpdates = true;
+      _updatesSub = _c.placesRepository.nearbyUpdates.listen(_onDatasetUpdate);
+    }
+  }
+
+  void _onDatasetUpdate(NearbyUpdate u) {
+    if (!mounted || _loading || u.key != _datasetKey) return;
+    if (u.result.places.isEmpty) return;
+    final List<Place> fresh = _applyCurrentView(u.result.places);
+    if (fresh.isEmpty) return;
+    setState(() {
+      _results = fresh;
+      _stale = false;
+      _shown = 20;
+    });
+  }
+
+  /// Re-applies the filter/ranking of whatever view is on screen
+  /// (default nearby vs category chip) to a fresh dataset.
+  List<Place> _applyCurrentView(List<Place> places) {
+    final List<String>? cats =
+        _activeCategory == null ? null : _categoryDatasetSet(_activeCategory);
+    final List<Place> out = (cats == null
+            ? places.toList()
+            : places
+                .where((Place p) =>
+                    cats.any((String c) => p.category == c || p.types.contains(c)))
+                .toList())
+        ..sort((Place a, Place b) {
+          final int ra = cats == null ? _nearbyRank(a) : 0;
+          final int rb = cats == null ? _nearbyRank(b) : 0;
+          if (ra != rb) return ra - rb;
+          return (a.distanceMeters ?? double.infinity)
+              .compareTo(b.distanceMeters ?? double.infinity);
+        });
+    return out;
+  }
+
+  @override
+  void dispose() {
+    unawaited(_updatesSub?.cancel());
+    _queryController.removeListener(_onQueryChanged);
+    _queryController.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _initLocation() async {
@@ -310,6 +368,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _results = filtered;
         _loading = false;
         _stale = dataset.stale;
+        _datasetKey = dataset.key;
         _searchedOnce = true;
       });
     } catch (e) {
@@ -386,6 +445,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _results = sorted;
         _loading = false;
         _stale = dataset.stale;
+        _datasetKey = dataset.key;
         _searchedOnce = true;
       });
     } catch (e) {
@@ -526,13 +586,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       place.coords,
     );
     return GeoUtils.formatDistance(d);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _queryController.dispose();
-    super.dispose();
   }
 
   @override
@@ -777,16 +830,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
               color: const Color(0xFFFFF3E0),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Row(
+            child: Row(
               children: <Widget>[
-                Icon(Icons.cloud_off, size: 16, color: Color(0xFFB26A00)),
-                SizedBox(width: 8),
-                Expanded(
+                const Icon(Icons.cloud_off, size: 16, color: Color(0xFFB26A00)),
+                const SizedBox(width: 8),
+                const Expanded(
                   child: Text(
-                    'Showing saved nearby places — refreshing…',
+                    'Showing saved places — updating to live results…',
                     style:
                         TextStyle(fontSize: 12.5, color: Color(0xFFB26A00)),
                   ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: const Color(0xFFB26A00),
+                  ),
+                  onPressed: _loading ? null : _runNearbyDefault,
+                  child: const Text('Refresh',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
               ],
             ),

@@ -28,6 +28,11 @@ class PlacesRepository {
   final OsrmClient _osrm = OsrmClient();
   final NearbyStore _nearby = NearbyStore();
 
+  /// Broadcast of background nearby-dataset refreshes — screens showing a
+  /// stale (saved) dataset subscribe and swap in the fresh list the moment
+  /// the network refresh lands.
+  Stream<NearbyUpdate> get nearbyUpdates => _nearby.updates;
+
   List<Place> _decode(Map<String, dynamic> data) {
     final List<dynamic> raw =
         (data['places'] is List) ? data['places'] as List : <dynamic>[];

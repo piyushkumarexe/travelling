@@ -131,33 +131,47 @@ class _AppShellState extends State<AppShell> {
 
   /// Handles the system back button when the shell route itself is on top
   /// (dialogs, sheets and pushed pages above it pop on their own first).
+  /// Everything is guarded: an exception inside a PopScope callback on some
+  /// OEM Android builds leaves the app unresponsive to ALL input (the
+  /// reported "open → use a feature → back → nothing responds" freeze).
   void _handleSystemBack() {
-    final GoRouter router = GoRouter.of(context);
-    // Safety net: if anything is still above us, pop it.
-    if (router.canPop()) {
-      router.pop();
-      return;
+    try {
+      final GoRouter router = GoRouter.of(context);
+      // Safety net: if anything is still above us, pop it.
+      if (router.canPop()) {
+        router.pop();
+        return;
+      }
+      final String location = GoRouterState.of(context).matchedLocation;
+      // One step back: any tab other than Home goes to Home first.
+      if (location != '/home') {
+        context.go('/home');
+        return;
+      }
+      // On Home: require a double-press within 2 seconds to exit.
+      final DateTime now = DateTime.now();
+      if (_lastBackPress == null ||
+          now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+        _lastBackPress = now;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Press back again to exit'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+      SystemNavigator.pop();
+    } catch (e) {
+      // Never leave the app stuck: fall back to Home, and if even that
+      // fails, let the system finish the back gesture.
+      _lastBackPress = null;
+      try {
+        context.go('/home');
+      } catch (_) {
+        SystemNavigator.pop();
+      }
     }
-    final String location = GoRouterState.of(context).matchedLocation;
-    // One step back: any tab other than Home goes to Home first.
-    if (location != '/home') {
-      context.go('/home');
-      return;
-    }
-    // On Home: require a double-press within 2 seconds to exit.
-    final DateTime now = DateTime.now();
-    if (_lastBackPress == null ||
-        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
-      _lastBackPress = now;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Press back again to exit'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    SystemNavigator.pop();
   }
 
   @override
@@ -177,6 +191,21 @@ class _AppShellState extends State<AppShell> {
         body: Stack(
           children: <Widget>[
             widget.child,
+            // Live "Navigating … · Resume" pill: navigation keeps running in
+            // the background service when the user switches to another tab,
+            // and this is the one-tap way back into it.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 56,
+              child: SafeArea(
+                child: ListenableBuilder(
+                  listenable: c.activeTrip,
+                  builder: (BuildContext _, Widget? __) =>
+                      _activeTripPill(c, location),
+                ),
+              ),
+            ),
             // Profile avatar pinned to the top-right on every tab.
             Positioned(
               top: 0,
@@ -224,6 +253,64 @@ class _AppShellState extends State<AppShell> {
                 ],
               )
             : null,
+      ),
+    );
+  }
+
+  /// Resume pill shown on every screen except the live-trip screen itself.
+  /// Tapping it re-opens navigation with the saved destination.
+  Widget _activeTripPill(AppContainer c, String location) {
+    if (!c.activeTrip.hasDestination || location.startsWith('/trip/live')) {
+      return const SizedBox.shrink();
+    }
+    final String name = c.activeTrip.name.isEmpty
+        ? 'your destination'
+        : c.activeTrip.name;
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 8, right: 4),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          color: Colors.black.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: () => context.push(c.activeTrip.route),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.navigation,
+                      color: Color(0xFF4ADE80), size: 18),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Navigating to $name',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Resume',
+                    style: TextStyle(
+                      color: Color(0xFF4ADE80),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

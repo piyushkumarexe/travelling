@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -7,10 +9,25 @@ import 'package:url_launcher/url_launcher.dart';
 ///   MainActivity) so it works even with no mobile data — the only channel
 ///   that reaches the SOS contact during power-off or in remote areas.
 /// - WhatsApp uses a wa.me deep link with the message pre-filled (WhatsApp
-///   itself must send it; there is no keyless programmatic send).
+///   itself must send it; there is no keyless programmatic send). The chat
+///   auto-opens when the internet is available so the traveler only has to
+///   press send once.
 class SmsService {
   static const MethodChannel _channel =
       MethodChannel('app.roamio.tourism/emergency_sms');
+
+  /// Cheap connectivity probe (DNS). Best-effort: returns false on any
+  /// failure, never throws.
+  Future<bool> hasInternet() async {
+    try {
+      final List<InternetAddress> r = await InternetAddress.lookup(
+        'www.google.com',
+      ).timeout(const Duration(seconds: 4));
+      return r.isNotEmpty && r.first.address.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// True when the SEND_SMS runtime permission is granted.
   Future<bool> hasSendSmsPermission() async {
@@ -25,10 +42,18 @@ class SmsService {
 
   /// Shows the Android SEND_SMS permission dialog when not granted yet.
   /// Re-check with [hasSendSmsPermission] after the user answers.
+  /// Bounded by a 20 s safety timeout so a misbehaving OEM dialog can never
+  /// leave a caller awaiting forever (the reported "app stops responding"
+  /// class of bugs).
   Future<bool> ensureSendSmsPermission() async {
     if (await hasSendSmsPermission()) return true;
     try {
-      return await _channel.invokeMethod<bool>('requestSendSms') ?? false;
+      final Future<bool> request =
+          _channel.invokeMethod<bool>('requestSendSms') ?? Future<bool>.value(false);
+      return await request.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () async => hasSendSmsPermission(),
+      );
     } on MissingPluginException {
       return false;
     } catch (_) {

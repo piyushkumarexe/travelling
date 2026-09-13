@@ -63,6 +63,8 @@ class LiveLocationShareService extends ChangeNotifier {
   int _cloudUpdates = 0;
   String? _lastError;
   bool _smsEnabled = false;
+  bool _whatsappAutoOpened = false;
+  String _lastSmsText = '';
 
   Timer? _cloudTimer;
   Timer? _smsTimer;
@@ -75,6 +77,8 @@ class LiveLocationShareService extends ChangeNotifier {
   int get smsSent => _smsSent;
   int get cloudUpdates => _cloudUpdates;
   String? get lastError => _lastError;
+  String get lastSmsText => _lastSmsText;
+  bool get whatsappAutoOpened => _whatsappAutoOpened;
 
   /// False when the SEND_SMS permission is missing — sharing still runs via
   /// the cloud event, but the contact is not reached by SMS.
@@ -144,6 +148,12 @@ class LiveLocationShareService extends ChangeNotifier {
     // First SMS goes out immediately (best effort).
     await _sendSmsUpdate();
 
+    // Internet ON -> also auto-open the WhatsApp chat with the same
+    // pre-filled location message, so one tap delivers it there too.
+    // (WhatsApp has no keyless programmatic send — the pre-filled chat is
+    // the closest possible to "automatic".)
+    unawaited(_maybeAutoWhatsapp());
+
     _cloudTimer = Timer.periodic(cloudRefreshInterval, (_) => _pushCloud());
     _smsTimer = Timer.periodic(smsInterval, (_) => _sendSmsUpdate());
 
@@ -170,6 +180,7 @@ class LiveLocationShareService extends ChangeNotifier {
     _smsTimer?.cancel();
     _smsTimer = null;
     _active = false;
+    _whatsappAutoOpened = false;
     notifyListeners();
     if (eventId != null && !eventId.startsWith('local-')) {
       try {
@@ -207,6 +218,33 @@ class LiveLocationShareService extends ChangeNotifier {
     final int before = _smsSent;
     await _sendSmsUpdate();
     return _smsSent > before;
+  }
+
+  /// Opens the WhatsApp chat with the SOS contact pre-filled with the
+  /// latest location — automatically at share start (when online), and
+  /// on demand from the banner / trip card.
+  Future<void> _maybeAutoWhatsapp() async {
+    if (!_active || _whatsappAutoOpened || !hasContact) return;
+    if (!await smsService.hasInternet()) return;
+    _whatsappAutoOpened = true;
+    notifyListeners();
+    await shareWhatsAppNow();
+  }
+
+  /// One-tap: opens WhatsApp with the current location message pre-filled
+  /// (the user presses send inside WhatsApp).
+  Future<bool> shareWhatsAppNow() async {
+    if (!hasContact) return false;
+    final Position? pos = (await _fix()) ?? _lastPosition;
+    if (pos == null) return false;
+    _lastPosition = pos;
+    final String text = SosMessages.buildLiveShareText(
+      travelerName: _travelerName,
+      position: pos,
+      destinationName: _destinationName,
+    );
+    _lastSmsText = text;
+    return smsService.openWhatsApp(sosContactPhone, text);
   }
 
   Future<Position?> _fix() async {
@@ -260,6 +298,7 @@ class LiveLocationShareService extends ChangeNotifier {
       position: pos,
       destinationName: _destinationName,
     );
+    _lastSmsText = text;
     final bool ok = await smsService.sendSms(sosContactPhone, text);
     if (ok) {
       _smsSent++;

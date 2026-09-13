@@ -363,6 +363,25 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   location message pre-filled; you press send. If the red share banner shows
   "SMS permission off", tap **Enable SMS** — the first message goes out
   immediately after granting.
+- **Why WhatsApp cannot be "fully automatic"**: WhatsApp deliberately does
+  not allow any third-party app to send messages silently (no official API
+  without a business account + template approval, and unofficial hacks get
+  numbers banned). So: with internet ON the share now **auto-opens your
+  WhatsApp chat with the location message already typed** — one tap on send
+  delivers it; with internet OFF the automatic SMS still reaches the contact
+  with zero taps. There is also a chat icon on the red banner to re-open the
+  WhatsApp chat with a fresh location any time.
+- **Navigation survives tab switches**: the trip keeps running when you
+  browse other features; a "Navigating to … · Resume" pill (top-left on
+  every screen) jumps straight back. The trip ends automatically on arrival
+  (or via **End trip**).
+- **Google-style navigation camera**: the map follows you at street-level
+  zoom and rotates so your travel direction stays up (both toggleable from
+  the round buttons on the map), with a vehicle marker (car/bike/auto per
+  your profile) rotated to your GPS heading. True 3D buildings/perspective
+  are not possible with the map engine used (flutter_map renders flat
+  raster tiles) — this follow-cam + rotating vehicle view is the standard
+  equivalent.
 
 ## Honest limitations
 

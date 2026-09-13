@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -61,11 +63,47 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
   bool _loading = false;
   String? _error;
   bool _stale = false;
+  String? _datasetKey;
+  StreamSubscription<NearbyUpdate>? _updatesSub;
+
+  bool _subscribedUpdates = false;
 
   @override
   void initState() {
     super.initState();
     _locate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Subscribe once: when a background refresh of the shown dataset lands,
+    // swap the list in immediately and clear the saved-places banner (issue:
+    // the banner used to stick around forever even with internet on).
+    if (!_subscribedUpdates) {
+      _subscribedUpdates = true;
+      _updatesSub = _c.placesRepository.nearbyUpdates.listen(_onDatasetUpdate);
+    }
+  }
+
+  void _onDatasetUpdate(NearbyUpdate u) {
+    if (!mounted || _loading || _selected == null) return;
+    if (u.key != _datasetKey || u.result.places.isEmpty) return;
+    final List<Place> filtered = u.result.places
+        .where((Place p) => _matches(p, _selected!.categories))
+        .toList()
+      ..sort((Place a, Place b) => (a.distanceMeters ?? double.infinity)
+          .compareTo(b.distanceMeters ?? double.infinity));
+    setState(() {
+      _results = filtered;
+      _stale = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_updatesSub?.cancel());
+    super.dispose();
   }
 
   Future<void> _locate() async {
@@ -143,6 +181,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         _results = filtered;
         _loading = false;
         _stale = dataset.stale;
+        _datasetKey = dataset.key;
       });
     } catch (e) {
       if (!mounted) return;
@@ -188,6 +227,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         _results = filtered;
         _loading = false;
         _stale = dataset.stale;
+        _datasetKey = dataset.key;
       });
     } catch (e) {
       if (!mounted) return;
@@ -329,21 +369,30 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFF3E0),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Row(
+              child: Row(
                 children: <Widget>[
-                  Icon(Icons.cloud_off, size: 16, color: Color(0xFFB26A00)),
-                  SizedBox(width: 8),
-                  Expanded(
+                  const Icon(Icons.cloud_off, size: 16, color: Color(0xFFB26A00)),
+                  const SizedBox(width: 8),
+                  const Expanded(
                     child: Text(
-                      'Offline — showing saved nearby places.',
+                      'Showing saved places — updating to live results…',
                       style: TextStyle(
                           fontSize: 12.5, color: Color(0xFFB26A00)),
                     ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: const Color(0xFFB26A00),
+                    ),
+                    onPressed: _loading ? null : _refresh,
+                    child: const Text('Refresh',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
                   ),
                 ],
               ),

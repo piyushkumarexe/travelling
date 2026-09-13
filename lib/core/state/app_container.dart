@@ -100,6 +100,10 @@ class AppContainer {
   /// Emergency SMS/WhatsApp messaging to the SOS contact.
   late final SmsService smsService = SmsService();
 
+  /// The trip currently being navigated — survives tab switches so the
+  /// shell can offer a one-tap "Resume" from anywhere.
+  late final ActiveTripState activeTrip = ActiveTripState();
+
   /// Live location sharing with the SOS contact (started from the
   /// navigation flow after the user accepts the share prompt).
   late final LiveLocationShareService liveLocationShare =

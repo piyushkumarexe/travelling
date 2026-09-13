@@ -17,11 +17,26 @@ class NearbyResult {
     required this.places,
     this.fromCache = false,
     this.stale = false,
+    this.key,
   });
 
   final List<Place> places;
   final bool fromCache;
   final bool stale;
+
+  /// Bucket key ("lat,lng|variant") of the dataset — used by UI listeners
+  /// to match an async refresh back to what is on screen.
+  final String? key;
+}
+
+/// Broadcast when a background (stale-while-revalidate) refresh completes:
+/// the UI subscribes and swaps in the fresh list — previously the fresh data
+/// only appeared on the NEXT screen open, which looked like "saved places
+/// never update even with internet on".
+class NearbyUpdate {
+  const NearbyUpdate({required this.key, required this.result});
+  final String key;
+  final NearbyResult result;
 }
 
 class _Bucket {
@@ -44,6 +59,12 @@ class NearbyStore {
   final Map<String, _Bucket> _mem = <String, _Bucket>{};
   final Map<String, Future<NearbyResult>> _inFlight =
       <String, Future<NearbyResult>>{};
+
+  final StreamController<NearbyUpdate> _updates =
+      StreamController<NearbyUpdate>.broadcast();
+
+  /// Fires with fresh datasets as background refreshes land.
+  Stream<NearbyUpdate> get updates => _updates.stream;
 
   /// Location bucket: ~1.1 km grid cell (2 decimal places). Movement within
   /// the cell reuses the cached dataset; a meaningful move or TTL expiry
@@ -76,7 +97,8 @@ class NearbyStore {
         debugPrint('[places] nearbyStore STALE-SWR $key '
             '(${mem.places.length} places, serving instantly + refreshing)');
         _backgroundRefresh(key, fetch);
-        return NearbyResult(places: mem.places, fromCache: true, stale: true);
+        return NearbyResult(
+            places: mem.places, fromCache: true, stale: true, key: key);
       }
       final List<Place>? persisted = await _read(key);
       if (persisted != null && persisted.isNotEmpty) {
@@ -84,7 +106,7 @@ class NearbyStore {
             '(${persisted.length} places, serving instantly + refreshing)');
         _backgroundRefresh(key, fetch);
         return NearbyResult(
-            places: persisted, fromCache: true, stale: true);
+            places: persisted, fromCache: true, stale: true, key: key);
       }
     }
 
@@ -105,7 +127,10 @@ class NearbyStore {
   }
 
   /// Fires a background refresh (deduplicated) without blocking the caller;
-  /// the fresh result replaces the in-memory bucket for the next open.
+  /// the fresh result replaces the in-memory bucket for the next open and is
+  /// broadcast on [updates]. One automatic retry: Overpass mirrors rate-limit
+  /// bursts, so a single failure used to leave "saved places" stuck for the
+  /// whole session.
   void _backgroundRefresh(String key, Future<List<Place>> Function() fetch) {
     final Future<NearbyResult>? pending = _inFlight[key];
     if (pending != null) return; // already refreshing
@@ -113,7 +138,17 @@ class NearbyStore {
     _inFlight[key] = run;
     unawaited(run.then(
       (NearbyResult _) {},
-      onError: (Object _) {},
+      onError: (Object _) async {
+        // Retry once after a short backoff, still deduplicated.
+        await Future<void>.delayed(const Duration(seconds: 6));
+        if (!_inFlight.containsKey(key)) {
+          final Future<NearbyResult> retry = _run(key, fetch);
+          _inFlight[key] = retry;
+          unawaited(retry.whenComplete(() {
+            if (identical(_inFlight[key], retry)) _inFlight.remove(key);
+          }));
+        }
+      },
     ).whenComplete(() {
       if (identical(_inFlight[key], run)) _inFlight.remove(key);
     }));
@@ -127,7 +162,12 @@ class NearbyStore {
       final List<Place> places = await fetch();
       _mem[key] = _Bucket(DateTime.now(), places);
       if (places.isNotEmpty) unawaited(_persist(key, places));
-      return NearbyResult(places: places);
+      final NearbyResult fresh = NearbyResult(places: places, key: key);
+      // Tell waiting screens the live data has landed (see NearbyUpdate).
+      if (!_updates.isClosed) {
+        _updates.add(NearbyUpdate(key: key, result: fresh));
+      }
+      return fresh;
     } on ApiException catch (e) {
       // Offline / rate-limited / provider error: serve the best cached data
       // we have instead of converting the failure into "no places found".
