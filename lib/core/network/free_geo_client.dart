@@ -440,8 +440,8 @@ class FreeGeoClient {
       final String t = q.toLowerCase();
       if (n == t) return 0;
       if (n.startsWith(t)) return 1;
-      final Pattern boundary = RegExp('\\b${RegExp.escape(t)}');
-      if (n.containsMatch(boundary)) return 2;
+      final RegExp boundary = RegExp('\\b${RegExp.escape(t)}');
+      if (boundary.hasMatch(n)) return 2;
       if (n.contains(t)) return 3;
       return 4;
     }
