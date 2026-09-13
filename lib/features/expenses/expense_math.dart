@@ -188,12 +188,12 @@ class ExpenseMath {
           e.splits.any((SplitParticipant p) => p.isSelf);
       final double myShare = e.splits
           .where((SplitParticipant p) => p.isSelf)
-          .fold(0, (double s, SplitParticipant p) => s + p.amount);
+          .fold(0.0, (double s, SplitParticipant p) => s + p.amount);
       if (selfPaid) {
         // You paid the bill — everyone else's share is owed to you.
         othersOwe += e.splits
             .where((SplitParticipant p) => !p.isSelf)
-            .fold(0, (double s, SplitParticipant p) => s + p.amount);
+            .fold(0.0, (double s, SplitParticipant p) => s + p.amount);
       } else {
         // Someone else paid — you owe the rest of the bill (your share).
         youOwe += (e.amount - myShare).clamp(0, e.amount);
