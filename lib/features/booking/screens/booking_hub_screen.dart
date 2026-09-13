@@ -1,7 +1,5 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
@@ -112,7 +110,7 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
                     style: TextStyle(fontSize: 10, color: Colors.grey)),
               ),
             ],
-          ),
+          );
         },
       ),
     );
@@ -153,6 +151,13 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
     );
   }
 
+  String _emojiFor(String categoryName) {
+    for (final BookingCategory c in BookingCategory.values) {
+      if (c.name == categoryName) return c.emoji;
+    }
+    return '🧳';
+  }
+
   Widget _bookingTile(BookingRef b) {
     final String tripName = _c.bookingService.tripName(b.tripId);
     final Color statusColor = switch (b.status) {
@@ -163,11 +168,7 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: Text(
-            BookingCategory.values
-                .where((BookingCategory c) => c.name == b.category)
-                .firstOrNull
-                ?.emoji ?? '🧳',
+        leading: Text(_emojiFor(b.category),
             style: const TextStyle(fontSize: 20)),
         title: Text(
           '${b.provider}'
