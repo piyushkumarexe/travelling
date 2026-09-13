@@ -19,13 +19,18 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/emergency_event.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
+import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/weather.dart';
 
 /// Safety hub: geofence monitoring state, configured safety zones,
 /// nearby emergency services, SOS history and weather safety notes.
 class SafetyScreen extends StatefulWidget {
-  const SafetyScreen({super.key});
+  const SafetyScreen({super.key, this.openSosContact = false});
+
+  /// When true, auto-open the "Add SOS Contact" editor once the profile is
+  /// available (used by Settings → Power-Off Safety Location navigation).
+  final bool openSosContact;
 
   @override
   State<SafetyScreen> createState() => _SafetyScreenState();
@@ -59,6 +64,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
   StreamSubscription<List<SafetyZone>>? _zonesSub;
   StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<List<EmergencyEvent>>? _eventsSub;
+  StreamSubscription<Profile?>? _profileSub;
+  Profile? _profile;
+  bool _contactSaving = false;
+  bool _autoOpenedContact = false;
 
   @override
   void initState() {
@@ -86,6 +95,31 @@ class _SafetyScreenState extends State<SafetyScreen> {
           .watchMine(uid)
           .listen((List<Incident> items) {
         if (mounted) setState(() => _incidents = items);
+      }, onError: (Object _) {});
+      // SOS contact: single source of truth is profiles/{uid}.emergencyContact*.
+      _profileSub = _c.profileRepository
+          .watch(uid)
+          .listen((Profile? p) {
+        if (!mounted) return;
+        setState(() => _profile = p);
+        // If the contact is removed while Power-Off Safety Location is on,
+        // disable it automatically and explain why.
+        final String phone = (p?.emergencyContactPhone ?? '').trim();
+        if (_c.settings.powerOffSafety && phone.isEmpty) {
+          _c.settings.setPowerOffSafety(false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text(
+                    'Power-Off Safety Location was turned off because an SOS '
+                    'contact is required.')),
+          );
+        }
+        if (widget.openSosContact && !_autoOpenedContact) {
+          _autoOpenedContact = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showContactEditor();
+          });
+        }
       }, onError: (Object _) {});
     }
     _zonesSub = _c.zonesRepository
@@ -303,6 +337,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
     _zonesSub?.cancel();
     _incidentsSub?.cancel();
     _eventsSub?.cancel();
+    _profileSub?.cancel();
     _routeQuery.dispose();
     super.dispose();
   }
@@ -311,29 +346,194 @@ class _SafetyScreenState extends State<SafetyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Safety')),
-      body: !_locationDone
-          ? const LoadingView(message: 'Checking your safety context…')
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      body: Column(
+        children: <Widget>[
+          // SOS contact management is always reachable — never a dead end,
+          // even while the rest of the safety context is still loading.
+          _sosContactSection(),
+          Expanded(
+            child: !_locationDone
+                ? const LoadingView(message: 'Checking your safety context…')
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                    children: <Widget>[
+                      _statusCard(),
+                      const SizedBox(height: 12),
+                      _safeRouteSection(),
+                      const SizedBox(height: 12),
+                      _geofenceCard(),
+                      const SectionHeader(title: 'Configured safety zones'),
+                      _zonesSection(),
+                      const SectionHeader(title: 'Nearby emergency services'),
+                      _servicesSection(),
+                      const SectionHeader(title: 'Your SOS events'),
+                      _eventsSection(),
+                      if (_weatherNotes.isNotEmpty) ...<Widget>[
+                        const SectionHeader(title: 'Weather safety notes'),
+                        _weatherSection(),
+                      ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // SOS contact (single source of truth: profiles/{uid}.emergencyContact*)
+  // ---------------------------------------------------------------------
+
+  Widget _sosContactSection() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final String name = (_profile?.emergencyContactName ?? '').trim();
+    final String phone = (_profile?.emergencyContactPhone ?? '').trim();
+    final bool hasContact = name.isNotEmpty || phone.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.contact_emergency, size: 20, color: scheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                'SOS Contact',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!hasContact) ...<Widget>[
+            const Text('No SOS contact added.'),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text('Add SOS Contact'),
+              onPressed: _contactSaving ? null : _showContactEditor,
+            ),
+          ] else ...<Widget>[
+            Text(
+              name.isEmpty ? '(no name)' : name,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            if (phone.isNotEmpty)
+              Text(phone, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 10),
+            Row(
               children: <Widget>[
-                _statusCard(),
-                const SizedBox(height: 12),
-                _safeRouteSection(),
-                const SizedBox(height: 12),
-                _geofenceCard(),
-                const SectionHeader(title: 'Configured safety zones'),
-                _zonesSection(),
-                const SectionHeader(title: 'Nearby emergency services'),
-                _servicesSection(),
-                const SectionHeader(title: 'Your SOS events'),
-                _eventsSection(),
-                if (_weatherNotes.isNotEmpty) ...<Widget>[
-                  const SectionHeader(title: 'Weather safety notes'),
-                  _weatherSection(),
-                ],
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Edit'),
+                  onPressed: _contactSaving ? null : _showContactEditor,
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('Remove'),
+                  style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.danger),
+                  onPressed: _contactSaving ? null : _removeContact,
+                ),
               ],
             ),
+          ],
+        ],
+      ),
     );
+  }
+
+  Future<void> _showContactEditor() async {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Sign in to add an SOS contact.')),
+      );
+      return;
+    }
+    final Profile? p = _profile;
+    final (String, String)? saved = await showDialog<(String, String)>(
+      context: context,
+      builder: (BuildContext ctx) => _ContactEditorDialog(
+        name: p?.emergencyContactName ?? '',
+        phone: p?.emergencyContactPhone ?? '',
+      ),
+    );
+    if (saved == null || !mounted) return;
+    setState(() => _contactSaving = true);
+    try {
+      await _c.profileRepository.setEmergencyContact(
+        uid,
+        name: saved.$1.trim(),
+        phone: saved.$2.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('SOS contact saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save SOS contact: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _contactSaving = false);
+    }
+  }
+
+  Future<void> _removeContact() async {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) return;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Remove SOS contact?'),
+        content: const Text(
+            'Your SOS contact will be removed and Power-Off Safety Location '
+            'will be turned off (it requires a contact).'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _contactSaving = true);
+    try {
+      await _c.profileRepository.clearEmergencyContact(uid);
+      // Auto-disable the safety feature — it requires a contact.
+      await _c.settings.setPowerOffSafety(false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'SOS contact removed. Power-Off Safety Location is now off.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not remove SOS contact: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _contactSaving = false);
+    }
   }
 
   Widget _safeRouteSection() {
@@ -958,6 +1158,91 @@ class _SafetyScreenState extends State<SafetyScreen> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Add/Edit dialog for the single SOS contact (name + phone). Validates the
+/// phone number locally; returns (name, phone) or pops null on cancel.
+class _ContactEditorDialog extends StatefulWidget {
+  const _ContactEditorDialog({required this.name, required this.phone});
+
+  final String name;
+  final String phone;
+
+  @override
+  State<_ContactEditorDialog> createState() => _ContactEditorDialogState();
+}
+
+class _ContactEditorDialogState extends State<_ContactEditorDialog> {
+  late final TextEditingController _name =
+      TextEditingController(text: widget.name);
+  late final TextEditingController _phone =
+      TextEditingController(text: widget.phone);
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  static final RegExp _phoneOk = RegExp(r'^\+?[0-9][0-9\s\-()]{6,18}$');
+
+  void _save() {
+    final String name = _name.text.trim();
+    final String phone = _phone.text.trim();
+    if (phone.isEmpty) {
+      setState(() => _error = 'Enter a phone number.');
+      return;
+    }
+    if (!_phoneOk.hasMatch(phone)) {
+      setState(() => _error = 'Enter a valid phone number (digits only).');
+      return;
+    }
+    Navigator.of(context).pop((name, phone));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('SOS Contact'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Contact name',
+                hintText: 'e.g. Priya (optional)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                hintText: '+91 98765 43210',
+              ),
+            ),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(_error!, style: TextStyle(color: scheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
     );
   }
 }

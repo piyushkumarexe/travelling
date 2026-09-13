@@ -60,7 +60,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _loading = false;
         });
       }
-      if (_c.settings.powerOffSafety) {
+      final String phone = (p?.emergencyContactPhone ?? '').trim();
+      // Contact removed elsewhere → Power-Off Safety Location must turn off.
+      if (_c.settings.powerOffSafety && phone.isEmpty) {
+        _c.settings.setPowerOffSafety(false);
+      } else if (_c.settings.powerOffSafety) {
         unawaited(_refreshPowerOffPayload());
       }
     }, onError: (Object e) {
@@ -228,9 +232,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final Profile? profile = _profile;
     final String phone = (profile?.emergencyContactPhone ?? '').trim();
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Set an SOS contact first.')),
+      final bool? goAdd = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('Add an SOS contact first'),
+          content: const Text(
+              'Power-Off Safety Location shares your latest location with '
+              'your SOS contact. Add one to continue.'),
+          actions: <Widget>[
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Not now')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Add SOS Contact')),
+          ],
+        ),
       );
+      if (goAdd == true && mounted) {
+        await context.push('/safety?addContact=1');
+      }
       return;
     }
     final User? user = _c.authRepository.currentUser;

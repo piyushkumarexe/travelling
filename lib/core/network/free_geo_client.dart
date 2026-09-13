@@ -9,6 +9,7 @@ import '../../data/models/weather.dart';
 import '../app_config.dart';
 import '../utils/geo.dart';
 import 'api_exception.dart';
+import 'nearby_debug.dart';
 import 'osrm_client.dart';
 
 /// Real, free (key-light) data clients used as a fallback when the Tourism
@@ -962,6 +963,8 @@ class FreeGeoClient {
     _lastOverpassAt = DateTime.now();
     _overpassRequestCount++;
     final int reqNo = _overpassRequestCount;
+    NearbyDebug.instance.requestCount = reqNo;
+    NearbyDebug.instance.phase = 'requesting';
 
     const List<String> hosts = <String>[
       'https://overpass-api.de/api/interpreter',
@@ -977,6 +980,7 @@ class FreeGeoClient {
     bool got429 = false;
     for (final String host in ordered) {
       final Stopwatch sw = Stopwatch()..start();
+      NearbyDebug.instance.host = host;
       try {
         final Response<dynamic> resp = await _dio.get<dynamic>(
           host,
@@ -984,55 +988,71 @@ class FreeGeoClient {
         );
         sw.stop();
         responded = true;
+        NearbyDebug.instance.httpStatus = resp.statusCode;
         final Object? data = resp.data;
         if (data is! Map || data['elements'] is! List) {
           // Non-JSON (gateway error page) — try the next host.
           debugPrint('[places] overpass req#$reqNo $host ${resp.statusCode} '
               'unusable-body ${sw.elapsedMilliseconds}ms');
+          NearbyDebug.instance.phase = 'unusable-body';
           continue;
         }
         _overpassHostBias = hosts.indexOf(host);
         _overpassRateLimitedUntil = null;
         final List<dynamic> elements = data['elements'] as List;
+        NearbyDebug.instance.rawCount = elements.length;
+        NearbyDebug.instance.phase = 'ok';
         debugPrint('[places] overpass req#$reqNo $host ${resp.statusCode} '
             '${elements.length} elements ${sw.elapsedMilliseconds}ms');
         return elements;
       } on DioException catch (e) {
         sw.stop();
         final int? code = e.response?.statusCode;
+        NearbyDebug.instance.httpStatus = code;
         if (code == 429) {
           // Rate limited on THIS mirror: try the other one before giving up.
           got429 = true;
           responded = true;
+          NearbyDebug.instance.phase = '429';
           debugPrint('[places] overpass req#$reqNo $host 429 '
               '${sw.elapsedMilliseconds}ms — trying next host');
           continue;
         }
+        NearbyDebug.instance.phase = 'error:${code ?? e.type.name}';
         debugPrint('[places] overpass req#$reqNo $host ${code ?? e.type.name} '
             '${sw.elapsedMilliseconds}ms');
         if (e.response != null) {
           responded = true;
           if ((e.response!.statusCode ?? 0) >= 500) serverError = true;
         }
-      } catch (_) {
+      } catch (e) {
         sw.stop();
+        NearbyDebug.instance.phase = 'exception:${e.runtimeType}';
         // Try the next host.
       }
     }
     if (got429) {
       _overpassRateLimitedUntil =
           DateTime.now().add(const Duration(seconds: 10));
+      NearbyDebug.instance.phase = 'rateLimited';
+      NearbyDebug.instance.error = '429 (rate limited)';
       throw const ApiException(ApiErrorKind.rateLimited,
           'Nearby search is temporarily limited. Try again shortly.');
     }
     if (serverError) {
+      NearbyDebug.instance.phase = 'serverError';
+      NearbyDebug.instance.error = '5xx server error';
       throw const ApiException(ApiErrorKind.server,
           'The nearby data service is unavailable. Please try again shortly.');
     }
     if (responded) {
+      NearbyDebug.instance.phase = 'parserError';
+      NearbyDebug.instance.error = 'unreadable response';
       throw const ApiException(ApiErrorKind.parser,
           'The nearby data service returned an unreadable response.');
     }
+    NearbyDebug.instance.phase = 'networkError';
+    NearbyDebug.instance.error = 'unreachable';
     throw const ApiException(
         ApiErrorKind.network, 'Overpass is unreachable right now.');
   }
@@ -1145,6 +1165,11 @@ class FreeGeoClient {
     List<String>? categories,
   }) async {
     final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
+    NearbyDebug.instance.reset(
+      phase: 'building-query',
+      location:
+          '${near.latitude.toStringAsFixed(5)},${near.longitude.toStringAsFixed(5)}',
+    );
     // NOTE: the output limit is deliberately high and quadtile-ordered.
     // Overpass fills `out` in statement order, so a small cap (the old
     // `out center 400`) silently truncated the LATER categories (hotel/park/
@@ -1213,6 +1238,7 @@ class FreeGeoClient {
     final List<Place> out = dedup.values.toList()
       ..sort((Place a, Place b) =>
           (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
+    NearbyDebug.instance.parsedCount = out.length;
     debugPrint('[places] nearbyAround radius=${radius.round()}m '
         'raw=${elements.length} final=${out.length}');
     return out;

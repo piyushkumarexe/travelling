@@ -101,7 +101,10 @@ class AppRouter {
           GoRoute(
             path: '/safety',
             builder: (BuildContext context, GoRouterState state) =>
-                const SafetyScreen(),
+                SafetyScreen(
+              openSosContact:
+                  state.uri.queryParameters['addContact'] == '1',
+            ),
           ),
           GoRoute(
             path: '/profile',

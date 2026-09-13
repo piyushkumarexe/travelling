@@ -998,14 +998,16 @@ class _MapScreenState extends State<MapScreen> {
               ),
               CircleLayer(circles: _circles),
               PolylineLayer(polylines: _polylines),
+              // Legally-required provider attribution only. SimpleAttributionWidget
+              // renders exactly the text below — no flutter_map branding is added.
               SimpleAttributionWidget(
                 source: Text(
                   useMaptiler
-                      ? 'MapTiler © OpenStreetMap contributors'
-                      : 'OpenStreetMap contributors',
-                  style: const TextStyle(fontSize: 11),
+                      ? '© MapTiler  © OpenStreetMap contributors'
+                      : '© OpenStreetMap contributors',
+                  style: const TextStyle(fontSize: 10, height: 1.2),
                 ),
-                backgroundColor: scheme.surface.withValues(alpha: 0.85),
+                backgroundColor: scheme.surface.withValues(alpha: 0.75),
               ),
             ],
           ),
