@@ -189,6 +189,24 @@ class LiveLocationShareService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called right after the user grants the SMS permission from the banner:
+  /// re-checks the permission and pushes an SMS update immediately instead
+  /// of waiting for the next 5-minute tick.
+  Future<void> enableSmsNow() async {
+    if (!_active) return;
+    _smsEnabled = await smsService.hasSendSmsPermission();
+    notifyListeners();
+    if (_smsEnabled) await _sendSmsUpdate();
+  }
+
+  /// One-tap manual SMS with the current location (works even when the
+  /// continuous share is off).
+  Future<bool> sendManualSmsNow() async {
+    if (!hasContact) return false;
+    if (!await smsService.hasSendSmsPermission()) return false;
+    return _sendSmsUpdate();
+  }
+
   Future<Position?> _fix() async {
     try {
       return await locationService.currentPosition();

@@ -5,9 +5,9 @@ import '../theme/app_theme.dart';
 import 'live_share_prompt.dart';
 
 /// Persistent banner shown while live location sharing is ACTIVE:
-/// who it is shared with, how many SMS/cloud updates went out, and a Stop
-/// button. Used on the Map screen and the Live Trip screen so the traveler
-/// always sees (and can stop) an ongoing share.
+/// who it is shared with, whether SMS is actually going out, and Stop /
+/// Enable-SMS actions. Used on the Map screen and the Live Trip screen so
+/// the traveler always sees (and can stop) an ongoing share.
 class LiveShareBanner extends StatelessWidget {
   const LiveShareBanner({super.key, this.margin = const EdgeInsets.all(12)});
 
@@ -27,6 +27,7 @@ class LiveShareBanner extends StatelessWidget {
           builder: (BuildContext context, _) {
             if (!c.liveLocationShare.active) return const SizedBox.shrink();
             final int sent = c.liveLocationShare.smsSent;
+            final bool smsOn = c.liveLocationShare.smsEnabled;
             final String who = c.liveLocationShare.sosContactName.isNotEmpty
                 ? c.liveLocationShare.sosContactName
                 : 'your SOS contact';
@@ -52,8 +53,7 @@ class LiveShareBanner extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Sharing live location with $who'
-                        '${sent > 0 ? ' · $sent location SMS sent' : ''}',
+                        _statusText(who: who, sent: sent, smsOn: smsOn),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -61,6 +61,20 @@ class LiveShareBanner extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (!smsOn)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        onPressed: () async {
+                          final bool ok =
+                              await c.smsService.ensureSendSmsPermission();
+                          if (ok) await c.liveLocationShare.enableSmsNow();
+                        },
+                        child: const Text('Enable SMS',
+                            style: TextStyle(fontWeight: FontWeight.w800)),
+                      ),
                     TextButton(
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white,
@@ -99,6 +113,7 @@ class LiveShareBannerInline extends StatelessWidget {
       builder: (BuildContext context, _) {
         if (!c.liveLocationShare.active) return const SizedBox.shrink();
         final int sent = c.liveLocationShare.smsSent;
+        final bool smsOn = c.liveLocationShare.smsEnabled;
         final String who = c.liveLocationShare.sosContactName.isNotEmpty
             ? c.liveLocationShare.sosContactName
             : 'your SOS contact';
@@ -118,8 +133,7 @@ class LiveShareBannerInline extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Sharing live location with $who'
-                  '${sent > 0 ? ' · $sent location SMS sent' : ''}',
+                  _statusText(who: who, sent: sent, smsOn: smsOn),
                   style: const TextStyle(
                     color: AppTheme.danger,
                     fontSize: 13,
@@ -127,6 +141,15 @@ class LiveShareBannerInline extends StatelessWidget {
                   ),
                 ),
               ),
+              if (!smsOn)
+                TextButton(
+                  onPressed: () async {
+                    final bool ok =
+                        await c.smsService.ensureSendSmsPermission();
+                    if (ok) await c.liveLocationShare.enableSmsNow();
+                  },
+                  child: const Text('Enable SMS'),
+                ),
               TextButton(
                 onPressed: () async {
                   await c.liveLocationShare.stop();
@@ -146,11 +169,18 @@ class LiveShareBannerInline extends StatelessWidget {
 }
 
 /// Shows honest feedback for a [LiveShareStartResult] as a snackbar.
-void showLiveShareFeedback(BuildContext context, LiveShareStartResult result) {
+void showLiveShareFeedback(
+  BuildContext context,
+  LiveShareStartResult result, {
+  bool smsEnabled = true,
+}) {
   if (result == LiveShareStartResult.declined) return;
   final String message = switch (result) {
-    LiveShareStartResult.started => 'Live location sharing is ON — your SOS '
-        'contact will receive your location by SMS.',
+    LiveShareStartResult.started => smsEnabled
+        ? 'Live location sharing is ON — your SOS contact will receive your '
+            'location by SMS (in the Messages app, not WhatsApp).'
+        : 'Live location sharing is ON, but the SMS permission is off — tap '
+            '"Enable SMS" on the red banner so your contact gets messages.',
     LiveShareStartResult.noContact => 'Add an SOS contact first to share '
         'your live location.',
     LiveShareStartResult.noLocation => 'Could not get your GPS location — '
@@ -161,6 +191,16 @@ void showLiveShareFeedback(BuildContext context, LiveShareStartResult result) {
   };
   if (message.isEmpty || !context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message)),
+    SnackBar(
+      content: Text(message),
+      duration: smsEnabled ? const Duration(seconds: 4) : const Duration(seconds: 6),
+    ),
   );
+}
+
+/// One-line status for the share banners, honest about the SMS channel.
+String _statusText({required String who, required int sent, required bool smsOn}) {
+  if (sent > 0) return 'Sharing live location with $who · $sent SMS sent';
+  if (smsOn) return 'Sharing live location with $who · first SMS going out…';
+  return 'Sharing live location with $who · SMS permission off';
 }

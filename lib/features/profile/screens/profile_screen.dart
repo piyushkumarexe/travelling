@@ -120,8 +120,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _editProfile() {
-    final Profile? p = _profile;
-    if (p == null) return;
+    // Never block editing on a missing Firestore doc: fall back to a local
+    // profile seeded from the signed-in account (saving creates the doc).
+    final User? u = _c.authRepository.currentUser;
+    final Profile p = _profile ??
+        Profile(
+          uid: u?.uid ?? '',
+          name: u?.displayName ?? '',
+        );
+    if (p.uid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Sign in to edit your profile.')));
+      return;
+    }
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -147,6 +158,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               budget: next.budget,
               travelStyle: next.travelStyle,
             );
+            // Mirror the display name into the auth profile (shows in SOS
+            // messages and SMS alerts). Best-effort.
+            try {
+              await _c.authRepository.currentUser
+                  ?.updateDisplayName(next.name);
+            } catch (_) {}
           } catch (e) {
             if (ctx.mounted) {
               ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
@@ -466,14 +483,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     TextButton.icon(
                       icon: const Icon(Icons.edit, size: 16),
                       label: const Text('Edit'),
-                      onPressed: _profile == null ? null : _editProfile,
+                      onPressed: _editProfile,
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 if (p == null)
                   const Text(
-                    'No profile yet — sign in completed setup.',
+                    'No saved profile yet — tap Edit to create it now '
+                    '(name, language, interests, SOS contact).',
                     style: TextStyle(),
                   )
                 else ...<Widget>[

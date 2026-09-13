@@ -28,9 +28,13 @@ class ProfileRepository {
     required String budget,
     required String travelStyle,
   }) {
-    return _db.collection('profiles').doc(uid).update(<String, dynamic>{
+    // set(merge) instead of update(): the profiles/{uid} doc may not exist
+    // yet (rules gate creation, first-run failures, ...) — saving the
+    // profile must CREATE it, not throw "no document to update".
+    return _db.collection('profiles').doc(uid).set(<String, dynamic>{
+      'uid': uid,
       'name': name,
-      'photoUrl': photoUrl,
+      if (photoUrl != null) 'photoUrl': photoUrl,
       'language': language,
       'emergencyContactName': emergencyContactName,
       'emergencyContactPhone': emergencyContactPhone,
@@ -38,7 +42,7 @@ class ProfileRepository {
       'budget': budget,
       'travelStyle': travelStyle,
       'updatedAt': Timestamp.now(),
-    });
+    }, SetOptions(merge: true));
   }
 
   /// Persists only the preferred vehicle (bike / car / auto) — used by the

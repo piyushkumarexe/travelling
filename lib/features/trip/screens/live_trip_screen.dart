@@ -12,6 +12,7 @@ import '../../../core/services/safety_engine.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
+import '../../../core/utils/sos_messages.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/live_share_banner.dart';
 import '../../../core/widgets/live_share_prompt.dart';
@@ -135,7 +136,62 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
       destinationName: _destinationName,
     );
     if (!mounted) return;
-    showLiveShareFeedback(context, share);
+    showLiveShareFeedback(context, share,
+        smsEnabled: _c.liveLocationShare.smsEnabled);
+  }
+
+  /// One-tap "current location" SMS to the SOS contact (works even when the
+  /// continuous share is off).
+  Future<void> _sendManualSms() async {
+    final Position? pos =
+        _position ?? await _c.locationService.currentPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not get your location. Enable GPS and retry.')));
+      return;
+    }
+    final bool granted = await _c.smsService.ensureSendSmsPermission();
+    final String text = SosMessages.buildLiveShareText(
+      travelerName: _c.authRepository.currentUser?.displayName ?? 'Traveler',
+      position: pos,
+      destinationName: _destinationName,
+    );
+    final bool ok = granted
+        ? await _c.smsService.sendSms(_c.liveLocationShare.sosContactPhone, text)
+        : await _c.smsService.openSmsComposer(
+            _c.liveLocationShare.sosContactPhone, text);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Location SMS sent to your SOS contact.'
+            : 'SMS could not be sent. Grant the SMS permission and retry.')));
+  }
+
+  /// One-tap WhatsApp update (WhatsApp itself must send it — this opens the
+  /// chat with the location message pre-filled and you press send).
+  Future<void> _sendManualWhatsApp() async {
+    final Position? pos =
+        _position ?? await _c.locationService.currentPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not get your location. Enable GPS and retry.')));
+      return;
+    }
+    final bool ok = await _c.smsService.openWhatsApp(
+      _c.liveLocationShare.sosContactPhone,
+      SosMessages.buildLiveShareText(
+        travelerName: _c.authRepository.currentUser?.displayName ?? 'Traveler',
+        position: pos,
+        destinationName: _destinationName,
+      ),
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('WhatsApp is not available on this device.')));
+    }
   }
 
   bool get _hasExplicitDestination =>
@@ -486,6 +542,31 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                   onPressed: () => unawaited(_maybeAskLiveShare(force: true)),
                   icon: const Icon(Icons.share_location, size: 16),
                   label: const Text('Share location'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Manual one-tap updates to the SOS contact while navigating.
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _c.liveLocationShare.hasContact
+                      ? () => unawaited(_sendManualSms())
+                      : null,
+                  icon: const Icon(Icons.sms, size: 16),
+                  label: const Text('Send SMS now'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _c.liveLocationShare.hasContact
+                      ? () => unawaited(_sendManualWhatsApp())
+                      : null,
+                  icon: const Icon(Icons.chat, size: 16),
+                  label: const Text('WhatsApp'),
                 ),
               ),
             ],

@@ -22,6 +22,7 @@ import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/weather.dart';
+import '../../../data/repositories/places_repository.dart' show placesErrorMessage;
 
 /// Safety hub: geofence monitoring state, configured safety zones,
 /// nearby emergency services, SOS history and weather safety notes.
@@ -198,8 +199,14 @@ class _SafetyScreenState extends State<SafetyScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // Friendly, actionable text — never a raw Exception/ApiException dump.
+      String msg = placesErrorMessage(e);
+      if (msg.contains('unreachable') || msg.contains('temporarily')) {
+        msg = 'Could not reach the search service. Check your internet '
+            'connection and try again.';
+      }
       setState(() {
-        _routeError = e.toString();
+        _routeError = msg;
         _routeLoading = false;
       });
     }

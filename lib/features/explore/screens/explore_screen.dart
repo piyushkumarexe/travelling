@@ -366,17 +366,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
       final NearbyResult dataset = await _c.placesRepository.nearbyAround(here);
       if (!mounted) return;
-      const Set<String> tourist = <String>{
-        'attraction', 'museum', 'park', 'hotel',
-        'food', 'restaurant', 'cafe', 'fast_food',
-      };
+      // Show EVERYTHING that is actually mapped nearby (essentials —
+      // hospitals, ATMs, pharmacies — included), nearest first. The old
+      // tourist-only filter threw away 101 real places and left the user
+      // staring at an empty screen.
       final List<Place> sorted = dataset.places
-          .where((Place p) =>
-              tourist.contains(p.category) ||
-              p.types.any(tourist.contains))
           .toList()
-        ..sort((Place a, Place b) => (a.distanceMeters ?? double.infinity)
-            .compareTo(b.distanceMeters ?? double.infinity));
+        ..sort((Place a, Place b) {
+          // Gentle ranking: tourist-relevant places of a similar distance
+          // first, then strictly nearest-first.
+          final int ra = _nearbyRank(a);
+          final int rb = _nearbyRank(b);
+          if (ra != rb) return ra - rb;
+          return (a.distanceMeters ?? double.infinity)
+              .compareTo(b.distanceMeters ?? double.infinity);
+        });
       NearbyDebug.instance.finalCount = sorted.length;
       setState(() {
         _results = sorted;
@@ -418,6 +422,41 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  /// True when the free-text query itself maps to a category keyword
+  /// ("hotels", "hospitals near me", ...) — those DO hit the radius-bound
+  /// Overpass path, so widening rings help.
+  bool _queryHasCategoryFilter(String q) {
+    final String lower = q.toLowerCase();
+    const List<String> keywords = <String>[
+      'hotel', 'restaurant', 'food', 'cafe', 'park', 'museum',
+      'attraction', 'hospital', 'police', 'pharmacy', 'atm', 'fuel',
+      'petrol', 'bank', 'shopping', 'mall',
+    ];
+    return keywords.any(lower.contains);
+  }
+
+  /// Ranking bucket for the default nearby list: tourist-relevant categories
+  /// first, then everything else — distance breaks ties inside a bucket.
+  static int _nearbyRank(Place p) {
+    bool touristy(Place p) {
+      final String c = p.category ?? '';
+      return c == 'attraction' ||
+          c == 'museum' ||
+          c == 'park' ||
+          c == 'hotel' ||
+          c == 'food' ||
+          c == 'restaurant' ||
+          c == 'cafe' ||
+          c == 'fast_food' ||
+          p.types.any(const <String>{
+            'attraction', 'museum', 'park', 'hotel',
+            'food', 'restaurant', 'cafe', 'fast_food',
+          }.contains);
+    }
+
+    return touristy(p) ? 0 : 1;
+  }
+
   Future<void> _runSearch({bool preserveOnEmpty = false}) async {
     final String q = _effectiveQuery();
     if (_loading) return;
@@ -431,26 +470,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final LatLng? here = _position == null
           ? null
           : LatLng(_position!.latitude, _position!.longitude);
-      // NO fixed radius limit: the search starts at 25 km and auto-widens
-      // (25 → 50 → 100 → 250 km) until real places are found, so a result is
-      // never hidden just because it sits outside one ring. Text search is
-      // additionally never radius-filtered by the providers.
-      final double startRadius = _scope == 'anywhere' ? 50000.0 : 25000.0;
+      // NO fixed radius limit for category searches: they start at 25 km and
+      // auto-widen (25 -> 50 -> 100 -> 250 km) until real places are found.
+      // Pure text search is NOT radius-filtered by the providers (MapTiler /
+      // Photon / Nominatim rank by relevance), so widening there would only
+      // re-send the same request and waste a minute — a single call is used.
+      final List<String>? types = _categoryTypes(_activeCategory);
+      final bool hasCategoryFilters =
+          types != null || _queryHasCategoryFilter(q);
       List<Place> places = await _c.placesRepository.search(
         q,
         location: here,
-        radiusMeters: startRadius,
-        types: _categoryTypes(_activeCategory),
+        radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
+        types: types,
       );
-      for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
-        if (places.isNotEmpty || !mounted) break;
-        if (r <= startRadius) continue;
-        places = await _c.placesRepository.search(
-          q,
-          location: here,
-          radiusMeters: r,
-          types: _categoryTypes(_activeCategory),
-        );
+      if (hasCategoryFilters) {
+        for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
+          if (places.isNotEmpty || !mounted) break;
+          places = await _c.placesRepository.search(
+            q,
+            location: here,
+            radiusMeters: r,
+            types: types,
+          );
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -678,19 +721,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
         );
       }
       if (_scope == 'nearby') {
+        final bool searching = _query.trim().isNotEmpty ||
+            (_activeCategory != null && _searchedOnce);
         return Column(
           children: <Widget>[
             Expanded(
-              child: EmptyState(
-                icon: Icons.search_off,
-                title: 'No places found nearby',
-                message:
-                    'We searched nearby and out to 250 km of your location — '
-                    'nothing was mapped there yet. Try "Anywhere" to search '
-                    'the whole world, or move to a larger town.',
-                actionLabel: 'Search anywhere',
-                onAction: () => _setScope('anywhere'),
-              ),
+              child: searching
+                  ? EmptyState(
+                      icon: Icons.search_off,
+                      title:
+                          'No matches for "${_query.trim().isNotEmpty ? _query.trim() : (kExploreCategoryLabels[_activeCategory] ?? _activeCategory!)}"',
+                      message:
+                          'We searched nearby, out to 250 km and across '
+                          'multiple providers — nothing matched. Try a '
+                          'different spelling, a better-known landmark, or '
+                          '"Anywhere" for a worldwide search.',
+                      actionLabel: 'Search anywhere',
+                      onAction: () => _setScope('anywhere'),
+                    )
+                  : EmptyState(
+                      icon: Icons.search_off,
+                      title: 'No places found nearby',
+                      message:
+                          'We searched nearby and out to 250 km of your '
+                          'location — nothing was mapped there yet. Try '
+                          '"Anywhere" to search the whole world, or move to '
+                          'a larger town.',
+                      actionLabel: 'Search anywhere',
+                      onAction: () => _setScope('anywhere'),
+                    ),
             ),
             _nearbyDebugPanel(),
           ],

@@ -27,6 +27,9 @@ class MainActivity : FlutterActivity() {
         const val REQ_SEND_SMS = 4711
     }
 
+    /** Pending MethodChannel result for the in-flight permission request. */
+    private var pendingSmsPermissionResult: MethodChannel.Result? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -36,16 +39,18 @@ class MainActivity : FlutterActivity() {
                     "requestSendSms" -> {
                         if (hasSendSms()) {
                             result.success(true)
+                        } else if (pendingSmsPermissionResult != null) {
+                            result.error("busy", "A permission request is already showing", null)
                         } else {
+                            // Hold the channel result until the user answers
+                            // the system dialog, so Dart gets the REAL grant
+                            // decision instead of a premature false.
+                            pendingSmsPermissionResult = result
                             ActivityCompat.requestPermissions(
                                 this,
                                 arrayOf(Manifest.permission.SEND_SMS),
                                 REQ_SEND_SMS,
                             )
-                            // The permission dialog is asynchronous; the Dart
-                            // side re-checks with "hasSendSms" after the user
-                            // answers. Report that the request was shown.
-                            result.success(false)
                         }
                     }
                     "sendSms" -> {
@@ -62,6 +67,26 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_SEND_SMS) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            pendingSmsPermissionResult?.let { r ->
+                try {
+                    r.success(granted)
+                } catch (_: Exception) {
+                    // Engine detached before the answer arrived — nothing to do.
+                }
+            }
+            pendingSmsPermissionResult = null
+        }
     }
 
     private fun hasSendSms(): Boolean =

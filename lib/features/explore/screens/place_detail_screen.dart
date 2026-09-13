@@ -391,7 +391,8 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       final LiveShareStartResult share =
           await showLiveSharePrompt(context, destinationName: p.name);
       if (!mounted) return;
-      showLiveShareFeedback(context, share);
+      showLiveShareFeedback(context, share,
+          smsEnabled: _c.liveLocationShare.smsEnabled);
       unawaited(context.push(
         '/trip/live?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
       ));

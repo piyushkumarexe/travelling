@@ -237,8 +237,8 @@ class FreeGeoClient {
     }
 
     // Free-text search: run every provider IN PARALLEL and MERGE. A
-    // sparse/failed Overpass response never hides what MapTiler/Nominatim
-    // found, and vice-versa.
+    // sparse/failed Overpass response never hides what MapTiler/Photon/
+    // Nominatim found, and vice-versa.
     final bool attraction = _isAttractionQuery(q, types);
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
@@ -250,9 +250,10 @@ class FreeGeoClient {
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
       if (AppConfig.mapTilerConfigured)
-        _guard('maptiler', () => _maptilerSearch(q, near, limit: 40))
+        _guard('maptiler', () => _maptilerSearch(q, near))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
+      _guard('photon', () => _photonSearch(q, near)),
       _guard('nominatim', () => _nominatimSearch(q, near)),
     ]);
 
@@ -296,7 +297,8 @@ class FreeGeoClient {
             'Unable to load nearby places. Check your internet connection.');
       }
       throw const ApiException(ApiErrorKind.server,
-          'Search service temporarily unavailable. Please try again.');
+          'Search is temporarily unreachable. Check your internet '
+          'connection and try again.');
     }
     return const <Place>[]; // Providers responded, genuinely zero results.
   }
@@ -373,9 +375,11 @@ class FreeGeoClient {
         // Pull a wider candidate set, then re-rank by distance so the
         // CLOSEST match to the user is surfaced first. MapTiler's `proximity`
         // only biases ranking — a local match ranked low can still be lost,
-        // so we fetch more and sort locally by real distance.
+        // so we fetch more and sort locally by real distance. The API caps
+        // `limit` at 10, so the extra candidates come from Photon/Nominatim
+        // in the full search rather than a bigger MapTiler request here.
         final _ProviderResult r = await _maptilerSearch(q, near,
-            limit: near != null ? (limit * 4).clamp(8, 40).toInt() : limit);
+            limit: near != null ? limit.clamp(8, 10).toInt() : limit);
         if (r.places.isNotEmpty) {
           return _rankByDistance(r.places, near).take(limit).toList();
         }
@@ -807,11 +811,14 @@ class FreeGeoClient {
     }
   }
 
+  /// MapTiler geocoding. NOTE: the API only accepts `limit` values 1–10 —
+  /// anything higher returns 400 and the whole search used to "fail"
+  /// silently (tiles kept working, search never returned anything).
   Future<_ProviderResult> _maptilerSearch(String q, LatLng? near,
-      {int limit = 25}) async {
+      {int limit = 10}) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'key': _mtKey,
-      'limit': limit,
+      'limit': limit.clamp(1, 10).toInt(),
     };
     if (near != null) qp['proximity'] = '${near.longitude},${near.latitude}';
     final Response<dynamic> resp = await _dio.get<dynamic>(
@@ -829,6 +836,64 @@ class FreeGeoClient {
     return _ProviderResult(
       provider: 'maptiler',
       places: _parseGeocoding(data),
+      responded: true,
+      error: null,
+      raw: feats.length,
+    );
+  }
+
+  /// Photon (photon.komoot.io) — free, keyless OpenStreetMap geocoder.
+  /// Excellent at partial/locality queries like "transport nagar" and an
+  /// independent third provider so text search never depends on a single
+  /// service being reachable.
+  Future<_ProviderResult> _photonSearch(String q, LatLng? near) async {
+    final Map<String, dynamic> qp = <String, dynamic>{
+      'q': q,
+      'limit': 15,
+      'lang': 'en',
+    };
+    if (near != null) {
+      qp['lat'] = near.latitude;
+      qp['lon'] = near.longitude;
+    }
+    final Response<dynamic> resp = await _dio
+        .get<dynamic>('https://photon.komoot.io/api/', queryParameters: qp);
+    final Object? data = resp.data;
+    final List<dynamic> feats = _features(data);
+    final List<Place> out = <Place>[];
+    for (final dynamic f in feats) {
+      if (f is! Map) continue;
+      final Map<dynamic, dynamic> geo =
+          (f['geometry'] as Map?) ?? const <dynamic, dynamic>{};
+      final List<dynamic>? coords = geo['coordinates'] as List<dynamic>?;
+      if (coords == null || coords.length < 2) continue;
+      final double? lon = (coords[0] as num?)?.toDouble();
+      final double? lat = (coords[1] as num?)?.toDouble();
+      if (lat == null || lon == null) continue;
+      final Map<dynamic, dynamic> props =
+          (f['properties'] as Map?) ?? const <dynamic, dynamic>{};
+      final String name = ((props['name'] as String?) ?? '').trim();
+      if (name.isEmpty) continue;
+      final String type = (props['osm_value'] as String?) ?? '';
+      final String city = ((props['city'] as String?) ??
+              (props['county'] as String?) ??
+              (props['state'] as String?) ??
+              '')
+          .trim();
+      out.add(Place(
+        placeId: 'ph-${f['type'] ?? 'p'}-$lat,$lon',
+        name: name,
+        lat: lat,
+        lng: lon,
+        address: city.isEmpty ? null : city,
+        primaryType: type.isEmpty ? 'poi' : type,
+        types: const <String>['point_of_interest'],
+        provider: 'photon',
+      ));
+    }
+    return _ProviderResult(
+      provider: 'photon',
+      places: out,
       responded: true,
       error: null,
       raw: feats.length,
@@ -1036,11 +1101,12 @@ class FreeGeoClient {
         final Response<dynamic> resp = await _dio.get<dynamic>(
           host,
           queryParameters: <String, dynamic>{'data': query},
-          // Overpass mirrors often take 15-20 s on big queries; the shared
-          // client timeout is too tight for them — allow 25 s just here.
+          // Big grouped queries can genuinely take 15-20 s on busy mirrors —
+          // allow 18 s so slow-but-working mirrors are not cut off, while
+          // dead ones still fail fast enough to try the next mirror.
           options: Options(
-            receiveTimeout: const Duration(seconds: 25),
-            sendTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 18),
+            sendTimeout: const Duration(seconds: 12),
           ),
         );
         sw.stop();

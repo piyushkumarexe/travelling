@@ -373,25 +373,29 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _searchLoading = true;
       _searchError = null;
+      _resultsVisible = true; // show the sheet with a spinner while searching
     });
     try {
       final gm.LatLng? target = _cameraTarget();
-      // No fixed radius cap: start at 25 km and auto-widen until something
-      // real is found (25 → 50 → 100 → 250 km), so a search never dead-ends
-      // just because the nearest match is outside one ring.
+      // Category keywords hit the radius-bound Overpass path: start at 25 km
+      // and auto-widen (25 -> 50 -> 100 -> 250 km) so they never dead-end.
+      // Pure text search is NOT radius-filtered by the providers — widening
+      // would only re-send the same request, so it runs once.
       final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
       List<Place> places = await _c.placesRepository.search(
         q,
         location: loc,
         radiusMeters: 25000,
       );
-      for (final double r in const <double>[50000, 100000, 250000]) {
-        if (places.isNotEmpty) break;
-        places = await _c.placesRepository.search(
-          q,
-          location: loc,
-          radiusMeters: r,
-        );
+      if (_isCategoryQuery(q)) {
+        for (final double r in const <double>[50000, 100000, 250000]) {
+          if (places.isNotEmpty) break;
+          places = await _c.placesRepository.search(
+            q,
+            location: loc,
+            radiusMeters: r,
+          );
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -424,11 +428,13 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _runSearchWithTypes(String q, List<String>? types) async {
-    setState(() => _searchLoading = true);
+    setState(() {
+      _searchLoading = true;
+      _resultsVisible = true;
+    });
     try {
       final gm.LatLng? target = _cameraTarget();
-      // Auto-widen the same way as text search — category chips should also
-      // find results beyond 25 km instead of showing an empty state.
+      // Category searches are radius-bound: auto-widen 25 -> 250 km.
       final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
       List<Place> places = await _c.placesRepository.search(
         q,
@@ -458,6 +464,19 @@ class _MapScreenState extends State<MapScreen> {
         _searchLoading = false;
       });
     }
+  }
+
+  /// True when the free-text query maps to a category keyword ("hotels",
+  /// "hospitals", ...) — those use the radius-bound Overpass path where the
+  /// widening rings actually change the request.
+  bool _isCategoryQuery(String q) {
+    final String lower = q.toLowerCase();
+    const List<String> keywords = <String>[
+      'hotel', 'restaurant', 'food', 'cafe', 'park', 'museum',
+      'attraction', 'hospital', 'police', 'pharmacy', 'atm', 'fuel',
+      'petrol', 'bank', 'shopping', 'mall',
+    ];
+    return keywords.any(lower.contains);
   }
 
   gm.LatLng? _cameraTarget() {
@@ -866,7 +885,8 @@ class _MapScreenState extends State<MapScreen> {
     final LiveShareStartResult share =
         await showLiveSharePrompt(context, destinationName: p.name);
     if (!mounted) return;
-    showLiveShareFeedback(context, share);
+    showLiveShareFeedback(context, share,
+        smsEnabled: _c.liveLocationShare.smsEnabled);
     unawaited(context.push(
       '/trip/live?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
     ));
@@ -1616,7 +1636,21 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
-          if (_searchError != null)
+          if (_searchLoading)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Searching…'),
+                ],
+              ),
+            )
+          else if (_searchError != null)
             Padding(
               padding: const EdgeInsets.all(14),
               child: Text(_searchError!,

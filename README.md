@@ -358,6 +358,11 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   the event stays `active`), an ongoing notification, and a red on-map
   banner with Stop. It is deliberately in-process — closing the app stops
   the share; there is no hidden background tracking.
+- SMS is delivered by the **Messages/SMS app** (not WhatsApp — WhatsApp has
+  no keyless programmatic send). The WhatsApp buttons open a chat with the
+  location message pre-filled; you press send. If the red share banner shows
+  "SMS permission off", tap **Enable SMS** — the first message goes out
+  immediately after granting.
 
 ## Honest limitations
 
