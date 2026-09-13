@@ -43,6 +43,16 @@ service firebase.storage {
       allow delete: if isSelf(uid) || isAdmin();
     }
 
+    // Receipt photos: receipts/{uid}/{expenseId}.jpg — owner-only,
+    // image-only, small (5 MB cap). Firestore stores just the download URL.
+    match /receipts/{uid}/{fileName} {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid)
+        && isImage()
+        && request.resource.size <= 5242880; // 5 MB
+      allow delete: if isSelf(uid);
+    }
+
     // Everything else is denied by default.
     match /{allPaths=**} {
       allow read, write: if false;

@@ -323,6 +323,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: <Widget>[
                   _autopilotCard(),
                   const SizedBox(height: 12),
+                  _expenseGuardCard(),
+                  const SizedBox(height: 12),
                   _weatherCard(),
                   const SizedBox(height: 12),
                   _safetyCard(),
@@ -403,6 +405,48 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 💰 Travel Expense Guard — record, organize and understand trip
+  /// expenses. Amount + category is all it takes to save one.
+  Widget _expenseGuardCard() {
+    return AppCard(
+      onTap: () => context.push('/expenses'),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppTheme.success.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+                child: Text('💰', style: TextStyle(fontSize: 22))),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('Travel Expense Guard',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text('Track every rupee of your trip.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right),
+        ],
       ),
     );
   }

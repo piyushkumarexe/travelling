@@ -17,6 +17,7 @@ import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/weather_repository.dart';
 import '../../data/repositories/zones_repository.dart';
 import '../../features/autopilot/autopilot_service.dart';
+import '../../features/expenses/expense_repository.dart';
 import '../app_config.dart';
 import '../network/api_client.dart';
 import '../services/eco_tracker.dart';
@@ -105,6 +106,13 @@ class AppContainer {
   /// The trip currently being navigated — survives tab switches so the
   /// shell can offer a one-tap "Resume" from anywhere.
   late final ActiveTripState activeTrip = ActiveTripState();
+
+  /// 💰 Travel Expense Guard — offline-first expense store (Firestore
+  /// users/{uid}/expenses + receipts in Storage, reusing trip store).
+  late final ExpenseRepository expenseRepository = ExpenseRepository(
+    tripStore: tripPlanStore,
+    storage: storageService,
+  );
 
   /// 🧭 Travel Autopilot — real-data "what next?" engine (reuses the
   /// nearby dataset, OSRM and this container's location service).

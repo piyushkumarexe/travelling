@@ -394,6 +394,49 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## Travel Expense Guard (💰)
+
+Home card "Travel Expense Guard — Track every rupee of your trip."
+(route `/expenses`).
+
+- **Fast manual entry**: amount + category is enough; merchant, date/time,
+  currency (INR/USD/EUR/GBP/AED/…), linked trip, payment method, notes,
+  location (attached automatically ONLY if location permission was already
+  granted) are optional. No OCR engine exists in the project, so receipts
+  are stored as photos and the amount stays exactly what the user types —
+  no pretend-scanning.
+- **Database**: Firestore `users/{uid}/expenses/{id}` (owner-only rules,
+  `userId` field must equal the authenticated UID, amount/category/currency
+  validated). Receipts are compressed at pick time (max 1600 px, q80) and
+  uploaded to Storage `receipts/{uid}/{expenseId}.jpg` — Firestore keeps
+  only the download URL, never the binary. Delete removes the record and
+  best-effort deletes the receipt file.
+- **Offline-first**: every save/update/delete hits the local cache + an
+  idempotent op queue first (stable client-generated ids; replayed in
+  order). UI states are honest: "saved locally" / "Syncing…" / "Synced".
+  Nothing is ever reported as synced when the write failed; "Sync now"
+  retries.
+- **Dashboard**: local-cache-first load, then live Firestore refresh via a
+  single bounded listener (recent 200). Totals are shown PER CURRENCY —
+  never mixed (no conversion service exists, so no rates are invented).
+  Today's spend, category breakdown bars, deterministic insights ("You
+  spent ₹1,240 today", "Food is your highest expense category").
+- **Budgets**: optional daily budget stored in
+  `users/{uid}/expenseData/budget`; remaining + % used are computed from
+  real expenses, with 80% (warning) and 100%+ (over) states shown in-app.
+- **History**: search, filters (trip, category, date range, payment
+  method) and 4-way sort; details screen with edit/delete and split
+  settlements.
+- **Splits**: an expense can be shared (equal or custom amounts) saved
+  INSIDE the expense document; the split must sum to the amount (±1 paise)
+  before saving. "You paid / others owe you / you owe" comes only from
+  saved split data — no payment collection.
+- Deploy the rules after pulling: `bash scripts/deploy-rules.sh` (adds the
+  `users/{uid}/expenses`, `users/{uid}/expenseData` Firestore blocks and
+  the `receipts/{uid}` Storage block — nothing existing is weakened).
+- Build tag `TRAVEL-EXPENSE-GUARD-2026-09-13-01` is shown temporarily at
+  the bottom of the dashboard for install verification.
+
 ## Travel Autopilot (🧭)
 
 A zero-itinerary trip engine on the Home screen: **"Tell us what you want to

@@ -108,6 +108,26 @@ class StorageService {
     return ref.getDownloadURL();
   }
 
+  /// Receipt photos for Travel Expense Guard: receipts/{uid}/{expenseId}.jpg.
+  /// image_picker already resized/compressed at pick time; ownership is
+  /// enforced by the storage rules on this exact path.
+  Future<String> uploadReceipt(XFile file, String uid, String expenseId) async {
+    await _validateImage(file);
+    final Reference ref = _storage
+        .ref()
+        .child('receipts')
+        .child(uid)
+        .child('$expenseId.jpg');
+    await ref.putFile(
+        File(file.path), SettableMetadata(contentType: _contentType(file)));
+    return ref.getDownloadURL();
+  }
+
+  /// Camera capture pre-compressed for a readable, small receipt photo.
+  Future<XFile?> pickReceipt({ImageSource source = ImageSource.camera}) =>
+      _picker.pickImage(
+          source: source, maxWidth: 1600, imageQuality: 80);
+
   Future<XFile?> pickImage() =>
       _picker.pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
 

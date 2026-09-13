@@ -7,6 +7,11 @@ import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/expenses/expense_models.dart';
+import '../../features/expenses/screens/add_expense_screen.dart';
+import '../../features/expenses/screens/expense_detail_screen.dart';
+import '../../features/expenses/screens/expense_guard_screen.dart';
+import '../../features/expenses/screens/expense_history_screen.dart';
 import '../../features/autopilot/screens/autopilot_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
@@ -76,6 +81,35 @@ class AppRouter {
         path: '/autopilot',
         builder: (BuildContext context, GoRouterState state) =>
             const AutopilotScreen(),
+      ),
+      GoRoute(
+        path: '/expenses',
+        builder: (BuildContext context, GoRouterState state) =>
+            const ExpenseGuardScreen(),
+      ),
+      GoRoute(
+        path: '/expenses/add',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          Expense? editing;
+          if (extra is Map && extra['expense'] is Expense) {
+            editing = extra['expense'] as Expense;
+          }
+          return AddExpenseScreen(expense: editing);
+        },
+      ),
+      GoRoute(
+        path: '/expenses/detail',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          final String id = extra is Map ? (extra['id'] as String? ?? '') : '';
+          return ExpenseDetailScreen(expenseId: id);
+        },
+      ),
+      GoRoute(
+        path: '/expenses/history',
+        builder: (BuildContext context, GoRouterState state) =>
+            const ExpenseHistoryScreen(),
       ),
       ShellRoute(
         builder: (BuildContext context, GoRouterState state, Widget child) =>

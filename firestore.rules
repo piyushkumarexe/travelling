@@ -179,6 +179,50 @@ service cloud.firestore {
       allow delete: if isSelf(uid);
     }
 
+    // ---- Travel Expense Guard: strictly owner-only expense records ----
+    // Nested under users/{uid} like itineraries; the authenticated UID must
+    // match {uid} and the document's own userId field must match too, so a
+    // user can never create/read/modify another user's expenses.
+    match /users/{uid}/expenses/{expenseId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == expenseId
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 10000000
+        && request.resource.data.currency is string
+        && request.resource.data.currency.size() >= 3
+        && request.resource.data.currency.size() <= 8
+        && request.resource.data.category in [
+          'food', 'transport', 'stay', 'tickets', 'shopping', 'fuel',
+          'activities', 'medical', 'emergency', 'other'
+        ]
+        && request.resource.data.merchant is string
+        && request.resource.data.merchant.size() <= 200
+        && request.resource.data.expenseDate is number
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number;
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 10000000;
+      allow delete: if isSelf(uid);
+    }
+
+    // Optional budget configuration (single doc per user).
+    match /users/{uid}/expenseData/{docId} {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid)
+        && (!('daily' in request.resource.data)
+            || request.resource.data.daily == null
+            || (request.resource.data.daily is number
+                && request.resource.data.daily > 0
+                && request.resource.data.daily <= 10000000));
+    }
+
     // ---- Rate limits are backend-only ----
     match /rateLimits/{key} {
       allow read, write: if false;

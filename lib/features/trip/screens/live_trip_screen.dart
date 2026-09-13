@@ -290,9 +290,18 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   void _driveCamera(Position p) {
     if (!_followCam || _destination == null) return;
     try {
+      // Speed-adaptive zoom like a real nav app: street level in town,
+      // pulling back smoothly at highway speed.
+      final double kmh = (p.speed < 0 ? 0 : p.speed) * 3.6;
+      final double target = kmh >= 80
+          ? 15.5
+          : kmh >= 45
+              ? 16.5
+              : 17.0;
+      final double current = _controller.camera.zoom;
       _controller.move(
         LatLng(p.latitude, p.longitude),
-        _controller.camera.zoom < 16.5 ? 17 : _controller.camera.zoom,
+        current < 16.5 ? target : (current + (target - current) * 0.25),
       );
       final double speedMs = p.speed < 0 ? 0 : p.speed;
       final bool headingValid =
@@ -510,6 +519,13 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                 : _destination!,
             initialZoom: 13,
             maxZoom: 19,
+            // Google-style: the effective center sits ~22% up from the
+            // bottom so the vehicle marker rides low and more road ahead
+            // is visible.
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.paddingOf(context).bottom +
+                  MediaQuery.sizeOf(context).height * 0.18,
+            ),
           ),
           children: <Widget>[
             TileLayer(
