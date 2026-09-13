@@ -175,7 +175,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
           : 'SMS could not be sent automatically — use the SMS / WhatsApp '
               'buttons below to share your location with your SOS contact.';
     });
-    _c.notificationsRepository
+    unawaited(_c.notificationsRepository
         .add(
       uid: _c.authRepository.currentUser?.uid ?? 'guest',
       title: sent ? '📍 SOS location sent to your contact' : 'SOS contact alert',
@@ -187,7 +187,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
       type: 'emergency',
       payload: <String, dynamic>{'eventId': _event?.id ?? ''},
     )
-        .catchError((Object _) => '');
+        .catchError((Object _) => ''));
   }
 
   Future<void> _sendSmsToContact() async {
