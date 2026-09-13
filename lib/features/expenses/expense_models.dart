@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-
 /// TRAVEL EXPENSE GUARD — data model.
 ///
 /// Storage layout (existing Firebase architecture, per-user nested pattern
@@ -34,7 +32,7 @@ class ExpenseCategory {
 
   static ExpenseCategory of(String id) => all.firstWhere(
         (ExpenseCategory c) => c.id == id,
-        orElse: () => ExpenseCategory.other,
+        orElse: () => const ExpenseCategory('other', 'Other', '📦'),
       );
 
   static bool exists(String id) => all.any((ExpenseCategory c) => c.id == id);

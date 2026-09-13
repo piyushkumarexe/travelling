@@ -519,13 +519,6 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                 : _destination!,
             initialZoom: 13,
             maxZoom: 19,
-            // Google-style: the effective center sits ~22% up from the
-            // bottom so the vehicle marker rides low and more road ahead
-            // is visible.
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.paddingOf(context).bottom +
-                  MediaQuery.sizeOf(context).height * 0.18,
-            ),
           ),
           children: <Widget>[
             TileLayer(

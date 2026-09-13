@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -100,8 +99,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              Center(child: Text(ExpenseCategory.of(e.category).emoji +
-                  ' ' + ExpenseCategory.of(e.category).label)),
+              Center(
+                  child: Text('${ExpenseCategory.of(e.category).emoji} '
+                      '${ExpenseCategory.of(e.category).label}')),
               const SizedBox(height: 18),
               _row('Merchant / description',
                   e.merchant.isEmpty ? '—' : e.merchant),

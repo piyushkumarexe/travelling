@@ -1,4 +1,4 @@
-import '../data/models/trip_plan.dart';
+import '../../data/models/trip_plan.dart';
 import 'expense_models.dart';
 
 /// TRAVEL EXPENSE GUARD — deterministic calculations from REAL saved data.
@@ -46,7 +46,8 @@ class ExpenseMath {
     final List<(String, double)> out = sums.entries
         .map((MapEntry<String, double> e) => (e.key, e.value))
         .toList()
-      ..sort(((_, double a), (_, double b)) => b.compareTo(a));
+      ..sort(((String, double) a, (String, double) b) =>
+          b.$2.compareTo(a.$2));
     return out;
   }
 

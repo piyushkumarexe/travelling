@@ -40,7 +40,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   String? _tripId;
   String? _payment;
   String? _receiptPath; // local picked file (upload after save/now)
-  bool _receiptFailed = false;
   bool _saving = false;
   bool _splitOn = false;
   String _splitMode = 'equal';
@@ -112,6 +111,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     // Optional location (only if permission already granted).
     final ({double? lat, double? lng, String? name})? place =
         await _repo.currentPlace(_c.locationService);
+    if (!mounted) return;
 
     // Splits (validated BEFORE saving).
     List<SplitParticipant> splits = const <SplitParticipant>[];
@@ -138,6 +138,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       final String? err = ExpenseMath.validateSplit(amount, splits);
       if (err != null) {
         setState(() => _saving = false);
+        if (!mounted) return;
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(err)));
         return;
@@ -223,7 +224,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     if (picked == null) return;
     setState(() {
       _receiptPath = picked.path;
-      _receiptFailed = false;
     });
   }
 
@@ -310,6 +310,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
               final TimeOfDay? t = await showTimePicker(
                   context: context, initialTime: TimeOfDay.fromDateTime(_when));
               if (!mounted) return;
+              // (guarded above)
+
               setState(() {
                 _when = DateTime(d.year, d.month, d.day,
                     t?.hour ?? _when.hour, t?.minute ?? _when.minute);

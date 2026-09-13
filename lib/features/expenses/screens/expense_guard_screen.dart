@@ -53,10 +53,9 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
   }
 
   Future<void> _openBudgetEditor() async {
+    final double? currentDaily = _repo.budget.daily;
     final TextEditingController daily = TextEditingController(
-        text: _repo.budget.daily == null
-            ? ''
-            : _repo.budget.daily.toStringAsFixed(0));
+        text: currentDaily == null ? '' : currentDaily.toStringAsFixed(0));
     final BudgetConfig? result = await showModalBottomSheet<BudgetConfig>(
       context: context,
       isScrollControlled: true,
@@ -280,7 +279,6 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
 
   Widget _budgetCard(List<Expense> all, String cur) {
     final double? daily = _repo.budget.daily;
-    final double spent = ExpenseMath.totalFor(all, cur);
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Card(
