@@ -378,10 +378,21 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 - **Google-style navigation camera**: the map follows you at street-level
   zoom and rotates so your travel direction stays up (both toggleable from
   the round buttons on the map), with a vehicle marker (car/bike/auto per
-  your profile) rotated to your GPS heading. True 3D buildings/perspective
-  are not possible with the map engine used (flutter_map renders flat
-  raster tiles) — this follow-cam + rotating vehicle view is the standard
-  equivalent.
+  your profile) rotated to your GPS heading. **Navigation uses the
+  satellite/imagery map style (with roads + labels) by default** — the
+  layers button switches back to the street map. The trip card starts as a
+  slim collapsed bar (destination · remaining · ETA · speed) so the map
+  stays fully visible; tap it to expand details and buttons. True 3D
+  buildings/perspective are not possible with the map engine used
+  (flutter_map renders flat raster tiles) — this follow-cam + rotating
+  vehicle + satellite view is the closest equivalent.
+- **Search suggestions are locality-first**: while typing, the app ranks
+  your own city/area first (≤25 km → ≤100 km → ≤500 km → everywhere else),
+  and within the same area exact name matches → prefix → substring. It now
+  also merges Photon (OpenStreetMap POI autocomplete), so small local
+  places (shops, guest houses, chaurahas) that global geocoders don't know
+  actually show up instead of far-away same-named places in other states
+  or countries.
 
 ## Honest limitations
 

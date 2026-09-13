@@ -660,37 +660,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  /// TEMPORARY dev diagnostic — shows the last nearby (Overpass) request's
-  /// real result so provider-vs-app failures can be told apart on-device.
-  Widget _nearbyDebugPanel() {
-    final NearbyDebug d = NearbyDebug.instance;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF101418),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        'Nearby debug (req #${d.requestCount})\n'
-        'HTTP: ${d.httpStatus ?? '-'}\n'
-        'Raw: ${d.rawCount ?? '-'}\n'
-        'Parsed: ${d.parsedCount ?? '-'}\n'
-        'Final: ${d.finalCount ?? '-'}\n'
-        'queries ok/fail: ${d.okQueries}/${d.failQueries}\n'
-        'host: ${d.host ?? '-'}\n'
-        'error: ${d.error ?? d.phase}',
-        style: const TextStyle(
-          color: Color(0xFF9FE8A0),
-          fontSize: 11,
-          fontFamily: 'monospace',
-          height: 1.4,
-        ),
-      ),
-    );
-  }
-
   Widget _scopeChip(String label, bool selected, VoidCallback onTap) {
     return FilterChip(
       label: Text(label),
@@ -733,16 +702,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // TEMPORARY dev diagnostic (remove once nearby flow is verified on a
       // physical device): shows the real runtime Overpass result below the
       // error so provider-vs-app failures can be told apart at a glance.
-      return Column(
-        children: <Widget>[
-          Expanded(
-            child: ErrorState(
-              message: _error!,
-              onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
-            ),
-          ),
-          _nearbyDebugPanel(),
-        ],
+      return ErrorState(
+        message: _error!,
+        onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
       );
     }
     if (_results.isEmpty) {
@@ -804,7 +766,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       onAction: () => _setScope('anywhere'),
                     ),
             ),
-            _nearbyDebugPanel(),
           ],
         );
       }

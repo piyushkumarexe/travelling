@@ -363,48 +363,111 @@ class FreeGeoClient {
     return const <Place>[]; // Genuinely zero results within the radius.
   }
 
-  /// Autocomplete suggestions while typing. Uses MapTiler Geocoding (which
-  /// permits autocomplete) — never public Nominatim, which forbids it. When
-  /// no MapTiler key is compiled in, it falls back to a single Overpass
-  /// category query for recognised keywords only.
+  /// Autocomplete suggestions while typing. MapTiler Geocoding (which
+  /// permits autocomplete) + Photon (OSM POI autocomplete — much stronger
+  /// for SMALL local places like shops, guest houses, chaurahas that MapTiler
+  /// does not know). Results are merged and ranked LOCALITY-FIRST: the
+  /// user's own city/region before other cities, states and countries, and
+  /// within the same area, exact → prefix → substring matches first.
+  /// Public Nominatim is never used here (it forbids autocomplete).
   Future<List<Place>> suggest(String query, {LatLng? near, int limit = 8}) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
-    if (AppConfig.mapTilerConfigured) {
-      try {
-        // Pull a wider candidate set, then re-rank by distance so the
-        // CLOSEST match to the user is surfaced first. MapTiler's `proximity`
-        // only biases ranking — a local match ranked low can still be lost,
-        // so we fetch more and sort locally by real distance. The API caps
-        // `limit` at 10, so the extra candidates come from Photon/Nominatim
-        // in the full search rather than a bigger MapTiler request here.
-        final _ProviderResult r = await _maptilerSearch(q, near,
-            limit: near != null ? limit.clamp(8, 10).toInt() : limit);
+
+    final List<_ProviderResult> results =
+        await Future.wait(<Future<_ProviderResult>>[
+      if (AppConfig.mapTilerConfigured)
+        _guard('maptiler-suggest', () => _maptilerSearch(q, near,
+            limit: near != null ? limit.clamp(8, 10).toInt() : limit))
+      else
+        Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
+      _guard('photon-suggest', () => _photonSearch(q, near)),
+    ]);
+
+    List<Place> merged = _mergeAndDedup(results);
+    if (merged.isEmpty) {
+      // Nothing from the geocoders — keyword fallback (category queries like
+      // "atm", "railway station") against the local Overpass dataset.
+      final List<(String, String)>? filters = _filtersFor(q, null);
+      if (filters != null && near != null) {
+        final _ProviderResult r = await _overpass(filters, near, 10000);
         if (r.places.isNotEmpty) {
           return _rankByDistance(r.places, near).take(limit).toList();
         }
-      } on DioException catch (e) {
-        final ApiErrorKind k = _kindOf(e);
-        if (k == ApiErrorKind.rateLimited) {
-          throw const ApiException(ApiErrorKind.rateLimited,
-              'Search is temporarily limited. Try again shortly.');
-        }
-        if (k == ApiErrorKind.unauthorized) {
-          throw const ApiException(ApiErrorKind.unauthorized,
-              'The place search key was rejected. Please check the key and rebuild the app.',
-              retryable: false);
-        }
-        // Network/server → fall through to the Overpass keyword fallback.
       }
+    } else {
+      return _rankSuggestions(merged, q, near).take(limit).toList();
     }
-    final List<(String, String)>? filters = _filtersFor(q, null);
-    if (filters != null && near != null) {
-      final _ProviderResult r = await _overpass(filters, near, 10000);
-      if (r.places.isNotEmpty) {
-        return _rankByDistance(r.places, near).take(limit).toList();
+
+    // Nothing responded at all — surface the honest error (same wording as
+    // the full search) instead of pretending "no results".
+    final bool anyResponded = results.any((_ProviderResult r) => r.responded);
+    final Set<ApiErrorKind> errs = <ApiErrorKind>{
+      for (final _ProviderResult r in results)
+        if (r.error != null) r.error!,
+    };
+    if (!anyResponded) {
+      if (errs.contains(ApiErrorKind.rateLimited)) {
+        throw const ApiException(ApiErrorKind.rateLimited,
+            'Search is temporarily limited. Try again shortly.');
       }
+      if (errs.contains(ApiErrorKind.unauthorized)) {
+        throw const ApiException(ApiErrorKind.unauthorized,
+            'The place search key was rejected. Please check the key and rebuild the app.',
+            retryable: false);
+      }
+      if (errs.contains(ApiErrorKind.network) ||
+          errs.contains(ApiErrorKind.timeout)) {
+        throw const ApiException(ApiErrorKind.network,
+            'Search is temporarily unreachable. Check your internet '
+            'connection and try again.');
+      }
+      throw const ApiException(ApiErrorKind.server,
+          'Search is temporarily unreachable. Check your internet '
+          'connection and try again.');
     }
     return const <Place>[];
+  }
+
+  /// Suggestion ranking: LOCALITY FIRST (own area ≤25 km → ≤100 km → ≤500 km
+  /// → everywhere else), and within the same area, match quality: exact name
+  /// → starts-with → word-boundary → substring. So typing while sitting in
+  /// Zamania/Varanasi surfaces the local match before a same-named place in
+  /// another state or country.
+  List<Place> _rankSuggestions(List<Place> places, String q, LatLng? near) {
+    int matchScore(Place p) {
+      final String n = p.name.toLowerCase();
+      final String t = q.toLowerCase();
+      if (n == t) return 0;
+      if (n.startsWith(t)) return 1;
+      final Pattern boundary = RegExp('\\b${RegExp.escape(t)}');
+      if (n.containsMatch(boundary)) return 2;
+      if (n.contains(t)) return 3;
+      return 4;
+    }
+
+    int distanceBucket(Place p) {
+      if (near == null) return 1;
+      final double d = GeoUtils.distanceMeters(near, p.coords);
+      if (d <= 25000) return 0; // own city / tehsil area
+      if (d <= 100000) return 1; // own region
+      if (d <= 500000) return 2; // own state-ish
+      return 3; // other state / country
+    }
+
+    final List<Place> out = List<Place>.from(places)
+      ..sort((Place a, Place b) {
+        final int bucket = distanceBucket(a) - distanceBucket(b);
+        if (bucket != 0) return bucket;
+        final int match = matchScore(a) - matchScore(b);
+        if (match != 0) return match;
+        if (near != null) {
+          return GeoUtils.distanceMeters(near, a.coords)
+              .compareTo(GeoUtils.distanceMeters(near, b.coords));
+        }
+        return 0;
+      });
+    return out;
   }
 
   /// Re-orders candidates nearest-first relative to [near] (when known), so a
@@ -855,6 +918,9 @@ class FreeGeoClient {
     if (near != null) {
       qp['lat'] = near.latitude;
       qp['lon'] = near.longitude;
+      // Bias radius: street-level weighting so local POIs outrank distant
+      // same-named places in the provider's own ranking too.
+      qp['zoom'] = 16;
     }
     final Response<dynamic> resp = await _dio
         .get<dynamic>('https://photon.komoot.io/api/', queryParameters: qp);

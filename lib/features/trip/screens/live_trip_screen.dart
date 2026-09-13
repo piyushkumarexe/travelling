@@ -71,6 +71,14 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   String _navMode = 'car'; // profile vehicle: car | bike | auto | walk
   bool _arrived = false;
 
+  /// Bottom card starts COLLAPSED (Google-style slim bar) so the map stays
+  /// fully visible; tapping expands the detailed card.
+  bool _cardExpanded = false;
+
+  /// Navigation map style: satellite/imagery by default (hybrid), with a
+  /// one-tap switch back to the street map.
+  bool _satellite = true;
+
   List<SafetyZone> _zones = const <SafetyZone>[];
   List<Incident> _incidents = const <Incident>[];
   SafetyAssessment _safety = const SafetyAssessment(
@@ -505,7 +513,12 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
           ),
           children: <Widget>[
             TileLayer(
-              urlTemplate: AppConfig.tileUrlTemplate('streets-v2'),
+              // Navigation uses the satellite/imagery style (hybrid =
+              // imagery + roads + labels) like Google Maps; one tap on the
+              // layers button switches back to the street map. The OSM
+              // fallback keeps the map alive if imagery tiles fail.
+              urlTemplate: AppConfig.tileUrlTemplate(
+                  _satellite ? 'hybrid' : 'streets-v2'),
               fallbackUrl: AppConfig.tileFallbackUrl,
               userAgentPackageName: 'app.roamio.tourism',
               retinaMode: RetinaMode.isHighDensity(context),
@@ -563,6 +576,21 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                   _followCam ? Icons.gps_fixed : Icons.gps_not_fixed,
                   color: _followCam
                       ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton.small(
+                heroTag: 'trip-layer',
+                tooltip: _satellite
+                    ? 'Satellite view (on) — tap for street map'
+                    : 'Street map — tap for satellite view',
+                backgroundColor: Theme.of(context).colorScheme.surface,
+                onPressed: () => setState(() => _satellite = !_satellite),
+                child: Icon(
+                  Icons.satellite_alt,
+                  color: _satellite
+                      ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).colorScheme.onSurface,
                 ),
               ),
@@ -671,7 +699,83 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
     );
   }
 
+  /// Google-style collapsed bar: destination + remaining/ETA/speed on one
+  /// line. Tap to expand the detailed card. Right side stays clear of the
+  /// SOS floating button.
   Widget _infoCard() {
+    if (!_cardExpanded) return _compactBar();
+    return _fullCard();
+  }
+
+  Widget _compactBar() {
+    final RouteInfo? r = _route;
+    final String summary = r == null
+        ? '${_speedKmh.round()} km/h'
+        : '${GeoUtils.formatDistance(r.distanceMeters)} · '
+            '${GeoUtils.formatDuration(r.durationSeconds)} · '
+            '${_speedKmh.round()} km/h';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        elevation: 4,
+        shadowColor: Colors.black45,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => _cardExpanded = true),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.navigation,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        _destinationName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 56), // keep clear of the SOS button
+                IconButton(
+                  tooltip: 'Show trip details',
+                  icon: const Icon(Icons.expand_less),
+                  onPressed: () => setState(() => _cardExpanded = true),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fullCard() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final RouteInfo? r = _route;
     final Color accent = switch (_safety.level) {
@@ -715,6 +819,11 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                           fontSize: 11,
                           fontWeight: FontWeight.w700)),
                 ),
+              IconButton(
+                tooltip: 'Hide trip details',
+                icon: const Icon(Icons.expand_more),
+                onPressed: () => setState(() => _cardExpanded = false),
+              ),
             ],
           ),
           const SizedBox(height: 8),
