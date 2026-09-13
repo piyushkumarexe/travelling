@@ -83,16 +83,29 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'active'
-        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && validCoords(request.resource.data.location.lat,
+                       request.resource.data.location.lng)
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 120;
 
-      // Owners may cancel their own active SOS; admins may resolve/cancel.
-      allow update: if (isSelf(resource.data.uid)
-        && resource.data.status == 'active'
-        && request.resource.data.status in ['cancelled', 'resolved']
-        && request.resource.data.uid == resource.data.uid)
-        || isAdmin();
+      // Owners may cancel/resolve their own active SOS; while an event is
+      // active the owner may also refresh its live location fields (live
+      // location sharing). Field changes other than the whitelisted live
+      // keys are still rejected; admins may manage everything.
+      allow update: if (
+        (isSelf(resource.data.uid)
+          && resource.data.status == 'active'
+          && request.resource.data.uid == resource.data.uid
+          && (
+            request.resource.data.status in ['cancelled', 'resolved']
+            || (
+              request.resource.data.status == resource.data.status
+              && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['status', 'kind', 'reason', 'location', 'updatedAt', 'lastLocationAt'])
+            )
+          )
+        )
+        || isAdmin());
       allow delete: if isAdmin();
     }
 

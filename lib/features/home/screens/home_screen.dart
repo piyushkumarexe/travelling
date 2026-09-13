@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../../core/services/safety_engine.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
@@ -15,10 +16,12 @@ import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/sos_sheet.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../data/models/incident.dart';
 import '../../../data/models/notification.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
+import '../../../data/models/trip_plan.dart';
 import '../../../data/models/weather.dart';
 
 /// Premium dashboard: location, weather, safety status, SOS, quick actions,
@@ -48,14 +51,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<AppNotification> _alerts = const <AppNotification>[];
   List<SafetyZone> _zones = const <SafetyZone>[];
-  String? _safetyText;
-  bool _nearHighRisk = false;
+  List<Incident> _ownIncidents = const <Incident>[];
+  SafetyAssessment _safety = const SafetyAssessment(
+    level: SafetyLevel.limited,
+    headline: 'Checking safety…',
+    detail: 'Loading available safety data for your area.',
+  );
 
   Profile? _profile;
+
+  TripPlan? _activeTrip;
+  RouteInfo? _tripRoute;
+  bool _tripRouteLoading = false;
 
   StreamSubscription<Position>? _posSub;
   StreamSubscription<List<AppNotification>>? _notifSub;
   StreamSubscription<List<SafetyZone>>? _zonesSub;
+  StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Profile?>? _profileSub;
 
   @override
@@ -87,6 +99,15 @@ class _HomeScreenState extends State<HomeScreen> {
           .listen((Profile? p) {
         if (mounted) setState(() => _profile = p);
       }, onError: (Object _) {});
+      _incidentsSub = _c.incidentsRepository
+          .watchMine(uid)
+          .listen((List<Incident> items) {
+        if (mounted) {
+          setState(() => _ownIncidents = items);
+          _updateSafety();
+        }
+      }, onError: (Object _) {});
+      unawaited(_loadActiveTrip(uid));
     }
     _zonesSub = _c.zonesRepository
         .watchAll()
@@ -100,6 +121,41 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadLocation();
   }
 
+  /// Loads the saved active trip and computes a one-shot route (distance +
+  /// ETA) for the "Continue trip" card. Uses the OSRM fallback — no backend
+  /// required — and never invents a route when no trip/position is set.
+  Future<void> _loadActiveTrip(String uid) async {
+    await _c.tripPlanStore.loadFor(uid);
+    if (!mounted) return;
+    setState(() => _activeTrip = _c.tripPlanStore.active);
+    final TripPlan? trip = _activeTrip;
+    final Position? pos = _position;
+    if (trip == null || !trip.hasCoordinates || pos == null) return;
+    unawaited(_loadTripRoute());
+  }
+
+  Future<void> _loadTripRoute() async {
+    final TripPlan? trip = _activeTrip;
+    final Position? pos = _position;
+    if (trip == null || !trip.hasCoordinates || pos == null) return;
+    if (_tripRoute != null || _tripRouteLoading) return;
+    setState(() => _tripRouteLoading = true);
+    try {
+      final RouteInfo r = await _c.placesRepository.route(
+        LatLng(pos.latitude, pos.longitude),
+        LatLng(trip.lat, trip.lng),
+      );
+      if (!mounted) return;
+      setState(() {
+        _tripRoute = r;
+        _tripRouteLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _tripRouteLoading = false);
+    }
+  }
+
   Future<void> _loadLocation() async {
     try {
       final Position? pos = await _c.locationService.currentPosition();
@@ -109,13 +165,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _locationDone = true;
       });
       if (pos == null) {
-        _safetyText =
-            'Location unavailable — enable location services to check safety zones and weather.';
+        _safety = const SafetyAssessment(
+          level: SafetyLevel.limited,
+          headline: 'Safety data limited',
+          detail: 'Location unavailable — enable location services to check safety.',
+        );
         if (mounted) setState(() {});
         return;
       }
       final LatLng p = LatLng(pos.latitude, pos.longitude);
       _updateSafety();
+      unawaited(_loadTripRoute());
       unawaited(_c.placesRepository
           .reverseGeocode(p)
           .then((String? label) {
@@ -193,39 +253,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void _updateSafety() {
     final Position? pos = _position;
     if (pos == null) return;
-    final LatLng here = LatLng(pos.latitude, pos.longitude);
-    final List<SafetyZone> active =
-        _zones.where((SafetyZone z) => z.active).toList();
-    SafetyZone? nearest;
-    double? nearestDist;
-    for (final SafetyZone z in active) {
-      final double d = GeoUtils.distanceMeters(here, LatLng(z.lat, z.lng));
-      if (nearestDist == null || d < nearestDist) {
-        nearest = z;
-        nearestDist = d;
-      }
-    }
-    final String text;
-    if (nearest != null && nearestDist != null && nearestDist <= nearest.radiusMeters) {
-      text = 'You are inside: ${nearest.name}';
-    } else if (nearest != null && nearestDist != null && nearestDist <= 3000) {
-      text =
-          'Nearby: ${nearest.name} · ${GeoUtils.formatDistance(nearestDist)}';
-    } else if (active.isNotEmpty) {
-      text = 'No active safety zones within 3 km of you';
-    } else {
-      text = 'No safety zones configured for this area';
-    }
-    final bool high = nearest != null &&
-        nearestDist != null &&
-        nearestDist <= nearest.radiusMeters &&
-        nearest.isHighRisk;
-    if (mounted && (text != _safetyText || high != _nearHighRisk)) {
-      setState(() {
-        _safetyText = text;
-        _nearHighRisk = high;
-      });
-    }
+    final SafetyAssessment a = SafetyEngine.locationStatus(
+      point: LatLng(pos.latitude, pos.longitude),
+      zones: _zones,
+      ownIncidents: _ownIncidents,
+    );
+    if (mounted) setState(() => _safety = a);
   }
 
   String get _greetingName {
@@ -252,6 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _posSub?.cancel();
     _notifSub?.cancel();
     _zonesSub?.cancel();
+    _incidentsSub?.cancel();
     _profileSub?.cancel();
     super.dispose();
   }
@@ -277,10 +311,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        actions: <Widget>[
-          _notificationsButton(),
-          const SizedBox(width: 4),
-        ],
+        // Space reserved for the profile avatar shown by the app shell.
+        actions: const <Widget>[SizedBox(width: 52)],
       ),
       body: !_locationDone
           ? const LoadingView(message: 'Preparing your dashboard…')
@@ -293,12 +325,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   _safetyCard(),
                   const SizedBox(height: 12),
+                  if (_activeTrip != null) ...<Widget>[
+                    _continueTripCard(),
+                    const SizedBox(height: 12),
+                  ],
                   _sosCard(),
                   const SectionHeader(title: 'Quick actions'),
                   _quickActions(),
-                  const SectionHeader(
+                  SectionHeader(
                     title: 'Nearby attractions',
                     actionLabel: 'See all',
+                    onAction: () => context.push('/explore'),
                   ),
                   _attractionsRow(),
                   if (_alerts.isNotEmpty) ...<Widget>[
@@ -312,33 +349,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _notificationsButton() {
-    final bool hasUnread = _alerts.isNotEmpty;
-    return IconButton(
-      tooltip: 'Notifications',
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          const Icon(Icons.notifications_outlined, size: 24),
-          if (hasUnread)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: const BoxDecoration(
-                  color: AppTheme.danger,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-        ],
-      ),
-      onPressed: () => context.push('/notifications'),
     );
   }
 
@@ -393,14 +403,11 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFF14B8A6), Color(0xFF0D9488)],
-              ),
+              color: scheme.primary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(_weatherIcon(w.icon), size: 30, color: Colors.white),
+            child:
+                Icon(_weatherIcon(w.icon), size: 30, color: scheme.primary),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -442,8 +449,109 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// "Continue trip" smart card: destination, remaining distance + ETA (from
+  /// a real OSRM route) and day progress, with a one-tap jump into Live Trip
+  /// mode. Shown only when a saved trip has coordinates.
+  Widget _continueTripCard() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TripPlan trip = _activeTrip!;
+    final int totalDays = trip.days <= 0 ? 1 : trip.days;
+    final int elapsedDays = DateTime.now()
+        .difference(trip.startDate)
+        .inDays
+        .clamp(0, totalDays);
+    final double progress = elapsedDays / totalDays;
+    return AppCard(
+      onTap: () => context.push(
+        '/trip/live?lat=${trip.lat}&lng=${trip.lng}'
+        '&name=${Uri.encodeComponent(trip.destination)}',
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.map, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Continue trip · ${trip.destination}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Icon(Icons.navigation, color: scheme.primary, size: 20),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _tripStat(
+                    'Distance',
+                    _tripRoute == null
+                        ? (_tripRouteLoading ? '…' : '—')
+                        : GeoUtils.formatDistance(_tripRoute!.distanceMeters)),
+              ),
+              Expanded(
+                child: _tripStat(
+                    'ETA',
+                    _tripRoute == null
+                        ? (_tripRouteLoading ? '…' : '—')
+                        : GeoUtils.formatDuration(_tripRoute!.durationSeconds)),
+              ),
+              Expanded(
+                child: _tripStat(
+                    'Day', '${elapsedDays + 1} of $totalDays'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 8,
+              backgroundColor: scheme.surfaceContainerHighest,
+              color: scheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tripStat(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(fontSize: 11)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+      ],
+    );
+  }
+
   Widget _safetyCard() {
-    final Color accent = _nearHighRisk ? AppTheme.danger : AppTheme.success;
+    final Color accent = switch (_safety.level) {
+      SafetyLevel.normal => AppTheme.success,
+      SafetyLevel.caution => AppTheme.warning,
+      SafetyLevel.alert => AppTheme.danger,
+      SafetyLevel.limited => Theme.of(context).colorScheme.outline,
+    };
+    final String emoji = switch (_safety.level) {
+      SafetyLevel.normal => '🟢',
+      SafetyLevel.caution => '🟡',
+      SafetyLevel.alert => '🔴',
+      SafetyLevel.limited => '⚪',
+    };
     return AppCard(
       onTap: () => context.push('/safety'),
       child: Row(
@@ -463,14 +571,14 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Safety status',
+                  '$emoji ${_safety.headline}',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _safetyText ?? 'Checking safety zones…',
+                  _safety.detail,
                   style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -485,31 +593,38 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _sosCard() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFFB91C1C), Color(0xFFDC2626)],
-        ),
+        color: AppTheme.danger.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+        border: Border.all(color: AppTheme.danger.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.sos, color: Colors.white, size: 34),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    const Icon(Icons.call, color: AppTheme.danger, size: 26),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       'Emergency? Tap SOS',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: scheme.onSurface,
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
@@ -517,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       'Records your location, alerts you & shows emergency services',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -525,7 +640,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               Material(
-                color: Colors.white,
+                color: AppTheme.danger,
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
@@ -536,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       'SOS',
                       style: TextStyle(
-                        color: Color(0xFFDC2626),
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -548,10 +663,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              _whiteTextButton(Icons.campaign, 'Report incident',
+              _sosTextButton(Icons.campaign, 'Report incident',
                   () => context.push('/incidents/report')),
               const SizedBox(width: 16),
-              _whiteTextButton(Icons.qr_code_2, 'Emergency ID',
+              _sosTextButton(Icons.qr_code_2, 'Emergency ID',
                   () => context.push('/digital-id')),
             ],
           ),
@@ -560,30 +675,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _whiteTextButton(IconData icon, String label, VoidCallback onTap) {
+  Widget _sosTextButton(IconData icon, String label, VoidCallback onTap) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: TextButton(
+      child: OutlinedButton.icon(
         onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: Colors.white,
-          backgroundColor: Colors.white.withValues(alpha: 0.14),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: scheme.onSurface,
+          side: BorderSide(color: scheme.outlineVariant),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           padding: const EdgeInsets.symmetric(vertical: 10),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(icon, size: 16),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(label,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-            ),
-          ],
+        icon: Icon(icon, size: 16),
+        label: Flexible(
+          child: Text(label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
       ),
     );
@@ -599,13 +708,18 @@ class _HomeScreenState extends State<HomeScreen> {
       childAspectRatio: 1.9,
       children: <Widget>[
         _actionTile('AI Assistant', Icons.auto_awesome, '/assistant'),
+        _actionTile('Price check', Icons.price_check, '/guardian'),
         _actionTile('Explore', Icons.explore, '/explore'),
         _actionTile('Map & routes', Icons.map, '/map'),
         _actionTile('Report incident', Icons.campaign, '/incidents/report'),
-        _actionTile('Itineraries', Icons.travel_explore, '/itineraries'),
         _actionTile('Eco Score', Icons.eco, '/eco'),
         _actionTile('Emergency ID', Icons.qr_code_2, '/digital-id'),
         _actionTile('Weather', Icons.wb_sunny, '/weather'),
+        _actionTile('Nearby essentials', Icons.local_hospital, '/essentials'),
+        _actionTile('Budget & wallet', Icons.account_balance_wallet,
+            '/wallet'),
+        _actionTile('Trip planner', Icons.event_note, '/planner'),
+        _actionTile('Multi-stop route', Icons.alt_route, '/route/multi'),
       ],
     );
   }
@@ -692,8 +806,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 12),
         itemBuilder: (BuildContext context, int i) => _MiniPlaceCard(
               place: _attractions[i],
-              onTap: () => context
-                  .push('/explore/place/${_attractions[i].placeId}'),
+              onTap: () => context.push(
+                  '/explore/place/${_attractions[i].placeId}',
+                  extra: _attractions[i]),
             ),
       ),
     );

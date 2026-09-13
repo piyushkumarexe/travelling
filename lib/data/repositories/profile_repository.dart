@@ -28,9 +28,13 @@ class ProfileRepository {
     required String budget,
     required String travelStyle,
   }) {
-    return _db.collection('profiles').doc(uid).update(<String, dynamic>{
+    // set(merge) instead of update(): the profiles/{uid} doc may not exist
+    // yet (rules gate creation, first-run failures, ...) — saving the
+    // profile must CREATE it, not throw "no document to update".
+    return _db.collection('profiles').doc(uid).set(<String, dynamic>{
+      'uid': uid,
       'name': name,
-      'photoUrl': photoUrl,
+      if (photoUrl != null) 'photoUrl': photoUrl,
       'language': language,
       'emergencyContactName': emergencyContactName,
       'emergencyContactPhone': emergencyContactPhone,
@@ -38,6 +42,49 @@ class ProfileRepository {
       'budget': budget,
       'travelStyle': travelStyle,
       'updatedAt': Timestamp.now(),
-    });
+    }, SetOptions(merge: true));
+  }
+
+  /// Persists only the preferred vehicle (bike / car / auto) — used by the
+  /// dedicated Vehicle tab.
+  Future<void> setVehicle(String uid, String vehicle) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'vehicle': vehicle,
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Focused upsert of the SOS/emergency contact — the SINGLE source of truth
+  /// shared by the SOS screen, Profile and Power-Off Safety Location. Uses
+  /// merge so it never clobbers other profile fields, and creates the
+  /// profiles/{uid} document if it does not exist yet.
+  Future<void> setEmergencyContact(
+    String uid, {
+    required String name,
+    required String phone,
+  }) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'emergencyContactName': name,
+        'emergencyContactPhone': phone,
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Clears the SOS/emergency contact (same merge semantics).
+  Future<void> clearEmergencyContact(String uid) {
+    return _db.collection('profiles').doc(uid).set(
+      <String, dynamic>{
+        'emergencyContactName': '',
+        'emergencyContactPhone': '',
+        'updatedAt': Timestamp.now(),
+      },
+      SetOptions(merge: true),
+    );
   }
 }

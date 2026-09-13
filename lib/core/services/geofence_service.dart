@@ -22,10 +22,12 @@ class GeofenceAlert {
 
 enum GeofenceStatus {
   idle,
+  starting,
   monitoring,
   paused,
   denied,
   serviceOff,
+  error,
 }
 
 /// Client-side geofence engine.
@@ -58,6 +60,11 @@ class GeofenceService extends ChangeNotifier {
   GeofenceStatus _status = GeofenceStatus.idle;
   GeofenceStatus get status => _status;
 
+  /// Human-readable reason for the last failure (or null). Surfaced by the
+  /// Safety screen so the user sees the real cause, never a generic message.
+  String? _lastError;
+  String? get lastError => _lastError;
+
   List<SafetyZone> _zones = const <SafetyZone>[];
   List<SafetyZone> get zones => _zones;
 
@@ -73,37 +80,92 @@ class GeofenceService extends ChangeNotifier {
   static const Duration reArmDelay = Duration(minutes: 10);
 
   Future<void> start() async {
-    if (_status == GeofenceStatus.monitoring) return;
+    if (_status == GeofenceStatus.monitoring ||
+        _status == GeofenceStatus.starting) {
+      return;
+    }
+    _lastError = null;
+    _set(GeofenceStatus.starting);
 
-    final bool serviceOn = await _locationService.isServiceEnabled();
+    // 1) Location services must be enabled.
+    bool serviceOn;
+    try {
+      serviceOn = await _locationService.isServiceEnabled();
+    } catch (e) {
+      _fail('Could not read device location settings. Reason: $e');
+      return;
+    }
     if (!serviceOn) {
+      _lastError = 'Device location (GPS) is turned off.';
       _set(GeofenceStatus.serviceOff);
       return;
     }
 
-    LocationPermission p = await _locationService.checkPermission();
-    if (p == LocationPermission.denied) {
-      p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+    // 2) Permission: request when never asked; distinguish a real denial.
+    LocationPermission p;
+    try {
+      p = await _locationService.checkPermission();
+    } catch (e) {
+      _fail('Could not read the location permission. Reason: $e');
+      return;
     }
-    if (p == LocationPermission.deniedForever || p == LocationPermission.denied) {
-      await Geolocator.openAppSettings();
+    if (p == LocationPermission.denied) {
+      try {
+        p = await Geolocator.requestPermission();
+        if (p == LocationPermission.denied) {
+          p = await Geolocator.requestPermission();
+        }
+      } catch (e) {
+        _fail('Could not request location permission. Reason: $e');
+        return;
+      }
+    }
+    if (p == LocationPermission.deniedForever ||
+        p == LocationPermission.denied) {
+      _lastError = 'Location permission is required for monitoring. '
+          'Allow location access in system settings, then retry.';
+      try {
+        await Geolocator.openAppSettings();
+      } catch (_) {}
       _set(GeofenceStatus.denied);
       return;
     }
 
-    _zonesSub ??= _zonesRepository.watchAll().listen((List<SafetyZone> zs) {
-      _zones = zs;
-    });
-    _zones = await _zonesRepository.getAll();
+    // 3) Zones are best-effort: a transient Firestore/network failure must
+    //    NOT block monitoring (watchAll() keeps syncing zones live).
+    _zonesSub ??= _zonesRepository.watchAll().listen(
+          (List<SafetyZone> zs) => _zones = zs,
+          onError: (Object e) {
+            debugPrint('GeofenceService zones stream error: $e');
+          },
+        );
+    try {
+      _zones = await _zonesRepository.getAll();
+    } catch (e) {
+      debugPrint('GeofenceService zones fetch failed (non-fatal): $e');
+      _zones = const <SafetyZone>[];
+    }
 
-    _positionSub ??= _locationService
-        .watchPosition(distanceFilter: 20)
-        .listen(_onPosition, onError: (Object e) {
-      debugPrint('GeofenceService position stream error: $e');
-    });
+    // 4) Subscribe to the real GPS stream; only then is monitoring on.
+    try {
+      _positionSub ??= _locationService
+          .watchPosition(distanceFilter: 20)
+          .listen(_onPosition, onError: (Object e) {
+        debugPrint('GeofenceService position stream error: $e');
+      });
+    } catch (e) {
+      _fail('Could not start GPS tracking. Reason: $e');
+      return;
+    }
 
+    _lastError = null;
     _set(GeofenceStatus.monitoring);
+  }
+
+  void _fail(String reason) {
+    _lastError = reason;
+    debugPrint('GeofenceService start failed: $reason');
+    _set(GeofenceStatus.error);
   }
 
   /// Re-runs the permission + start flow (used from the "enable" button

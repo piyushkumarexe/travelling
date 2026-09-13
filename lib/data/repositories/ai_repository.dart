@@ -1,13 +1,18 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
-import '../../core/network/nvidia_direct_client.dart';
+import '../../core/network/openai_compat_client.dart';
 import '../models/itinerary.dart';
 
-/// NVIDIA AI calls — preferably through the YatraWise backend (server-side
-/// key, rate limits). When the backend is unreachable (Cloud Functions not
-/// deployed yet) and a build-time NVIDIA key is present, calls
-/// transparently fall back to a direct NVIDIA request so the AI features
-/// keep working.
+/// AI calls with a two-step transport fallback:
+///   1. Tourism Cloud Functions backend (server-side key, rate limits).
+///   2. Direct OpenAI-compatible provider — NVIDIA NIM when a build-time
+///      `NVIDIA_API_KEY` is present, otherwise a generic provider configured
+///      via `AI_API_KEY` + `AI_BASE_URL` (+ `AI_MODEL`).
+///
+/// There is no reliable keyless LLM in 2026 (Pollinations legacy, Hack Club AI
+/// and DuckDuckGo AI all shut down anonymous access), so when neither transport
+/// is configured the repository surfaces a clear, actionable setup message
+/// instead of a confusing HTTP error.
 
 class AiChatMessage {
   AiChatMessage({required this.role, required this.content});
@@ -21,29 +26,50 @@ class AiChatMessage {
 }
 
 class AiRepository {
-  AiRepository(this._api, {NvidiaDirectClient? direct})
-      : _direct = direct ?? NvidiaDirectClient();
+  AiRepository(
+    this._api, {
+    OpenAiCompatClient? direct,
+  }) : _direct = direct ?? OpenAiCompatClient();
 
   final ApiClient _api;
-  final NvidiaDirectClient _direct;
+  final OpenAiCompatClient _direct;
 
-  /// Backend failures that mean "backend missing/unreachable" and are worth
-  /// a direct retry. Auth/validation/rate-limit errors come from a live
-  /// backend and are reported as-is.
-  bool _shouldFallback(ApiException e) =>
-      _direct.enabled &&
-      (e.kind == ApiErrorKind.network ||
-          e.kind == ApiErrorKind.timeout ||
-          e.kind == ApiErrorKind.server ||
-          e.kind == ApiErrorKind.unknown);
+  /// Errors that mean "service missing/unreachable" and are worth retrying
+  /// on the next transport. Auth/validation/rate-limit/payment errors come
+  /// from a live service and are reported as-is.
+  bool _fallbackEligible(ApiException e) =>
+      e.kind == ApiErrorKind.network ||
+      e.kind == ApiErrorKind.timeout ||
+      e.kind == ApiErrorKind.server ||
+      e.kind == ApiErrorKind.unknown;
+
+  /// Thrown when neither the backend nor a direct AI key is available.
+  ApiException _notConfigured() => ApiException(
+        ApiErrorKind.server,
+        'AI needs a free key to start.\n\n'
+        'Easiest — Groq (fast, free): get a key at console.groq.com/keys and '
+        'set it as the GitHub secret GROQ_API_KEY (or build with '
+        '--dart-define=GROQ_API_KEY=gsk_...).\n\n'
+        'Or Google Gemini: aistudio.google.com/apikey → GEMINI_API_KEY.\n\n'
+        'Or NVIDIA: set NVIDIA_API_KEY (--dart-define=NVIDIA_API_KEY='
+        'nvapi-...).\n\n'
+        'Or deploy the backend: `firebase deploy --only functions`.',
+        retryable: false,
+      );
 
   /// Chat with the tourism assistant. `locationLabel` (e.g. "Rishikesh,
-  /// Uttarakhand, India") is merged into the server-side system prompt.
+  /// Uttarakhand, India") is merged into the system prompt.
   Future<String> chat({
     required List<AiChatMessage> messages,
     String? locationLabel,
     String? profileContext,
   }) async {
+    final List<Map<String, String>> simple = messages
+        .map((AiChatMessage m) => <String, String>{
+              'role': m.role,
+              'content': m.content,
+            })
+        .toList();
     final Map<String, dynamic> body = <String, dynamic>{
       'messages': messages.map((AiChatMessage m) => m.toMap()).toList(),
       if (locationLabel != null && locationLabel.isNotEmpty)
@@ -55,14 +81,10 @@ class AiRepository {
       final Map<String, dynamic> data = await _api.post('/chat', body);
       return _replyFrom(data);
     } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
+      if (!_fallbackEligible(e)) rethrow;
+      if (!_direct.enabled) throw _notConfigured();
       final Map<String, dynamic> data = await _direct.postChat(
-        messages: messages
-            .map((AiChatMessage m) => <String, String>{
-                  'role': m.role,
-                  'content': m.content,
-                })
-            .toList(),
+        messages: simple,
         locationLabel: locationLabel,
         profileContext: profileContext,
       );
@@ -98,7 +120,8 @@ class AiRepository {
       final Map<String, dynamic> data = await _api.post('/itinerary', body);
       return _planFrom(data);
     } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
+      if (!_fallbackEligible(e)) rethrow;
+      if (!_direct.enabled) throw _notConfigured();
       final Map<String, dynamic> data = await _direct.postItinerary(
         destination: destination.trim(),
         days: days,
@@ -143,7 +166,8 @@ class AiRepository {
           await _api.post('/incidentAnalyze', body);
       return _triageFrom(data);
     } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
+      if (!_fallbackEligible(e)) rethrow;
+      if (!_direct.enabled) throw _notConfigured();
       final Map<String, dynamic> data = await _direct.postIncidentAnalyze(
         description: description.trim(),
         locationLabel: locationLabel,

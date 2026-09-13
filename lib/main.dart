@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +26,7 @@ Future<void> main() async {
       // Firebase exists but failed to initialize (bad key, offline first
       // start, ...). The app still opens in a guided setup state so the user
       // can fix the configuration.
-      debugPrint('YatraWise: Firebase init failed: $e');
+      debugPrint('Tourism: Firebase init failed: $e');
       app = null;
     }
   }
@@ -34,11 +36,19 @@ Future<void> main() async {
     app: app,
   );
 
+  // Local device settings (e.g. auto-read AI replies) — independent of
+  // Firebase, so they load even when Firebase/Cloud Functions are absent.
+  unawaited(container.settings.load());
+
   if (firebaseReady) {
     // Best effort: create notification channels + ask for permission.
     await container.notificationService.init();
     container.authState.start();
   }
 
-  runApp(YatraWiseApp(container: container));
+  // Warm up location permission up-front so Explore "nearby", the map and
+  // the AI assistant can auto-detect the user's location immediately.
+  unawaited(container.locationService.requestPermission());
+
+  runApp(TourismApp(container: container));
 }
