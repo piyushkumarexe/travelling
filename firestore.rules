@@ -223,6 +223,28 @@ service cloud.firestore {
                 && request.resource.data.daily <= 10000000));
     }
 
+    // ---- Travel Booking Hub: user-saved booking references ----
+    // Only metadata the user enters manually (provider, reference/PNR,
+    // route text). Ownership strictly enforced; no credentials stored.
+    match /users/{uid}/bookingRefs/{bookingId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.bookingId == bookingId
+        && request.resource.data.provider is string
+        && request.resource.data.provider.size() >= 1
+        && request.resource.data.provider.size() <= 60
+        && request.resource.data.category in ['ride','flight','train','bus','hotel','carRental','activities']
+        && request.resource.data.status in ['saved','confirmed','cancelled']
+        && (!('externalReference' in request.resource.data)
+            || (request.resource.data.externalReference is string
+                && request.resource.data.externalReference.size() <= 60));
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSelf(uid);
+    }
+
     // ---- Rate limits are backend-only ----
     match /rateLimits/{key} {
       allow read, write: if false;

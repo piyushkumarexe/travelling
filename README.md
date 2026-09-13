@@ -394,6 +394,51 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## Travel Booking Hub (🧳)
+
+Home card "Travel Booking Hub — Book rides, flights, trains, buses, hotels
+and activities." (route `/booking`).
+
+- One hub, seven categories (Ride, Flight, Train, Bus, Hotel/Stay, Car
+  Rental, Activities). Tourism starts the booking — the booking and payment
+  always happen in the provider's official app/site. No fares, seats,
+  availability, ratings or confirmations are ever shown here.
+- **Rides**: real GPS pickup (current-location button), MapTiler
+  destination search + map-pin selection, recent locations (clearable),
+  OSRM route preview (real distance/ETA). Bike/Auto/Cab selection, then
+  **verified official hand-off only**:
+  - **Uber** — official universal deep link (developer.uber.com documented
+    `m.uber.com/ul/?action=setPickup…`) with pickup + drop coordinates;
+    opens the Uber app when installed, else Uber mobile web.
+  - **Ola** — official out-of-app flow (developers.olacabs.com documented
+    `book.olacabs.com/?lat=…&lng=…&drop_lat=…&drop_lng=…`).
+  - **Rapido** — Bike/Auto/Cab selected in Tourism, then the official app
+    (com.rapido.passenger) is launched directly; Play Store page if not
+    installed. Rapido has no public deep link, so locations are NOT
+    prefilled — stated plainly, never faked.
+- **Trains**: official IRCTC Rail Connect app (cris.org.in.prs.ima) launch +
+  irctc.co.in fallback. **Flights**: MakeMyTrip's own public search URL
+  (route/date/pax/class filled) + Goibibo official site. **Buses**: redBus
+  official site. **Hotels**: Booking.com searchresults.html with official
+  parameters (ss/checkin/checkout/group_adults/no_rooms). **Car rental**:
+  Zoomcar official site. **Activities**: Headout/Klook official sites.
+  Providers with unverified links are NOT included — nothing invented.
+- Provider architecture: `BookingProvider` registry (id, category, verified
+  deep link / app package / official web URL, handoff format, note) +
+  `BookingApi` interface ready for a future official partner integration —
+  no UI rewrite needed. No private APIs, scraping, OTP reading or credential
+  storage — payments stay in the provider's secure flow.
+- After returning, Tourism offers **Save booking**: the user enters the
+  reference/PNR and status themselves (default "saved", never "confirmed").
+  Saved to Firestore `users/{uid}/bookingRefs` (owner-only rules) and shown
+  in "My saved bookings", linked to the active trip when one exists.
+- Honest launch results: opened app / opened official web / app not
+  installed (Play page opened) / link invalid / network error — never a
+  fake success.
+- Build tag `TRAVEL-BOOKING-HUB-2026-09-13-01` shown on the hub and ride
+  screens temporarily for install verification. Deploy rules via
+  `bash scripts/deploy-rules.sh` to enable saving booking references.
+
 ## Travel Expense Guard (💰)
 
 Home card "Travel Expense Guard — Track every rupee of your trip."

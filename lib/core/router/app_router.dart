@@ -7,6 +7,10 @@ import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/booking/booking_models.dart';
+import '../../features/booking/screens/booking_hub_screen.dart';
+import '../../features/booking/screens/ride_booking_screen.dart';
+import '../../features/booking/screens/travel_booking_screen.dart';
 import '../../features/autopilot/screens/autopilot_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
@@ -86,6 +90,29 @@ class AppRouter {
         path: '/expenses',
         builder: (BuildContext context, GoRouterState state) =>
             const ExpenseGuardScreen(),
+      ),
+      GoRoute(
+        path: '/booking',
+        builder: (BuildContext context, GoRouterState state) =>
+            const BookingHubScreen(),
+      ),
+      GoRoute(
+        path: '/booking/ride',
+        builder: (BuildContext context, GoRouterState state) =>
+            const RideBookingScreen(),
+      ),
+      GoRoute(
+        path: '/booking/travel',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          final String cat = extra is Map
+              ? (extra['category'] as String? ?? 'flight')
+              : 'flight';
+          final BookingCategory category = BookingCategory.values
+              .where((BookingCategory c) => c.name == cat)
+              .firstOrNull ?? BookingCategory.flight;
+          return TravelBookingScreen(category: category);
+        },
       ),
       GoRoute(
         path: '/expenses/add',

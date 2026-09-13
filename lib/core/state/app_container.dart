@@ -17,9 +17,11 @@ import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/weather_repository.dart';
 import '../../data/repositories/zones_repository.dart';
 import '../../features/autopilot/autopilot_service.dart';
+import '../../features/booking/booking_service.dart';
 import '../../features/expenses/expense_repository.dart';
 import '../app_config.dart';
 import '../network/api_client.dart';
+import '../network/osrm_client.dart';
 import '../services/eco_tracker.dart';
 import '../services/geofence_service.dart';
 import '../services/live_location_share.dart';
@@ -106,6 +108,15 @@ class AppContainer {
   /// The trip currently being navigated — survives tab switches so the
   /// shell can offer a one-tap "Resume" from anywhere.
   late final ActiveTripState activeTrip = ActiveTripState();
+
+  /// 🧳 Travel Booking Hub — verified official provider hand-off +
+  /// saved booking references (users/{uid}/bookingRefs).
+  late final BookingService bookingService = BookingService(
+    tripStore: tripPlanStore,
+  );
+
+  /// Shared OSRM routing client (single instance for the app).
+  late final OsrmClient osrmClient = OsrmClient();
 
   /// 💰 Travel Expense Guard — offline-first expense store (Firestore
   /// users/{uid}/expenses + receipts in Storage, reusing trip store).
