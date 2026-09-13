@@ -187,7 +187,7 @@ void main() {
     );
     // Museum (8+60+10=78) fits; Restaurant (10+45+10=65) would need 143 — drop.
     expect(rec.keep.map((AutopilotStop s) => s.id).toList(), <String>['a']);
-    expect(rec.drop.map((AutopilotStop s) => s.$1.id).toList(),
+    expect(rec.drop.map(((AutopilotStop, String) d) => d.$1.id).toList(),
         <String>['b', 'c']);
   });
 
