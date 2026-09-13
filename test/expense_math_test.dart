@@ -102,22 +102,24 @@ void main() {
   });
 
   test('settlements come only from saved split data', () {
+    // The recorded expense owner is the payer; isSelf marks the owner's own
+    // share.
     final List<Expense> list = <Expense>[
-      // You paid, split with A (40) and B (20) -> others owe you 60.
+      // You paid 120, your share 60 -> others owe you 40+20 = 60.
       _e('1', 120, 'INR', 'food', now, splits: const <SplitParticipant>[
         SplitParticipant(name: 'You', amount: 60, isSelf: true),
         SplitParticipant(name: 'A', amount: 40),
         SplitParticipant(name: 'B', amount: 20),
       ]),
-      // Someone else paid, your share 50 -> you owe 50.
+      // You paid 200, your share 50 -> C owes you 150.
       _e('2', 200, 'INR', 'tickets', now, splits: const <SplitParticipant>[
         SplitParticipant(name: 'C', amount: 150),
         SplitParticipant(name: 'You', amount: 50, isSelf: true),
       ]),
     ];
     final r = ExpenseMath.splitSettlement(list, 'You');
-    expect(r.othersOwe, 60);
-    expect(r.youOwe, 50);
+    expect(r.othersOwe, 210);
+    expect(r.youOwe, 0);
   });
 
   test('insights are deterministic strings from real data', () {
