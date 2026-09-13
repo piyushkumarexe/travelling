@@ -1,0 +1,707 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../core/network/api_exception.dart';
+import '../../core/network/osrm_client.dart';
+import '../../core/services/location_service.dart';
+import '../../data/local/nearby_store.dart';
+import '../../data/models/places.dart';
+import '../../data/repositories/places_repository.dart';
+import 'autopilot_engine.dart';
+import 'autopilot_models.dart';
+
+/// TRAVEL AUTOPILOT — session state.
+///
+/// Reuses the app's real systems only:
+/// - LocationService for GPS (never a fake/default location)
+/// - PlacesRepository.nearbyAround (cached Overpass dataset + SWR refresh)
+/// - OsrmClient for REAL road travel times (table + route)
+/// - SharedPreferences for session persistence (survives app restarts)
+///
+/// No new network stack, no second location system, no invented data.
+class AutopilotService extends ChangeNotifier {
+  AutopilotService({
+    required PlacesRepository placesRepository,
+    required LocationService locationService,
+    OsrmClient? osrm,
+  })  : _places = placesRepository,
+        _location = locationService,
+        _osrm = osrm ?? OsrmClient() {
+    // Silent live refresh: when the background dataset refresh lands,
+    // re-rank with fresh data (matches the app's stale-while-revalidate UX).
+    _updatesSub = _places.nearbyUpdates.listen((NearbyUpdate u) {
+      if (u.key == _datasetKey && !_loading) {
+        _dataset = u.result.places;
+        unawaited(recompute());
+      }
+    });
+  }
+
+  bool _restored = false;
+
+  /// Idempotent: loads a persisted session (called when the UI first opens;
+  /// the uid provider must be wired before this point).
+  Future<void> ensureRestored() async {
+    if (_restored) return;
+    _restored = true;
+    await _restore();
+  }
+
+  final PlacesRepository _places;
+  final LocationService _location;
+  final OsrmClient _osrm;
+
+  StreamSubscription<NearbyUpdate>? _updatesSub;
+  StreamSubscription<Position>? _arrivalSub;
+
+  // --- Session state ---
+  AutopilotSession? _session;
+  AutopilotBrief _brief = const AutopilotBrief();
+  List<Place> _dataset = const <Place>[];
+  String? _datasetKey;
+  List<AutopilotSuggestion> _suggestions = const <AutopilotSuggestion>[];
+  List<(AutopilotSuggestion, String)> _notPractical =
+      const <(AutopilotSuggestion, String)>[];
+  AutopilotPlan? _plan;
+  AutopilotRecovery? _recovery;
+
+  bool _loading = false;
+  AutopilotErrorKind? _error;
+  String? _errorMessage;
+  LatLng? _lastHere;
+
+  /// Session interest learning: category → accepted/visited count.
+  final Map<String, int> _learned = <String, int>{};
+
+  /// Real OSRM travel minutes by placeId for the current candidate set.
+  Map<String, int> _realTravel = const <String, int>{};
+  final Map<String, int> _routeCache = <String, int>{};
+
+  // --- Developer-only simulation (never shown in normal production UI) ---
+  Duration _debugTimeOffset = Duration.zero;
+  LatLng? _debugPosition;
+  bool debugUnlocked = false;
+
+  // ---------------- Getters ----------------
+  AutopilotSession? get session => _session;
+  AutopilotBrief get brief => _brief;
+  List<AutopilotSuggestion> get suggestions => _suggestions;
+  List<(AutopilotSuggestion, String)> get notPractical => _notPractical;
+  AutopilotPlan? get plan => _plan;
+  AutopilotRecovery? get recovery => _recovery;
+  bool get loading => _loading;
+  AutopilotErrorKind? get error => _error;
+  String? get errorMessage => _errorMessage;
+  LatLng? get lastHere => _debugPosition ?? _lastHere;
+  Map<String, int> get learnedInterest => Map<String, int>.unmodifiable(_learned);
+
+  DateTime now() => DateTime.now().add(_debugTimeOffset);
+
+  int minutesLeft() {
+    final AutopilotSession? s = _session;
+    if (s == null) return _brief.availableMinutes ?? 120;
+    return s.leftFrom(now()).inMinutes;
+  }
+
+  AutopilotStop? get currentStop => _session?.currentStop;
+
+  // ---------------- Location ----------------
+  Future<LatLng?> _here() async {
+    if (_debugPosition != null) return _debugPosition;
+    final Position? p = await _location.currentPosition();
+    if (p == null) return null;
+    _lastHere = LatLng(p.latitude, p.longitude);
+    return _lastHere;
+  }
+
+  // ---------------- Persistence ----------------
+  static const String _sessionPrefix = 'autopilot.session.v1.';
+  static const String _learnPrefix = 'autopilot.learn.v1.';
+
+  String? _uid() => _authUid?.call();
+  String? Function()? _authUid;
+
+  /// Wires the user id provider (called once from AppContainer setup).
+  set uidProvider(String? Function() provider) => _authUid = provider;
+
+  Future<void> _save() async {
+    final String? uid = _uid();
+    if (uid == null) return;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final AutopilotSession? s = _session;
+      if (s == null) {
+        await prefs.remove('$_sessionPrefix$uid');
+      } else {
+        await prefs.setString('$_sessionPrefix$uid', s.encode());
+      }
+      await prefs.setString('$_learnPrefix$uid', jsonEncode(_learned));
+    } catch (_) {
+      // Persistence is best-effort.
+    }
+  }
+
+  Future<void> _restore() async {
+    final String? uid = _uid();
+    if (uid == null) return;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? raw = prefs.getString('$_sessionPrefix$uid');
+      if (raw != null) {
+        final AutopilotSession s = AutopilotSession.decode(raw);
+        if (s.endsAt.isAfter(now()) &&
+            s.stops.any((AutopilotStop st) =>
+                st.status == AutopilotStopStatus.accepted ||
+                st.status == AutopilotStopStatus.visited ||
+                st.status == AutopilotStopStatus.proposed)) {
+          _session = s;
+          _brief = s.brief;
+          unawaited(recompute());
+          _watchArrival();
+          notifyListeners();
+        } else {
+          await prefs.remove('$_sessionPrefix$uid');
+        }
+      }
+      final String? learn = prefs.getString('$_learnPrefix$uid');
+      if (learn != null) {
+        // Lightweight decode of {"cat":n,...}.
+        final RegExp pair = RegExp(r'"([^"]+)":(\d+)');
+        for (final RegExpMatch m in pair.allMatches(learn)) {
+          _learned[m.group(1)!] = int.parse(m.group(2)!);
+        }
+      }
+    } catch (_) {
+      // Corrupt session → ignore, start fresh.
+    }
+  }
+
+  // ---------------- Flow: start ----------------
+
+  /// "What do you want to do?" → time → [GENERATE].
+  /// Works with ZERO itinerary: only location (+ optional time) required.
+  Future<bool> start(AutopilotBrief brief) async {
+    _brief = brief;
+    _error = null;
+    _errorMessage = null;
+    _plan = null;
+    _recovery = null;
+    if (brief.availableMinutes != null) {
+      final DateTime endsAt =
+          now().add(Duration(minutes: brief.availableMinutes!));
+      _session ??= AutopilotSession(
+        id: 'ap-${now().millisecondsSinceEpoch}',
+        brief: brief,
+        startedAt: now(),
+        endsAt: endsAt,
+        stops: const <AutopilotStop>[],
+      );
+    }
+    notifyListeners();
+    return recompute();
+  }
+
+  /// Core engine run: location → cached dataset → rank → (real OSRM times).
+  Future<bool> recompute() async {
+    _loading = true;
+    _error = null;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final LatLng? here = await _here();
+      if (here == null) {
+        _loading = false;
+        _error = AutopilotErrorKind.locationUnavailable;
+        _errorMessage = 'Your current location is unavailable.';
+        notifyListeners();
+        return false;
+      }
+      // Cached dataset (instant when available; SWR refresh lands later).
+      final NearbyResult r =
+          await _places.nearbyAround(here, force: _dataset.isEmpty);
+      _dataset = r.places;
+      _datasetKey = r.key;
+      if (_dataset.isEmpty) {
+        _loading = false;
+        _error = AutopilotErrorKind.noResults;
+        _errorMessage = 'No suitable places found nearby.';
+        notifyListeners();
+        return false;
+      }
+      _rank(here);
+      _loading = false;
+      notifyListeners();
+      // Progressive: upgrade estimates to real OSRM times in one request.
+      unawaited(_upgradeWithRealRoutes(here));
+      return true;
+    } on ApiException catch (e) {
+      _loading = false;
+      _error = switch (e.kind) {
+        ApiErrorKind.rateLimited => AutopilotErrorKind.rateLimited,
+        ApiErrorKind.network ||
+        ApiErrorKind.timeout =>
+          AutopilotErrorKind.networkError,
+        _ => AutopilotErrorKind.invalidData,
+      };
+      _errorMessage = switch (_error!) {
+        AutopilotErrorKind.rateLimited =>
+          'Nearby search is temporarily limited. Try again shortly.',
+        AutopilotErrorKind.networkError =>
+          'Fresh nearby information is temporarily unavailable. '
+              'Check your internet connection and retry.',
+        _ => 'Could not load nearby places right now.',
+      };
+      notifyListeners();
+      return false;
+    } catch (_) {
+      _loading = false;
+      _error = AutopilotErrorKind.invalidData;
+      _errorMessage = 'Could not load nearby places right now.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void _rank(LatLng here) {
+    final List<Place> candidates = AutopilotEngine.candidatesFor(
+      _dataset,
+      _brief,
+      excludeLat: here.latitude,
+      excludeLng: here.longitude,
+    );
+    // Already-visited/skipped/removed places never come back.
+    final Set<String> used = <String>{
+      for (final AutopilotStop s in _session?.stops ?? const <AutopilotStop>[])
+        if (s.status != AutopilotStopStatus.proposed) s.id,
+    };
+    final List<Place> fresh = candidates
+        .where((Place p) => !used.contains(p.placeId))
+        .toList();
+    final AutopilotRanking ranking = AutopilotEngine.rankPlaces(
+      candidates: fresh,
+      brief: _brief,
+      here: here,
+      now: now(),
+      minutesLeft: minutesLeft(),
+      realTravelMinutes: _realTravel,
+      learnedInterest: _learned,
+    );
+    _suggestions = ranking.practical;
+    _notPractical = ranking.notPractical;
+  }
+
+  /// One OSRM table request for the top candidates → real road minutes.
+  /// Best-effort: on failure the distance estimates stay (labeled "~").
+  Future<void> _upgradeWithRealRoutes(LatLng here) async {
+    final List<AutopilotSuggestion> top = _suggestions.take(12).toList();
+    if (top.isEmpty) return;
+    try {
+      final String mode = switch (_brief.mode) {
+        AutopilotMode.walk => 'walk',
+        AutopilotMode.bike => 'bike',
+        AutopilotMode.drive => 'car',
+      };
+      final List<int> minutes = await _osrm.tableMinutes(
+        origin: here,
+        destinations:
+            top.map((AutopilotSuggestion s) => LatLng(s.lat, s.lng)).toList(),
+        mode: mode,
+      );
+      final Map<String, int> real = <String, int>{..._realTravel};
+      for (int i = 0; i < top.length && i < minutes.length; i++) {
+        if (minutes[i] > 0) {
+          real[top[i].placeId] = minutes[i];
+          _routeCache[top[i].placeId] = minutes[i];
+        }
+      }
+      _realTravel = real;
+      if (_realTravel.isNotEmpty) {
+        _rank(here);
+        notifyListeners();
+      }
+    } on OsrmException {
+      // Estimates remain — the UI keeps showing "~X min" honestly.
+    } catch (_) {
+      // Never let ranking upgrade break the feature.
+    }
+  }
+
+  // ---------------- Flow: choose / next ----------------
+
+  /// User picked a place ([GO HERE] / [TAKE ME THERE]).
+  void choose(AutopilotSuggestion s) {
+    final AutopilotSession? session = _session;
+    if (session == null) {
+      _session = AutopilotSession(
+        id: 'ap-${now().millisecondsSinceEpoch}',
+        brief: _brief,
+        startedAt: now(),
+        endsAt: now().add(Duration(minutes: _brief.availableMinutes ?? 120)),
+        stops: <AutopilotStop>[],
+      );
+    }
+    // Replace any previously accepted (in-progress) stop.
+    final List<AutopilotStop> stops = _session!.stops
+        .map((AutopilotStop st) => st.status == AutopilotStopStatus.accepted
+            ? st.copyWith(status: AutopilotStopStatus.visited)
+            : st)
+        .toList();
+    _session = AutopilotSession(
+      id: _session!.id,
+      brief: _session!.brief,
+      startedAt: _session!.startedAt,
+      endsAt: _session!.endsAt,
+      stops: [...stops, s.toStop(AutopilotStopStatus.accepted)],
+      originName: _session!.originName,
+      originLat: _session!.originLat ?? _lastHere?.latitude,
+      originLng: _session!.originLng ?? _lastHere?.longitude,
+    );
+    _learn(s.category);
+    _plan = null;
+    _recovery = null;
+    _save();
+    _watchArrival();
+    notifyListeners();
+  }
+
+  void _learn(String category) {
+    if (category.isEmpty) return;
+    _learned[category] = math.min(9, (_learned[category] ?? 0) + 1);
+  }
+
+  /// Arrived at the current stop (real geofence ≤ 80 m, or simulated).
+  void markArrived() {
+    final AutopilotStop? cur = currentStop;
+    if (cur == null) return;
+    _replaceStop(cur.id, cur.copyWith(
+      status: AutopilotStopStatus.visited,
+      arrivedAt: now(),
+    ));
+    unawaited(_arrivalSub?.cancel());
+    _arrivalSub = null;
+    _save();
+    notifyListeners();
+  }
+
+  /// "What next?" — recompute from the current location for the time left.
+  Future<bool> whatNext() => recompute();
+
+  /// [SKIP] a suggestion → never recommended again this session.
+  Future<void> skip(AutopilotSuggestion s) async {
+    final AutopilotSession? session = _session;
+    if (session == null) return;
+    _session = AutopilotSession(
+      id: session.id,
+      brief: session.brief,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      stops: [...session.stops, s.toStop(AutopilotStopStatus.skipped)],
+      originName: session.originName,
+      originLat: session.originLat,
+      originLng: session.originLng,
+    );
+    await _save();
+    await recompute();
+  }
+
+  /// [REMOVE] a stop from the plan.
+  Future<void> removeStop(String stopId) async {
+    final AutopilotSession? session = _session;
+    if (session == null) return;
+    _session = AutopilotSession(
+      id: session.id,
+      brief: session.brief,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      stops: session.stops
+          .map((AutopilotStop st) =>
+              st.id == stopId ? st.copyWith(status: AutopilotStopStatus.removed) : st)
+          .toList(),
+      originName: session.originName,
+      originLat: session.originLat,
+      originLng: session.originLng,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  /// 🔄 CHANGE PLAN: new interests → future recommendations only.
+  Future<bool> changeInterests(Set<AutopilotInterest> interests) async {
+    _brief = _brief.copyWith(interests: interests);
+    final AutopilotSession? session = _session;
+    if (session != null) {
+      _session = AutopilotSession(
+        id: session.id,
+        brief: _brief,
+        startedAt: session.startedAt,
+        endsAt: session.endsAt,
+        stops: session.stops,
+        originName: session.originName,
+        originLat: session.originLat,
+        originLng: session.originLng,
+      );
+      await _save();
+    }
+    return recompute();
+  }
+
+  /// Session-only interest learning reset.
+  Future<void> resetPreferences() async {
+    _learned.clear();
+    await _save();
+    notifyListeners();
+  }
+
+  // ---------------- ⚡ AUTO PLAN ----------------
+
+  AutopilotPlan generatePlan() {
+    final int returnMin = _returnTravelMinutes();
+    final AutopilotPlan p = AutopilotEngine.buildAutoPlan(
+      ranked: _suggestions,
+      minutesLeft: minutesLeft(),
+      returnMinutes: returnMin > 0 ? returnMin : null,
+    );
+    _plan = p;
+    notifyListeners();
+    return p;
+  }
+
+  int _returnTravelMinutes() {
+    final AutopilotBrief b = _brief;
+    final LatLng? here = _lastHere;
+    if (b.endLat == null || b.endLng == null || here == null) return 0;
+    return AutopilotEngine.estimateTravelMinutes(
+      GeoUtils.distanceMeters(here, LatLng(b.endLat!, b.endLng!)),
+      b.mode,
+    );
+  }
+
+  /// [START THIS PLAN]: queue all plan stops (first becomes accepted).
+  Future<void> startPlan() async {
+    final AutopilotPlan? p = _plan;
+    if (p == null || p.steps.isEmpty) return;
+    final AutopilotSession? session = _session;
+    if (session == null) {
+      _session = AutopilotSession(
+        id: 'ap-${now().millisecondsSinceEpoch}',
+        brief: _brief,
+        startedAt: now(),
+        endsAt: now().add(Duration(minutes: _brief.availableMinutes ?? 120)),
+        stops: const <AutopilotStop>[],
+      );
+    }
+    final List<AutopilotStop> stops = <AutopilotStop>[];
+    for (int i = 0; i < p.steps.length; i++) {
+      final AutopilotPlanStep step = p.steps[i];
+      stops.add(step.suggestion.toStop(i == 0
+          ? AutopilotStopStatus.accepted
+          : AutopilotStopStatus.proposed));
+    }
+    _session = AutopilotSession(
+      id: _session!.id,
+      brief: _session!.brief,
+      startedAt: _session!.startedAt,
+      endsAt: _session!.endsAt,
+      stops: [..._session!.stops, ...stops],
+      originName: _session!.originName,
+      originLat: _session!.originLat ?? _lastHere?.latitude,
+      originLng: _session!.originLng ?? _lastHere?.longitude,
+    );
+    _learn(p.steps.first.suggestion.category);
+    _plan = null;
+    await _save();
+    _watchArrival();
+    notifyListeners();
+  }
+
+  // ---------------- 🛟 FIX MY TRIP (recovery) ----------------
+
+  void fixMyTrip() {
+    final AutopilotSession? session = _session;
+    if (session == null) return;
+    final List<AutopilotStop> pending = session.stops
+        .where((AutopilotStop st) => st.status == AutopilotStopStatus.proposed)
+        .toList();
+    final AutopilotRecovery r = AutopilotEngine.recoverPlan(
+      pending: pending,
+      minutesLeft: minutesLeft(),
+    );
+    _recovery = r;
+    notifyListeners();
+  }
+
+  /// [APPLY] the recovery: pending stops = kept ones only.
+  Future<void> applyRecovery() async {
+    final AutopilotSession? session = _session;
+    final AutopilotRecovery? r = _recovery;
+    if (session == null || r == null) return;
+    final Set<String> keepIds = <String>{for (final AutopilotStop s in r.keep) s.id};
+    _session = AutopilotSession(
+      id: session.id,
+      brief: session.brief,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      stops: session.stops
+          .map((AutopilotStop st) =>
+              (st.status == AutopilotStopStatus.proposed && !keepIds.contains(st.id))
+                  ? st.copyWith(status: AutopilotStopStatus.skipped,
+                      reason: 'Removed to fit your remaining time')
+                  : st)
+          .toList(),
+      originName: session.originName,
+      originLat: session.originLat,
+      originLng: session.originLng,
+    );
+    _recovery = null;
+    await _save();
+    notifyListeners();
+  }
+
+  void discardRecovery() {
+    _recovery = null;
+    notifyListeners();
+  }
+
+  // ---------------- 😴 BREAK ----------------
+
+  /// Nearby cafe/park options for a break, straight from the cached dataset.
+  List<AutopilotSuggestion> breakOptions() {
+    final LatLng? here = _lastHere;
+    if (here == null) return const <AutopilotSuggestion>[];
+    final List<Place> calm = _dataset
+        .where((Place p) =>
+            p.category == 'cafe' || p.category == 'park' ||
+            p.category == 'restaurant')
+        .toList();
+    final AutopilotRanking r = AutopilotEngine.rankPlaces(
+      candidates: AutopilotEngine.candidatesFor(calm, const AutopilotBrief(),
+          excludeLat: here.latitude, excludeLng: here.longitude),
+      brief: const AutopilotBrief(maxTravelMinutes: 20),
+      here: here,
+      now: now(),
+      minutesLeft: minutesLeft(),
+      realTravelMinutes: _realTravel,
+    );
+    return r.practical.take(5).toList();
+  }
+
+  /// Records a 30-minute break (time accounting stays honest).
+  Future<void> takeBreak() async {
+    final AutopilotSession? session = _session;
+    if (session == null) return;
+    _session = AutopilotSession(
+      id: session.id,
+      brief: session.brief,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      stops: [...session.stops, AutopilotStop(
+        id: 'break-${now().millisecondsSinceEpoch}',
+        name: 'Break',
+        lat: 0, lng: 0,
+        category: 'break',
+        status: AutopilotStopStatus.visited,
+        visitMinutes: 30,
+      )],
+      originName: session.originName,
+      originLat: session.originLat,
+      originLng: session.originLng,
+    );
+    await _save();
+    notifyListeners();
+  }
+
+  // ---------------- Stop / end ----------------
+
+  Future<void> stopAutopilot() async {
+    await _arrivalSub?.cancel();
+    _arrivalSub = null;
+    _session = null;
+    _suggestions = const <AutopilotSuggestion>[];
+    _notPractical = const <(AutopilotSuggestion, String)>[];
+    _plan = null;
+    _recovery = null;
+    await _save();
+    notifyListeners();
+  }
+
+  // ---------------- Arrival geofence ----------------
+
+  void _watchArrival() {
+    unawaited(_arrivalSub?.cancel());
+    _arrivalSub = null;
+    if (_session?.currentStop == null || _debugPosition != null) return;
+    _arrivalSub = _location
+        .watchPosition(distanceFilter: 40)
+        .listen((Position p) {
+      final AutopilotStop? cur = currentStop;
+      if (cur == null) return;
+      final double d = GeoUtils.distanceMetersLL(
+          p.latitude, p.longitude, cur.lat, cur.lng);
+      if (d <= 80) markArrived();
+    }, onError: (Object _) {});
+  }
+
+  // ---------------- Debug / developer simulation ----------------
+  // Hidden from normal production UI (see AutopilotScreen gating).
+
+  void setDebugTimeOffset(Duration offset) {
+    _debugTimeOffset = offset;
+    notifyListeners();
+  }
+
+  void setDebugPosition(LatLng? p) {
+    _debugPosition = p;
+    notifyListeners();
+  }
+
+  void debugSimulateArrival() => markArrived();
+
+  void debugSimulateDelay(int minutes) {
+    _debugTimeOffset += Duration(minutes: minutes);
+    notifyListeners();
+  }
+
+  void debugSimulateSkip() {
+    final AutopilotStop? cur = currentStop;
+    if (cur != null) {
+      _replaceStop(cur.id, cur.copyWith(
+          status: AutopilotStopStatus.skipped, reason: 'Simulated skip'));
+    } else if (_suggestions.isNotEmpty) {
+      unawaited(skip(_suggestions.first));
+      return;
+    }
+    notifyListeners();
+  }
+
+  // ---------------- Helpers ----------------
+
+  void _replaceStop(String id, AutopilotStop updated) {
+    final AutopilotSession? session = _session;
+    if (session == null) return;
+    _session = AutopilotSession(
+      id: session.id,
+      brief: session.brief,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      stops: session.stops
+          .map((AutopilotStop st) => st.id == id ? updated : st)
+          .toList(),
+      originName: session.originName,
+      originLat: session.originLat,
+      originLng: session.originLng,
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_updatesSub?.cancel());
+    unawaited(_arrivalSub?.cancel());
+    super.dispose();
+  }
+}

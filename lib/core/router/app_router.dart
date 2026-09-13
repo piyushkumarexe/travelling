@@ -6,6 +6,7 @@ import '../../data/models/places.dart';
 import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
+import '../../features/autopilot/screens/autopilot_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
@@ -70,6 +71,11 @@ class AppRouter {
         path: '/login',
         builder: (BuildContext context, GoRouterState state) =>
             const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/autopilot',
+        builder: (BuildContext context, GoRouterState state) =>
+            const AutopilotScreen(),
       ),
       ShellRoute(
         builder: (BuildContext context, GoRouterState state, Widget child) =>

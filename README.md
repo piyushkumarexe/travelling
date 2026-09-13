@@ -394,6 +394,41 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## Travel Autopilot (🧭)
+
+A zero-itinerary trip engine on the Home screen: **"Tell us what you want to
+do. We'll help you figure out what to do next."**
+
+- Works with only **current location + available time** (30 min / 1 / 2 / 4 h /
+  all day / custom). Interests (Eat, Explore, Shopping, Relax, Historical,
+  Family, …), budget, travel mode, max-travel-time and an end destination are
+  all OPTIONAL. A free-text box parses things like *"I have 3 hours and want
+  to see historical places, budget of 500"* (deterministic parser — no fake AI).
+- **WHAT SHOULD I DO NOW?** skips every question and ranks the real cached
+  nearby dataset (the same Overpass/MapTiler system as Explore) with a
+  practical score: distance, real OSRM road time (one `/table` request),
+  OSM opening hours when mapped, remaining time fit, and session interests.
+- Every recommendation shows **understandable reasons** ("1.4 km away
+  (~6 min drive)", "Open until 9:00 PM — enough time to visit",
+  "Opening hours unavailable") and impractical places (arrival after closing,
+  doesn't fit remaining time) are listed separately with the exact reason.
+- **TAKE ME THERE** opens the existing OSRM navigation; arrival (≤80 m
+  geofence) triggers "✅ You've arrived — SHOW NEXT / STAY HERE / END".
+- ⚡ **AUTO PLAN** builds a multi-stop sequence that fits the available time
+  (🟢/🔴 verdict), with START THIS PLAN / REGENERATE / CHANGE.
+- 🛟 **FIX MY TRIP** recovers a late schedule by dropping tail stops with
+  real calculated reasons; 😴 **BREAK** finds nearby cafés/parks and banks a
+  30-minute break; **CHANGE PLAN** re-picks interests without touching
+  completed stops; **STOP AUTOPILOT** is always one tap away.
+- Budget mode is honest: transport is a labelled distance-based estimate;
+  entry/food show **"price unavailable"** — prices are never invented.
+- The session (stops, time, brief, learned interests) persists in
+  SharedPreferences per user and **survives app restarts** until the time
+  window ends. Interest learning uses only in-app choices and has
+  **Reset preferences**.
+- Developer-only simulation controls (simulated arrival/delay/skip/time) are
+  hidden in release builds — unlock with 7 taps on the screen title.
+
 ## Honest limitations
 
 - Geofence monitoring runs while the app is alive (foreground or

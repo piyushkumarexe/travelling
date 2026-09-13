@@ -1101,6 +1101,7 @@ class FreeGeoClient {
         primaryType: 'poi',
         types: const <String>['point_of_interest'],
         provider: 'overpass',
+        metadata: tags is Map ? _poiMeta(tags) : const <String, dynamic>{},
       ));
     }
     return _ProviderResult(
@@ -1561,6 +1562,7 @@ class FreeGeoClient {
         provider: 'overpass',
         distanceMeters: dist,
         types: types.toList(),
+        metadata: _poiMeta(tagsObj),
       );
       final String key = _dedupKey(p);
       final Place? existing = dedup[key];
@@ -1595,6 +1597,23 @@ class FreeGeoClient {
       out.insert(0, 'food');
     }
     return out;
+  }
+
+  /// Tags worth keeping on a Place for downstream logic (Travel Autopilot
+  /// uses opening_hours + fee; never fabricated — absent when OSM lacks it).
+  static Map<String, dynamic> _poiMeta(Map tags) {
+    final Map<String, dynamic> m = <String, dynamic>{};
+    final Object? oh = tags['opening_hours'];
+    if (oh != null && oh.toString().trim().isNotEmpty) {
+      m['opening_hours'] = oh.toString();
+    }
+    final Object? fee = tags['fee'];
+    if (fee != null) m['fee'] = fee.toString();
+    final Object? charge = tags['charge'];
+    if (charge != null && charge.toString().trim().isNotEmpty) {
+      m['charge'] = charge.toString();
+    }
+    return m;
   }
 
   static String _phoneOf(Map tags) {

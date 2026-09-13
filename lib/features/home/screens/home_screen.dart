@@ -321,6 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                 children: <Widget>[
+                  _autopilotCard(),
+                  const SizedBox(height: 12),
                   _weatherCard(),
                   const SizedBox(height: 12),
                   _safetyCard(),
@@ -349,6 +351,59 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  /// 🧭 TRAVEL AUTOPILOT — prominent entry point. Works with zero
+  /// itinerary: current location + "I have 2 hours" is enough.
+  Widget _autopilotCard() {
+    final bool resuming = _c.autopilotService.session != null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF1E3A8A), Color(0xFF2563EB)],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Row(
+              children: <Widget>[
+                Text('🧭',
+                    style: TextStyle(fontSize: 22)),
+                SizedBox(width: 8),
+                Text('TRAVEL AUTOPILOT',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        letterSpacing: 0.3)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              "Tell us what you want to do. We'll help you figure out "
+              'what to do next.',
+              style: TextStyle(color: Colors.white70, fontSize: 12.5),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF1E3A8A),
+              ),
+              onPressed: () => context.push('/autopilot'),
+              icon: const Icon(Icons.explore, size: 18),
+              label: Text(resuming ? 'RESUME AUTOPILOT' : 'START AUTOPILOT'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

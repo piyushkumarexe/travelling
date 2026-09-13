@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:dio/dio.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -124,6 +126,57 @@ class OsrmClient {
       polyline: points,
       provider: 'osrm',
     );
+  }
+
+  /// One request, many destinations: real road travel times from [origin]
+  /// to every destination (OSRM /table service, same server as [route]).
+  /// Used by Travel Autopilot to rank options with realistic drive times
+  /// instead of distance guesses. Returns minutes per destination (index
+  /// matches [destinations]). Throws [OsrmException] on failure — callers
+  /// fall back to their own estimates, never to invented certainty.
+  Future<List<int>> tableMinutes({
+    required LatLng origin,
+    required List<LatLng> destinations,
+    String mode = 'car',
+  }) async {
+    if (destinations.isEmpty) return const <int>[];
+    final String profile = profileFor(mode);
+    final StringBuffer coords = StringBuffer(
+        '${origin.longitude},${origin.latitude}');
+    for (final LatLng d in destinations) {
+      coords.write(';${d.longitude},${d.latitude}');
+    }
+    final Response<dynamic> resp;
+    try {
+      resp = await _dio.get<dynamic>(
+          '$server/table/v1/$profile/$coords?sources=0&annotations=duration');
+    } on DioException catch (e) {
+      throw OsrmException(OsrmErrorKind.network, _networkMessage(e));
+    }
+    final Map<String, dynamic>? map = _asStringMap(resp.data);
+    if (map == null) {
+      throw const OsrmException(OsrmErrorKind.invalidResponse,
+          'Unexpected routing response.');
+    }
+    if ((map['code'] as String?) != 'Ok') {
+      throw const OsrmException(
+          OsrmErrorKind.invalidResponse, 'Routing table failed.');
+    }
+    final List<dynamic>? durations =
+        map['durations'] is List ? map['durations'] as List : null;
+    if (durations == null ||
+        durations.isEmpty ||
+        durations.first is! List ||
+        (durations.first as List).length < destinations.length) {
+      throw const OsrmException(
+          OsrmErrorKind.invalidResponse, 'Incomplete routing table.');
+    }
+    final List<int> out = <int>[];
+    for (final dynamic v in durations.first as List) {
+      final double? seconds = v is num ? v.toDouble() : null;
+      out.add(seconds == null ? -1 : math.max(1, (seconds / 60).round()));
+    }
+    return out;
   }
 
   Map<String, dynamic>? _asStringMap(Object? value) {

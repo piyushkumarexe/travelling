@@ -16,6 +16,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/weather_repository.dart';
 import '../../data/repositories/zones_repository.dart';
+import '../../features/autopilot/autopilot_service.dart';
 import '../app_config.dart';
 import '../network/api_client.dart';
 import '../services/eco_tracker.dart';
@@ -104,6 +105,13 @@ class AppContainer {
   /// The trip currently being navigated — survives tab switches so the
   /// shell can offer a one-tap "Resume" from anywhere.
   late final ActiveTripState activeTrip = ActiveTripState();
+
+  /// 🧭 Travel Autopilot — real-data "what next?" engine (reuses the
+  /// nearby dataset, OSRM and this container's location service).
+  late final AutopilotService autopilotService = AutopilotService(
+    placesRepository: placesRepository,
+    locationService: locationService,
+  )..uidProvider = () => authRepository.currentUser?.uid;
 
   /// Live location sharing with the SOS contact (started from the
   /// navigation flow after the user accepts the share prompt).
