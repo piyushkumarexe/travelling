@@ -1,13 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/services/location_service.dart';
 import '../../../core/state/app_container.dart';
-import '../../../core/theme/app_theme.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
 

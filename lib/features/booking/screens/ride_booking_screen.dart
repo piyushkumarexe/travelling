@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
-import '../../../core/network/osrm_client.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
@@ -105,7 +105,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
           q.trim(),
           location: me == null
               ? null
-              : LatLng(me.latitude, me.longitude),
+              : gm.LatLng(me.latitude, me.longitude),
           limit: 6,
         );
         if (!mounted) return;
@@ -139,8 +139,8 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     });
     _c.osrmClient
         .route(
-      origin: LatLng(from.lat, from.lng),
-      destination: LatLng(to.lat, to.lng),
+      origin: gm.LatLng(from.lat, from.lng),
+      destination: gm.LatLng(to.lat, to.lng),
       mode: _serviceType == 'bike' ? 'bike' : 'car',
     )
         .then((RouteInfo r) {
@@ -380,6 +380,24 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
                 child: Text('Drop: ${_drop!.name}',
                     style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
+            if (_suggestions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 6),
+              for (final Place p in _suggestions)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.place, size: 16),
+                  title: Text(p.name,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13)),
+                  subtitle: p.address == null
+                      ? null
+                      : Text(p.address!,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11)),
+                  onTap: () => _pickSuggestion(p),
+                ),
+            ],
             if (_recents.isNotEmpty) ...<Widget>[
               const SizedBox(height: 8),
               Text('Recent',
@@ -460,7 +478,10 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
                   polylines: <Polyline>[
                     if (_route != null && _route!.polyline.length >= 2)
                       Polyline(
-                        points: _route!.polyline,
+                        points: _route!.polyline
+                            .map((gm.LatLng p) =>
+                                LatLng(p.latitude, p.longitude))
+                            .toList(),
                         color: Theme.of(context).colorScheme.primary,
                         strokeWidth: 5,
                       ),

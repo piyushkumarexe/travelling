@@ -279,6 +279,7 @@ class BookingService extends ChangeNotifier {
 }
 
 enum BookingLaunchResult {
+  ok, // initial/reset state
   opened, // universal/deep link fired (app or provider web)
   openedApp, // official app launched directly
   openedWeb, // official website opened (no prefill)
@@ -288,6 +289,7 @@ enum BookingLaunchResult {
 }
 
 String describeLaunch(BookingLaunchResult r) => switch (r) {
+      BookingLaunchResult.ok => '',
       BookingLaunchResult.opened =>
         'Continued with the provider\'s official booking flow.',
       BookingLaunchResult.openedApp => 'Official provider app opened.',
