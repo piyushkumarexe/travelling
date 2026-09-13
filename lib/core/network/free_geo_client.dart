@@ -29,6 +29,12 @@ class FreeGeoClient {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 15),
+    headers: <String, String>{
+      // Overpass mirrors (kumi.systems, private.coffee, …) require a
+      // descriptive User-Agent per their usage policy; without one they may
+      // reject or aggressively rate-limit requests.
+      'User-Agent': 'TourismApp/1.0 (Android travel & safety assistant)',
+    },
   ));
 
   final Dio _nominatim = Dio(BaseOptions(
@@ -53,13 +59,25 @@ class FreeGeoClient {
   static DateTime? _lastOverpassAt;
   static const Duration _overpassMinGap = Duration(milliseconds: 350);
 
-  /// The host that last answered successfully — tried first next time, so we
-  /// stop hammering the primary mirror after it starts rate-limiting.
-  static int _overpassHostBias = 0;
+  /// Public Overpass instances, in preference order. Multiple mirrors spread
+  /// load so a single "too busy" server can never kill the nearby feature —
+  /// verified reachable and returning valid OSM JSON as of 2026-09-13.
+  static const List<String> _overpassHosts = <String>[
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+  ];
 
-  /// When a 429 arrives, remember it briefly so callers fail fast to their
-  /// cached fallback instead of piling more requests onto the server.
-  static DateTime? _overpassRateLimitedUntil;
+  /// Per-host rate-limit cooldown (host → earliest allowed retry time). When
+  /// a mirror returns 429 it tells us exactly when its slot opens again; we
+  /// honour that hint and route around the busy mirror instead of hammering
+  /// it or flat-waiting globally.
+  static final Map<String, DateTime> _overpassCooldown =
+      <String, DateTime>{};
+
+  /// Round-robin cursor so concurrent requests (the two grouped nearby
+  /// queries) START on different mirrors instead of piling onto one host.
+  static int _overpassRoundRobin = 0;
 
   /// In-flight dedup: identical Overpass query → one shared Future, so
   /// concurrent components never send the same request twice.
@@ -895,14 +913,6 @@ class FreeGeoClient {
 
     final String query = b.toString();
 
-    // 429 cooldown: fail fast to the cached fallback instead of hammering the
-    // public server while it is still rate-limiting us.
-    final DateTime? limited = _overpassRateLimitedUntil;
-    if (limited != null && DateTime.now().isBefore(limited)) {
-      throw const ApiException(ApiErrorKind.rateLimited,
-          'Nearby search is temporarily limited. Try again shortly.');
-    }
-
     // In-flight dedup: one shared request for identical queries.
     final Future<_ProviderResult>? pending = _overpassInFlight[query];
     if (pending != null) return pending;
@@ -966,10 +976,11 @@ class FreeGeoClient {
   }
 
   /// Single Overpass request runner shared by the per-category search and the
-  /// grouped nearby fetch. Throttles to [_overpassMinGap], rotates hosts,
-  /// remembers 429s without hard-blocking the fallback mirror, and classifies
-  /// network/server/parser failures as distinct typed errors — so callers
-  /// never collapse a provider failure into "no results".
+  /// grouped nearby fetch. Throttles to [_overpassMinGap], rotates across
+  /// multiple public mirrors, honours each mirror's own 429 retry hint via a
+  /// per-host cooldown (so a busy server is skipped, not hammered), and
+  /// classifies network/server/parser failures as distinct typed errors — so
+  /// callers never collapse a provider failure into "no results".
   Future<List<dynamic>> _overpassElements(String query) async {
     final DateTime? last = _lastOverpassAt;
     if (last != null) {
@@ -985,19 +996,26 @@ class FreeGeoClient {
     NearbyDebug.instance.requestCount = reqNo;
     NearbyDebug.instance.phase = 'requesting';
 
-    const List<String> hosts = <String>[
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-    ];
+    // Pure round-robin start: concurrent requests (the two grouped nearby
+    // queries) always begin on DIFFERENT mirrors, so one host never receives
+    // two simultaneous requests (Overpass fair-use is ~2 concurrent slots,
+    // and a mirror that 429s is then skipped via its per-host cooldown).
+    final int n = _overpassHosts.length;
+    final int start = _overpassRoundRobin++ % n;
     final List<String> ordered = <String>[
-      hosts[_overpassHostBias % hosts.length],
-      hosts[(_overpassHostBias + 1) % hosts.length],
+      for (int i = 0; i < n; i++) _overpassHosts[(start + i) % n],
     ];
 
     bool responded = false;
     bool serverError = false;
     bool got429 = false;
     for (final String host in ordered) {
+      final DateTime? until = _overpassCooldown[host];
+      if (until != null && DateTime.now().isBefore(until)) {
+        // This mirror is still in its own cooldown — skip it, keep the
+        // others fully usable.
+        continue;
+      }
       final Stopwatch sw = Stopwatch()..start();
       NearbyDebug.instance.host = host;
       try {
@@ -1016,8 +1034,7 @@ class FreeGeoClient {
           NearbyDebug.instance.phase = 'unusable-body';
           continue;
         }
-        _overpassHostBias = hosts.indexOf(host);
-        _overpassRateLimitedUntil = null;
+        _overpassCooldown.remove(host);
         final List<dynamic> elements = data['elements'] as List;
         NearbyDebug.instance.rawCount = elements.length;
         NearbyDebug.instance.phase = 'ok';
@@ -1029,12 +1046,18 @@ class FreeGeoClient {
         final int? code = e.response?.statusCode;
         NearbyDebug.instance.httpStatus = code;
         if (code == 429) {
-          // Rate limited on THIS mirror: try the other one before giving up.
+          // Rate limited on THIS mirror: honour its retry hint and move on to
+          // the next mirror instead of piling more requests onto it.
           got429 = true;
           responded = true;
+          final Duration wait = _overpassRetryDelay(e.response);
+          _overpassCooldown[host] = DateTime.now().add(wait);
           NearbyDebug.instance.phase = '429';
+          NearbyDebug.instance.error =
+              '429 (rate limited, cooldown ${wait.inSeconds}s)';
           debugPrint('[places] overpass req#$reqNo $host 429 '
-              '${sw.elapsedMilliseconds}ms — trying next host');
+              '${sw.elapsedMilliseconds}ms — cooldown ${wait.inSeconds}s, '
+              'trying next mirror');
           continue;
         }
         NearbyDebug.instance.phase = 'error:${code ?? e.type.name}';
@@ -1051,8 +1074,6 @@ class FreeGeoClient {
       }
     }
     if (got429) {
-      _overpassRateLimitedUntil =
-          DateTime.now().add(const Duration(seconds: 10));
       NearbyDebug.instance.phase = 'rateLimited';
       NearbyDebug.instance.error = '429 (rate limited)';
       throw const ApiException(ApiErrorKind.rateLimited,
@@ -1074,6 +1095,50 @@ class FreeGeoClient {
     NearbyDebug.instance.error = 'unreachable';
     throw const ApiException(
         ApiErrorKind.network, 'Overpass is unreachable right now.');
+  }
+
+  /// Decodes a mirror's 429 response into a polite wait: prefer the server's
+  /// own hint (Retry-After header, "Slot available again at …" body, or
+  /// kumi's "rate_limited: N" body), falling back to a short default only
+  /// when no hint is present.
+  static Duration _overpassRetryDelay(Response<dynamic>? resp) {
+    if (resp != null) {
+      final String? retryAfter = resp.headers.value('retry-after');
+      if (retryAfter != null) {
+        final int? secs = int.tryParse(retryAfter.trim());
+        if (secs != null && secs > 0) {
+          return Duration(seconds: secs.clamp(1, 120).toInt());
+        }
+      }
+      String body = '';
+      final Object? data = resp.data;
+      if (data is String) {
+        body = data;
+      } else if (data is Map) {
+        body = data.toString();
+      }
+      // overpass-api.de overload: "Slot available again at <ISO8601>".
+      final Match? slot = RegExp(r'Slot available again at (.+?)(\s|$)')
+          .firstMatch(body);
+      if (slot != null) {
+        final DateTime? t = DateTime.tryParse(slot.group(1)!.trim());
+        if (t != null) {
+          final int secs = t.difference(DateTime.now().toUtc()).inSeconds;
+          if (secs > 0) return Duration(seconds: secs.clamp(1, 120).toInt());
+        }
+      }
+      // kumi.systems: "rate_limited: 2" (per-second) vs "rate_limited: 10000"
+      // (per-day) — a small N is a brief throttle, a large N is the daily cap.
+      final Match? rl = RegExp(r'rate_limited:\s*(\d+)').firstMatch(body);
+      if (rl != null) {
+        final int? n = int.tryParse(rl.group(1)!);
+        if (n != null) {
+          if (n <= 5) return const Duration(seconds: 2);
+          return const Duration(minutes: 30);
+        }
+      }
+    }
+    return const Duration(seconds: 12);
   }
 
   /// Canonical OSM-derived nearby categories and their tag predicates.
