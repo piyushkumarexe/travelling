@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:tourism/data/models/places.dart';
-import 'package:tourism/features/autopilot/autopilot_engine.dart';
-import 'package:tourism/features/autopilot/autopilot_models.dart';
+import 'package:yatrawise/data/models/places.dart';
+import 'package:yatrawise/features/autopilot/autopilot_engine.dart';
+import 'package:yatrawise/features/autopilot/autopilot_models.dart';
 
 Place _p(
   String id,

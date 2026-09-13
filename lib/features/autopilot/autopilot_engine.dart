@@ -279,7 +279,7 @@ class AutopilotEngine {
       final OpeningHours? oh =
           parseOpeningHours(p.metadata['opening_hours'] as String?);
       final bool hoursKnown = oh != null && oh.appliesTo(now);
-      final DateTime? openUntil = hoursKnown ? oh!.closesAt(now) : null;
+      final DateTime? openUntil = hoursKnown ? oh.closesAt(now) : null;
       final int minutesToClose =
           openUntil == null ? -1 : openUntil.difference(now).inMinutes;
       final bool closesTooSoon =
@@ -316,7 +316,7 @@ class AutopilotEngine {
         '${GeoUtils.formatDistance(dist)} away (~$travelMin min ${_modeWord(brief.mode)})',
         if (visitFits && openUntil != null)
           'Open until ${_hhmm(openUntil)} — enough time to visit'
-        else if (hoursKnown && minutesToClose >= 0)
+        else if (hoursKnown && openUntil != null)
           'Closes at ${_hhmm(openUntil)}'
         else
           'Opening hours unavailable',
@@ -349,7 +349,7 @@ class AutopilotEngine {
         rejected.add((
           s,
           'Estimated arrival is ${_hhmm(now.add(Duration(minutes: travelMin)))} '
-          'and the place closes at ${_hhmm(openUntil)}'
+          'and the place closes at ${_hhmm(openUntil!)}'
         ));
       } else if (!fitsTime) {
         rejected.add((s, 'Does not fit your ${_durLabel(minutesLeft)} left'));

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/osrm_client.dart';
 import '../../core/services/location_service.dart';
+import '../../core/utils/geo.dart';
 import '../../data/local/nearby_store.dart';
 import '../../data/models/places.dart';
 import '../../data/repositories/places_repository.dart';

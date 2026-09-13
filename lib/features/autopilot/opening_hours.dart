@@ -21,7 +21,7 @@ class OpeningHours {
     if (alwaysOpen) return null;
     final List<(int, int)>? r = ranges[when.weekday];
     if (r == null || r.isEmpty) return null;
-    (int, int)? latest = r.first;
+    (int, int) latest = r.first;
     for (final (int, int) span in r) {
       if (span.$2 >= latest.$2) latest = span;
     }

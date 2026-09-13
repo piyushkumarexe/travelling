@@ -268,7 +268,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           label: const Text('Next: how much time?'),
         ),
         const SizedBox(height: 8),
-        FilledButton.tonalIcon(
+        FilledButton.icon(
           onPressed: () async {
             // "WHAT SHOULD I DO NOW?" — no interests needed at all.
             await _svc.start(const AutopilotBrief());
@@ -445,7 +445,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           icon: const Icon(Icons.flash_on),
           label: const Text('GENERATE'),
         ),
-        FilledButton.tonal.icon(
+        FilledButton.icon(
           onPressed: () => _generate(autoPlan: true),
           icon: const Icon(Icons.auto_mode),
           label: const Text('⚡ AUTO PLAN'),
