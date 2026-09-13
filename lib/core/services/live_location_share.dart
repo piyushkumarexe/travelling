@@ -204,7 +204,9 @@ class LiveLocationShareService extends ChangeNotifier {
   Future<bool> sendManualSmsNow() async {
     if (!hasContact) return false;
     if (!await smsService.hasSendSmsPermission()) return false;
-    return _sendSmsUpdate();
+    final int before = _smsSent;
+    await _sendSmsUpdate();
+    return _smsSent > before;
   }
 
   Future<Position?> _fix() async {
