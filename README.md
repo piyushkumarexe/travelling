@@ -337,6 +337,27 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 | Places search 403 | Server key not restricted/allowed properly for Places (legacy) API. |
 | Geofence never fires | Background location permission must be *While using* or *All the time*; zone must be active; keep the process alive (Android battery saver off while testing). |
 | SOS button says location unavailable | Enable device GPS; the app will not fabricate coordinates. |
+| Notifications: `[cloud_firestore/permission-denied]` | The deployed Firestore rules predate `users/{uid}/notifications` (and the live-location update rule). Run **`bash scripts/deploy-rules.sh`** once from the repo root, then reopen the app — no reinstall needed. |
+
+## Safety messaging (SOS, Power-Off, Live Location)
+
+- **SOS activation** auto-sends an SMS with the traveler's coordinates and a
+  Google Maps link to the saved SOS contact (SEND_SMS runtime permission is
+  requested on first use), plus WhatsApp (`wa.me`) and manual SMS share
+  buttons in the active-SOS sheet.
+- **Power-Off Safety Location**: when Android broadcasts `ACTION_SHUTDOWN`,
+  `PowerOffReceiver` queues that same SMS first (SMS works on the cellular
+  network even with mobile data off — the only realistic channel during
+  shutdown) and then writes the event to Firestore. The message states how
+  old the last fix is; a fresh GPS fix after power-off is impossible.
+- **Live location sharing**: started from the English prompt shown when
+  in-app navigation begins ("Do you want to share your live location with
+  your SOS contact?"). While active: SMS with fresh coordinates + map link
+  immediately and every 5 minutes, cloud position refresh every 45 s
+  (`emergencyEvents`, owner can update only whitelisted live fields while
+  the event stays `active`), an ongoing notification, and a red on-map
+  banner with Stop. It is deliberately in-process — closing the app stops
+  the share; there is no hidden background tracking.
 
 ## Honest limitations
 

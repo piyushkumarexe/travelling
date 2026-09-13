@@ -18,6 +18,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/live_share_banner.dart';
+import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/place_card.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/places.dart';
@@ -313,7 +315,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       icon: Icons.navigation,
                       onPressed: () {
                         Navigator.of(ctx).pop();
-                        _openNavigation(p);
+                        _chooseAndNavigate(p);
                       },
                     ),
                   ),
@@ -352,7 +354,51 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     );
   }
 
-  Future<void> _openNavigation(Place p) async {
+  /// Asks (in English) whether navigation should run inside this app or in
+  /// Google Maps, then starts it. The in-app option also offers live
+  /// location sharing with the SOS contact.
+  Future<void> _chooseAndNavigate(Place p) async {
+    final String? choice = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        icon: const Icon(Icons.navigation, size: 40),
+        title: const Text('Start navigation'),
+        content: Text(
+          'How do you want to navigate to ${p.name}?',
+          style: Theme.of(ctx).textTheme.bodyMedium,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('google'),
+            child: const Text('Open in Google Maps'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.map, size: 18),
+            label: const Text('Navigate in this app'),
+            onPressed: () => Navigator.of(ctx).pop('app'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'google') {
+      await _openGoogleMapsNavigation(p);
+      return;
+    }
+    if (choice == 'app') {
+      // Offer live location sharing with the SOS contact (fully working:
+      // SMS with coordinates + live map link, cloud position updates).
+      final LiveShareStartResult share =
+          await showLiveSharePrompt(context, destinationName: p.name);
+      if (!mounted) return;
+      showLiveShareFeedback(context, share);
+      unawaited(context.push(
+        '/trip/live?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
+      ));
+    }
+  }
+
+  Future<void> _openGoogleMapsNavigation(Place p) async {
     // 1) Native Google Maps navigation (if the app is installed)
     final Uri nav = Uri.parse(
         'google.navigation:q=${p.lat},${p.lng}');
@@ -400,7 +446,10 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   void _viewOnMap() {
     final Place? p = _place;
     if (p == null) return;
-    context.push(
+    // `go` (not `push`): switching to the Map section replaces the stack —
+    // the map tab renders the place directly (marker + route) instead of
+    // stacking a second map page on top (the old white-screen bug).
+    context.go(
       '/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
     );
   }
@@ -580,8 +629,9 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                         child: Text(
                           'Tip: “Get Directions” draws the real road route '
                           '(free OSRM routing, no API key) with distance and '
-                          'travel time, and “Navigate” starts turn-by-turn '
-                          'navigation on this device.',
+                          'travel time, and “Navigate” lets you choose '
+                          'navigation inside this app (with optional live '
+                          'location sharing) or in Google Maps.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),

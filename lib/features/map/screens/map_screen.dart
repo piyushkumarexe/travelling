@@ -12,6 +12,8 @@ import '../../../core/utils/format.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/badges.dart';
+import '../../../core/widgets/live_share_banner.dart';
+import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
@@ -373,11 +375,23 @@ class _MapScreenState extends State<MapScreen> {
     });
     try {
       final gm.LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
+      // No fixed radius cap: start at 25 km and auto-widen until something
+      // real is found (25 → 50 → 100 → 250 km), so a search never dead-ends
+      // just because the nearest match is outside one ring.
+      final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
+      List<Place> places = await _c.placesRepository.search(
         q,
-        location: target,
+        location: loc,
         radiusMeters: 25000,
       );
+      for (final double r in const <double>[50000, 100000, 250000]) {
+        if (places.isNotEmpty) break;
+        places = await _c.placesRepository.search(
+          q,
+          location: loc,
+          radiusMeters: r,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _results = places;
@@ -412,12 +426,24 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _searchLoading = true);
     try {
       final gm.LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
+      // Auto-widen the same way as text search — category chips should also
+      // find results beyond 25 km instead of showing an empty state.
+      final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
+      List<Place> places = await _c.placesRepository.search(
         q,
-        location: target,
+        location: loc,
         radiusMeters: 25000,
         types: types,
       );
+      for (final double r in const <double>[50000, 100000, 250000]) {
+        if (places.isNotEmpty) break;
+        places = await _c.placesRepository.search(
+          q,
+          location: loc,
+          radiusMeters: r,
+          types: types,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _results = places;
@@ -807,7 +833,42 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _openNavigation() async {
     final Place? p = _selected;
     if (p == null) return;
-    await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
+    final String? choice = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        icon: const Icon(Icons.navigation, size: 40),
+        title: const Text('Start navigation'),
+        content: Text(
+          'How do you want to navigate to ${p.name}?',
+          style: Theme.of(ctx).textTheme.bodyMedium,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('google'),
+            child: const Text('Open in Google Maps'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.map, size: 18),
+            label: const Text('Navigate in this app'),
+            onPressed: () => Navigator.of(ctx).pop('app'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'google') {
+      await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
+      return;
+    }
+    // In-app navigation: offer live location sharing with the SOS contact
+    // first (English prompt, fully working), then open the live trip screen.
+    final LiveShareStartResult share =
+        await showLiveSharePrompt(context, destinationName: p.name);
+    if (!mounted) return;
+    showLiveShareFeedback(context, share);
+    unawaited(context.push(
+      '/trip/live?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
+    ));
   }
 
   void _recenter() {
@@ -1017,6 +1078,9 @@ class _MapScreenState extends State<MapScreen> {
             right: 0,
             child: _topBar(),
           ),
+          // Live location sharing status (only visible while active) with a
+          // Stop button — a share must never be invisible to the traveler.
+          const LiveShareBanner(margin: EdgeInsets.fromLTRB(12, 210, 12, 0)),
           if (_speedKmh >= 1)
             Positioned(
               left: 12,

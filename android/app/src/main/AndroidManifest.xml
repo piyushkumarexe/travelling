@@ -17,6 +17,11 @@
     <!-- Notifications (safety alerts, geofence warnings, SOS events) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Emergency SMS: SOS + Power-Off Safety Location send the traveler's
+         location and coordinates to their SOS contact by SMS. SMS is the
+         only channel that works without mobile data (e.g. during shutdown). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
     <!-- QR scanning for Digital Emergency ID verification -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -51,6 +56,14 @@
         <intent>
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="smsto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="sms" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
         </intent>
     </queries>
 
@@ -97,16 +110,19 @@
 
         <!--
             Power-Off Safety Location: best-effort share of the latest
-            available location while the device is shutting down. A plain
-            manifest receiver — no foreground/background service and no extra
-            permissions. Fails safely when the OS/network does not allow the
-            operation; delivery is only recorded when actually confirmed.
+            available location while the device is shutting down — SMS to the
+            SOS contact first (works without mobile data), then a Firestore
+            event. NOTE: the action string MUST be exactly
+            "android.intent.action.SHUTDOWN" — that is the value the system
+            broadcasts (Intent.ACTION_SHUTDOWN). QUICKBOOT_POWEROFF covers
+            some OEM quick power-off paths.
         -->
         <receiver
             android:name=".PowerOffReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+                <action android:name="android.intent.action.SHUTDOWN" />
+                <action android:name="android.intent.action.QUICKBOOT_POWEROFF" />
             </intent-filter>
         </receiver>
     </application>

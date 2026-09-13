@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' show User;
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/state/app_container.dart';
@@ -84,9 +85,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(() {
         _permissionDenied = permDenied;
         _error = permDenied
-            ? 'Your account cannot read notifications. Please sign out and '
-                'back in; if it persists, the Firestore rules for '
-                'users/{uid}/notifications need to be deployed.'
+            ? 'Your account cannot read notifications yet — the Firestore '
+                'security rules for users/{uid}/notifications need to be '
+                'deployed once from this repository.'
             : 'Could not load notifications. Check your connection and retry.';
         _loading = false;
       });
@@ -151,6 +152,94 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     };
   }
 
+  /// Actionable view for a Firestore permission-denied error: tells the user
+  /// exactly how to fix it (deploy the rules from this repository) with a
+  /// one-tap copy of the command.
+  Widget _permissionDeniedView(ColorScheme scheme) {
+    const String command =
+        'bash scripts/deploy-rules.sh';
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Icon(Icons.cloud_off, size: 56, color: scheme.error),
+          const SizedBox(height: 16),
+          Text(
+            'Notifications are blocked by security rules',
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your account is signed in, but the deployed Firestore rules do '
+            'not allow reading users/{uid}/notifications yet.\n\n'
+            'Fix: from the project folder run the rules deploy (one command, '
+            'needs Firebase CLI login once):',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF101418),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              command,
+              style: TextStyle(
+                color: Color(0xFF9FE8A0),
+                fontSize: 12.5,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: <Widget>[
+              OutlinedButton.icon(
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy command'),
+                onPressed: () async {
+                  await Clipboard.setData(
+                      const ClipboardData(text: command));
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Command copied to clipboard.')),
+                    );
+                  }
+                },
+              ),
+              FilledButton.icon(
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Try again'),
+                onPressed: _listen,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'After the deploy, notifications load automatically — '
+            'no reinstall needed.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -204,11 +293,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   onAction: () => context.go('/login'),
                 )
               : _permissionDenied
-                  ? ErrorState(
-                      message: _error ??
-                          'Your account cannot read notifications.',
-                      onRetry: _listen,
-                    )
+                  ? _permissionDeniedView(scheme)
                   : _error != null
                       ? ErrorState(message: _error!, onRetry: _listen)
                       : _items.isEmpty

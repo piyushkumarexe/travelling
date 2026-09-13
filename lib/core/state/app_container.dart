@@ -20,7 +20,9 @@ import '../app_config.dart';
 import '../network/api_client.dart';
 import '../services/eco_tracker.dart';
 import '../services/geofence_service.dart';
+import '../services/live_location_share.dart';
 import '../services/location_service.dart';
+import '../services/sms_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/storage_service.dart';
@@ -86,6 +88,28 @@ class AppContainer {
     locationService: locationService,
     notificationService: notificationService,
     notificationsRepository: notificationsRepository,
+    currentUid: () {
+      final String? uid = authRepository.currentUser?.uid;
+      if (uid == null || uid.isEmpty) {
+        throw StateError('Not signed in');
+      }
+      return uid;
+    },
+  );
+
+  /// Emergency SMS/WhatsApp messaging to the SOS contact.
+  late final SmsService smsService = SmsService();
+
+  /// Live location sharing with the SOS contact (started from the
+  /// navigation flow after the user accepts the share prompt).
+  late final LiveLocationShareService liveLocationShare =
+      LiveLocationShareService(
+    locationService: locationService,
+    emergencyRepository: emergencyRepository,
+    notificationsRepository: notificationsRepository,
+    notificationService: notificationService,
+    settings: settings,
+    smsService: smsService,
     currentUid: () {
       final String? uid = authRepository.currentUser?.uid;
       if (uid == null || uid.isEmpty) {

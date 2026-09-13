@@ -7,11 +7,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/utils/format.dart';
+import '../../core/utils/sos_messages.dart';
 import '../../core/widgets/app_button.dart';
 import '../../data/models/emergency_event.dart';
 import '../../data/models/places.dart';
 import '../state/app_container.dart';
 import '../theme/app_theme.dart';
+import 'live_share_prompt.dart';
 
 /// Shows the global SOS bottom sheet from anywhere in the app.
 void showSOSSheet(BuildContext context) {
@@ -39,6 +41,9 @@ class _SosSheetViewState extends State<_SosSheetView> {
   List<Place> _services = <Place>[];
   bool _loadingServices = false;
   String? _error;
+
+  /// Status of the automatic SOS-contact alert (SMS/WhatsApp).
+  String? _contactAlert;
 
   AppContainer get _c => AppScope.of(context);
 
@@ -114,6 +119,11 @@ class _SosSheetViewState extends State<_SosSheetView> {
         important: true,
         payload: 'sos:$id',
       );
+
+      // Immediately alert the SOS contact with the coordinates + a Google
+      // Maps link by SMS (works even with no mobile data) — and record the
+      // share in the notification history.
+      await _alertSosContact(pos, name);
       unawaited(_loadServices());
     } catch (e) {
       if (!mounted) return;
@@ -135,6 +145,114 @@ class _SosSheetViewState extends State<_SosSheetView> {
           payload: <String, dynamic>{'eventId': id},
         )
         .catchError((Object _) => '');
+  }
+
+  /// Sends the emergency SMS to the saved SOS contact (permission-aware) and
+  /// records the attempt so the UI can show what actually happened.
+  Future<void> _alertSosContact(Position pos, String travelerName) async {
+    final String phone = _c.settings.sosContactPhone.trim();
+    if (phone.isEmpty) {
+      if (mounted) {
+        setState(() => _contactAlert = 'No SOS contact added — add one on the '
+            'Safety screen so your location is sent automatically.');
+      }
+      return;
+    }
+    // Ask for SEND_SMS permission if missing (first SOS on a fresh install).
+    final bool granted = await _c.smsService.ensureSendSmsPermission();
+    final String text = SosMessages.buildEmergencyText(
+      travelerName: travelerName,
+      position: pos,
+    );
+    bool sent = false;
+    if (granted) {
+      sent = await _c.smsService.sendSms(phone, text);
+    }
+    if (!mounted) return;
+    setState(() {
+      _contactAlert = sent
+          ? 'Location sent to ${_c.settings.sosContactName.isNotEmpty ? _c.settings.sosContactName : phone} by SMS.'
+          : 'SMS could not be sent automatically — use the SMS / WhatsApp '
+              'buttons below to share your location with your SOS contact.';
+    });
+    _c.notificationsRepository
+        .add(
+      uid: _c.authRepository.currentUser?.uid ?? 'guest',
+      title: sent ? '📍 SOS location sent to your contact' : 'SOS contact alert',
+      body: sent
+          ? 'Your coordinates and a map link were sent to your SOS contact '
+              'by SMS.'
+          : 'Automatic SMS failed. Share your location with your SOS contact '
+              'using the SMS or WhatsApp buttons.',
+      type: 'emergency',
+      payload: <String, dynamic>{'eventId': _event?.id ?? ''},
+    )
+        .catchError((Object _) => '');
+  }
+
+  Future<void> _sendSmsToContact() async {
+    final Position? pos = _position;
+    if (pos == null) return;
+    final String phone = _c.settings.sosContactPhone.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No SOS contact added. Add one on the Safety screen.')));
+      return;
+    }
+    final bool granted = await _c.smsService.ensureSendSmsPermission();
+    final bool ok = granted
+        ? await _c.smsService.sendSms(
+            phone,
+            SosMessages.buildEmergencyText(
+              travelerName: _event?.name ?? 'Traveler',
+              position: pos,
+            ),
+          )
+        : await _c.smsService.openSmsComposer(
+            phone,
+            SosMessages.buildEmergencyText(
+              travelerName: _event?.name ?? 'Traveler',
+              position: pos,
+            ),
+          );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Location SMS sent to your SOS contact.'
+            : 'SMS could not be sent. Check the SIM/number and try again.')));
+  }
+
+  Future<void> _sendWhatsAppToContact() async {
+    final Position? pos = _position;
+    if (pos == null) return;
+    final String phone = _c.settings.sosContactPhone.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No SOS contact added. Add one on the Safety screen.')));
+      return;
+    }
+    final bool ok = await _c.smsService.openWhatsApp(
+      phone,
+      SosMessages.buildEmergencyText(
+        travelerName: _event?.name ?? 'Traveler',
+        position: pos,
+      ),
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('WhatsApp is not available on this device.')));
+    }
+  }
+
+  Future<void> _startLiveShareFromSos() async {
+    final LiveShareStartResult result = await showLiveSharePrompt(context);
+    if (!mounted) return;
+    if (result == LiveShareStartResult.started) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Live location sharing is ON — updates go to your SOS contact.')));
+    }
   }
 
   Future<void> _loadServices() async {
@@ -442,7 +560,64 @@ class _SosSheetViewState extends State<_SosSheetView> {
               ),
             ],
           ),
-        const SizedBox(height: 16),
+        if (_contactAlert != null) ...<Widget>[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.contact_phone,
+                    size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _contactAlert!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        // Alert the saved SOS contact with coordinates + a live map link.
+        if (_c.settings.hasSosContact) ...<Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: PrimaryButton(
+                  label: 'Send SMS',
+                  icon: Icons.sms,
+                  outlined: true,
+                  onPressed: _sendSmsToContact,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PrimaryButton(
+                  label: 'WhatsApp',
+                  icon: Icons.chat,
+                  outlined: true,
+                  onPressed: _sendWhatsAppToContact,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          PrimaryButton(
+            label: 'Share live location',
+            icon: Icons.share_location,
+            onPressed: _startLiveShareFromSos,
+          ),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 4),
         Row(
           children: <Widget>[
             Expanded(

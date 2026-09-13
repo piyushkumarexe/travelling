@@ -304,6 +304,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       projectId: projectId ?? '',
       idToken: token,
     );
+    // SMS is the channel that works during shutdown (no mobile data needed).
+    // Ask for the SEND_SMS permission right here, while the user is turning
+    // the feature on, so the power-off message can actually go out.
+    final bool granted = await _c.smsService.ensureSendSmsPermission();
+    if (!granted && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Allow the SMS permission so your SOS contact receives your '
+              'location when the phone switches off. You can grant it later '
+              'from Settings → Apps → Tourism → Permissions.'),
+        ),
+      );
+    }
     if (mounted) setState(() {});
   }
 
@@ -545,10 +559,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     secondary: const Icon(Icons.power_settings_new),
                     title: const Text('Power-Off Safety Location'),
                     subtitle: const Text(
-                      'When enabled, Tourism will try to share your latest '
-                      'available location with your configured SOS contact '
-                      'when the device starts shutting down. It cannot get a '
-                      'new GPS fix after the phone is off. Off by default.',
+                      'When enabled, Tourism sends your latest available '
+                      'location, coordinates and a map link to your SOS '
+                      'contact by SMS (works even without internet) the '
+                      'moment the device starts shutting down, and also '
+                      'records a cloud event. It cannot get a new GPS fix '
+                      'after the phone is off. Off by default.',
                     ),
                     value: _c.settings.powerOffSafety,
                     onChanged: _togglePowerOffSafety,

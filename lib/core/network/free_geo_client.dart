@@ -1015,19 +1015,33 @@ class FreeGeoClient {
     bool responded = false;
     bool serverError = false;
     bool got429 = false;
+    DateTime? soonestCooldown;
+    int tried = 0;
     for (final String host in ordered) {
       final DateTime? until = _overpassCooldown[host];
       if (until != null && DateTime.now().isBefore(until)) {
         // This mirror is still in its own cooldown — skip it, keep the
-        // others fully usable.
+        // others fully usable. Track the soonest expiry so that when ALL
+        // mirrors are cooling down we can wait it out (max 8 s) instead of
+        // instantly failing the whole search.
+        if (soonestCooldown == null || until.isBefore(soonestCooldown)) {
+          soonestCooldown = until;
+        }
         continue;
       }
+      tried++;
       final Stopwatch sw = Stopwatch()..start();
       NearbyDebug.instance.host = host;
       try {
         final Response<dynamic> resp = await _dio.get<dynamic>(
           host,
           queryParameters: <String, dynamic>{'data': query},
+          // Overpass mirrors often take 15-20 s on big queries; the shared
+          // client timeout is too tight for them — allow 25 s just here.
+          options: Options(
+            receiveTimeout: const Duration(seconds: 25),
+            sendTimeout: const Duration(seconds: 15),
+          ),
         );
         sw.stop();
         responded = true;
@@ -1077,6 +1091,20 @@ class FreeGeoClient {
         sw.stop();
         NearbyDebug.instance.phase = 'exception:${e.runtimeType}';
         // Try the next host.
+      }
+    }
+    // Every mirror was skipped due to its cooldown and none responded:
+    // wait out the soonest cooldown (bounded to 8 s) and retry ONCE — much
+    // better than telling the user the service is down when a mirror is
+    // about to free up.
+    if (tried == 0 && !responded && soonestCooldown != null) {
+      final int waitMs =
+          soonestCooldown.difference(DateTime.now()).inMilliseconds;
+      if (waitMs > 0 && waitMs <= 8000) {
+        NearbyDebug.instance.phase =
+            'cooldown-wait:${(waitMs / 1000).round()}s';
+        await Future<void>.delayed(Duration(milliseconds: waitMs + 50));
+        return _overpassElements(query);
       }
     }
     if (got429) {

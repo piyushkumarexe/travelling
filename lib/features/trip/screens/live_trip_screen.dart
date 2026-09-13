@@ -13,6 +13,8 @@ import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/live_share_banner.dart';
+import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
@@ -111,7 +113,29 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
     _subscribeData();
     await _getRoute();
     _startWatch();
-    if (mounted) setState(() => _ready = true);
+    if (mounted) {
+      setState(() => _ready = true);
+      // Navigation is live — ask (in English, once per trip) whether the SOS
+      // contact should receive the traveler's live location for this trip.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _maybeAskLiveShare();
+      });
+    }
+  }
+
+  /// Ensures the live-share prompt appears at most once per trip.
+  bool _sharePromptShown = false;
+
+  Future<void> _maybeAskLiveShare({bool force = false}) async {
+    if (!mounted || !_ready) return;
+    if (_sharePromptShown && !force) return;
+    _sharePromptShown = true;
+    final LiveShareStartResult share = await showLiveSharePrompt(
+      context,
+      destinationName: _destinationName,
+    );
+    if (!mounted) return;
+    showLiveShareFeedback(context, share);
   }
 
   bool get _hasExplicitDestination =>
@@ -293,6 +317,8 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
               : Stack(
                   children: <Widget>[
                     if (_destination != null) _map(),
+                    // Live location sharing status + Stop (when active).
+                    const LiveShareBanner(margin: EdgeInsets.all(12)),
                     Positioned(
                       left: 0,
                       right: 0,
@@ -452,6 +478,14 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                       _routeLoading ? null : () => unawaited(_getRoute()),
                   icon: const Icon(Icons.refresh, size: 16),
                   label: const Text('Recalculate'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => unawaited(_maybeAskLiveShare(force: true)),
+                  icon: const Icon(Icons.share_location, size: 16),
+                  label: const Text('Share location'),
                 ),
               ),
             ],

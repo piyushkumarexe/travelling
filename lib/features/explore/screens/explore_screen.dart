@@ -386,6 +386,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // The grouped Overpass dataset failed (rate-limited / unreachable).
+      // FALLBACK: run the multi-provider text search instead (MapTiler +
+      // Nominatim + Wikipedia geosearch still work when Overpass is busy),
+      // so the default nearby view shows REAL places instead of an error.
+      try {
+        final LatLng here = LatLng(pos.latitude, pos.longitude);
+        final List<Place> places =
+            await _c.placesRepository.search('tourist attractions near me',
+                location: here, radiusMeters: 25000);
+        if (!mounted) return;
+        if (places.isNotEmpty) {
+          NearbyDebug.instance.finalCount = places.length;
+          NearbyDebug.instance.error = 'fallback: multi-provider search '
+              '(${places.length} places)';
+          setState(() {
+            _results = places;
+            _loading = false;
+            _searchedOnce = true;
+          });
+          return;
+        }
+      } catch (_) {
+        // Fall through to the honest error state.
+      }
       setState(() {
         if (_results.isEmpty) _error = placesErrorMessage(e);
         _loading = false;
@@ -404,22 +428,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _shown = 20;
     });
     try {
-      final List<Place> places = await _c.placesRepository.search(
+      final LatLng? here = _position == null
+          ? null
+          : LatLng(_position!.latitude, _position!.longitude);
+      // NO fixed radius limit: the search starts at 25 km and auto-widens
+      // (25 → 50 → 100 → 250 km) until real places are found, so a result is
+      // never hidden just because it sits outside one ring. Text search is
+      // additionally never radius-filtered by the providers.
+      final double startRadius = _scope == 'anywhere' ? 50000.0 : 25000.0;
+      List<Place> places = await _c.placesRepository.search(
         q,
-        location: _position == null
-            ? null
-            : LatLng(_position!.latitude, _position!.longitude),
-        // No more hard 10 km cap: nearby/hidden cover a full metro area, and
-        // "Anywhere" is effectively unlimited so a searched place is found
-        // even far away. Text search is additionally never radius-filtered.
-        radiusMeters: switch (_scope) {
-          'nearby' => 25000.0,
-          'hidden' => 25000.0,
-          'anywhere' => 50000.0,
-          _ => null,
-        },
+        location: here,
+        radiusMeters: startRadius,
         types: _categoryTypes(_activeCategory),
       );
+      for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
+        if (places.isNotEmpty || !mounted) break;
+        if (r <= startRadius) continue;
+        places = await _c.placesRepository.search(
+          q,
+          location: here,
+          radiusMeters: r,
+          types: _categoryTypes(_activeCategory),
+        );
+      }
       if (!mounted) return;
       setState(() {
         // A background refresh (GPS re-run) that comes back empty must never
@@ -638,8 +670,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
           icon: Icons.search_off,
           title: 'No ${label.toLowerCase()} found near you',
           message:
-              'Nothing in this category is mapped within 25 km yet. Try '
-              'widening to "Anywhere", or search a bigger nearby city.',
+              'We searched nearby and out to 250 km — nothing in this '
+              'category is mapped there yet. Try "Anywhere" for a worldwide '
+              'search, or search a bigger nearby city.',
           actionLabel: 'Search anywhere',
           onAction: () => _setScope('anywhere'),
         );
@@ -650,10 +683,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
             Expanded(
               child: EmptyState(
                 icon: Icons.search_off,
-                title: 'No nearby places found within 25 km.',
+                title: 'No places found nearby',
                 message:
-                    'Nothing is mapped within 25 km of your location yet. Try '
-                    'switching to "Anywhere", or move to a larger town.',
+                    'We searched nearby and out to 250 km of your location — '
+                    'nothing was mapped there yet. Try "Anywhere" to search '
+                    'the whole world, or move to a larger town.',
                 actionLabel: 'Search anywhere',
                 onAction: () => _setScope('anywhere'),
               ),
@@ -727,6 +761,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
           place: p,
           distance: _distanceFor(p),
           onTap: () => context.push('/explore/place/${p.placeId}', extra: p),
+          // One-tap "show this place's location on the map" — the map
+          // section opens focused on the place with a marker and route.
+          trailing: IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Show on map',
+            onPressed: () => context.go(
+              '/map?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
+            ),
+          ),
         );
       },
     );

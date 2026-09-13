@@ -492,6 +492,27 @@ class _SafetyScreenState extends State<SafetyScreen> {
       // Local save is the source of truth — instant, offline-safe, and never
       // blocked by Firestore rules or auth state.
       await _c.settings.setSosContact(name, phone);
+      // Keep the native Power-Off receiver payload in sync: when the feature
+      // is on, the shutdown receiver reads the mirrored phone/name — a stale
+      // (or empty) mirror is exactly how power-off shares used to go nowhere.
+      if (_c.settings.powerOffSafety) {
+        String? token;
+        try {
+          token = await _c.authRepository.currentUser?.getIdToken();
+        } catch (_) {
+          token = null;
+        }
+        final String? projectId = _c.app?.options.projectId;
+        await _c.settings.syncPowerOffSafetyPayload(
+          sosPhone: phone,
+          sosName: name,
+          projectId: projectId ?? '',
+          idToken: token,
+        );
+        // Also make sure the SEND_SMS permission is in place — it is the
+        // channel that actually works during shutdown.
+        await _c.smsService.ensureSendSmsPermission();
+      }
       // Best-effort mirror to Firestore profiles/{uid} (cross-device sync).
       // A permission/network failure here must NEVER fail the save.
       final String? uid = _c.authRepository.currentUser?.uid;

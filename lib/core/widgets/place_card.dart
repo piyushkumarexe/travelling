@@ -11,11 +11,16 @@ class PlaceCard extends StatelessWidget {
     required this.place,
     this.distance,
     this.onTap,
+    this.trailing,
   });
 
   final Place place;
   final String? distance;
   final VoidCallback? onTap;
+
+  /// Optional trailing widget (e.g. a "Show on map" button) rendered after
+  /// the distance chip.
+  final Widget? trailing;
 
   static IconData iconFor(Place place) {
     if (place.isEmergency) {
@@ -124,6 +129,7 @@ class PlaceCard extends StatelessWidget {
                 ),
               ),
             ),
+          if (trailing != null) trailing!,
         ],
       ),
     );
