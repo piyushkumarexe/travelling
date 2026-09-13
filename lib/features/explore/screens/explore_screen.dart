@@ -273,7 +273,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _runCategoryNearby(String category) async {
     final List<String>? cats = _categoryDatasetSet(category);
-    if (cats == null || _loading) return;
+    if (cats == null) return;
     final Position? pos = _position;
     if (pos == null) {
       // Location failure is its own outcome — never "temporarily limited"
@@ -349,7 +349,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// free-text multi-provider search.
   Future<void> _runNearbyDefault() async {
     final Position? pos = _position;
-    if (pos == null || _loading) return;
+    if (pos == null) return;
     setState(() {
       _activeCategory = null;
       _loading = true;
@@ -539,6 +539,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         'Raw: ${d.rawCount ?? '-'}\n'
         'Parsed: ${d.parsedCount ?? '-'}\n'
         'Final: ${d.finalCount ?? '-'}\n'
+        'queries ok/fail: ${d.okQueries}/${d.failQueries}\n'
         'host: ${d.host ?? '-'}\n'
         'error: ${d.error ?? d.phase}',
         style: const TextStyle(

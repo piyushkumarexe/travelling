@@ -20,6 +20,8 @@ class NearbyDebug {
   int? finalCount;
   String? error;
   int requestCount = 0;
+  int okQueries = 0;
+  int failQueries = 0;
 
   void reset({String phase = 'idle', String? location}) {
     this.phase = phase;
@@ -31,6 +33,8 @@ class NearbyDebug {
     parsedCount = null;
     finalCount = null;
     error = null;
+    okQueries = 0;
+    failQueries = 0;
   }
 
   String get summary {

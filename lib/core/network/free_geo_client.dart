@@ -347,8 +347,15 @@ class FreeGeoClient {
     if (q.isEmpty) return const <Place>[];
     if (AppConfig.mapTilerConfigured) {
       try {
-        final _ProviderResult r = await _maptilerSearch(q, near, limit: limit);
-        if (r.places.isNotEmpty) return r.places;
+        // Pull a wider candidate set, then re-rank by distance so the
+        // CLOSEST match to the user is surfaced first. MapTiler's `proximity`
+        // only biases ranking — a local match ranked low can still be lost,
+        // so we fetch more and sort locally by real distance.
+        final _ProviderResult r = await _maptilerSearch(q, near,
+            limit: near != null ? (limit * 4).clamp(8, 40).toInt() : limit);
+        if (r.places.isNotEmpty) {
+          return _rankByDistance(r.places, near).take(limit).toList();
+        }
       } on DioException catch (e) {
         final ApiErrorKind k = _kindOf(e);
         if (k == ApiErrorKind.rateLimited) {
@@ -366,9 +373,21 @@ class FreeGeoClient {
     final List<(String, String)>? filters = _filtersFor(q, null);
     if (filters != null && near != null) {
       final _ProviderResult r = await _overpass(filters, near, 10000);
-      if (r.places.isNotEmpty) return r.places.take(limit).toList();
+      if (r.places.isNotEmpty) {
+        return _rankByDistance(r.places, near).take(limit).toList();
+      }
     }
     return const <Place>[];
+  }
+
+  /// Re-orders candidates nearest-first relative to [near] (when known), so a
+  /// location search always suggests the closest match first.
+  List<Place> _rankByDistance(List<Place> places, LatLng? near) {
+    if (near == null) return places;
+    final List<Place> out = List<Place>.from(places)
+      ..sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+          .compareTo(GeoUtils.distanceMeters(near, b.coords)));
+    return out;
   }
 
   /// Runs [fn] and normalises every failure mode into a [_ProviderResult]
@@ -1129,25 +1148,102 @@ class FreeGeoClient {
     'transit': <String>['transit_station'],
   };
 
-  /// One grouped Overpass query for the whole nearby area (every category),
-  /// parsed, deduplicated, filtered to the exact radius and sorted nearest
-  /// first. Callers cache the result and then filter it locally by category,
-  /// so switching categories never triggers another network request.
+  /// The nearby area is fetched as TWO lighter parallel Overpass queries
+  /// instead of one huge all-category query. The public Overpass servers
+  /// frequently drop one big query as "too busy"; two smaller requests are
+  /// each much more likely to succeed, and a single failure still returns
+  /// the other half's real results (failures are isolated, never faked).
+  static const List<String> _essentialNearbyCats = <String>[
+    'hospital', 'police', 'pharmacy', 'atm', 'fuel', 'transit',
+  ];
+  static const List<String> _touristNearbyCats = <String>[
+    'restaurant', 'cafe', 'fast_food', 'hotel', 'park', 'museum', 'attraction',
+  ];
+
+  /// Combined nearby dataset (essential + tourist categories) parsed,
+  /// deduplicated, filtered to the exact radius and sorted nearest first.
+  /// Callers cache the result and then filter it locally by category, so
+  /// switching categories never triggers another network request.
   Future<List<Place>> nearbyAround(
     LatLng near, {
     double radiusMeters = 10000,
     bool includeShopping = false,
-  }) {
-    return _nearbyCategories(
-      near,
-      radiusMeters: radiusMeters,
-      categories: includeShopping
-          ? null
-          : <String>[
-              for (final String c in _nearbyCategoryTags.keys)
-                if (c != 'shopping') c,
-            ],
+  }) async {
+    NearbyDebug.instance.reset(
+      phase: 'requesting',
+      location:
+          '${near.latitude.toStringAsFixed(5)},${near.longitude.toStringAsFixed(5)}',
     );
+    final List<String> tourist = <String>[
+      ..._touristNearbyCats,
+      if (includeShopping) 'shopping',
+    ];
+
+    final List<(List<Place>?, Object?)> parts =
+        await Future.wait<(List<Place>?, Object?)>(<Future<(List<Place>?, Object?)>>[
+      _nearbyCategoriesSafe(near, radiusMeters, _essentialNearbyCats),
+      _nearbyCategoriesSafe(near, radiusMeters, tourist),
+    ]);
+
+    Object? firstError;
+    final Map<String, Place> dedup = <String, Place>{};
+    int ok = 0;
+    int failed = 0;
+    for (final (List<Place>?, Object?) part in parts) {
+      final List<Place>? places = part.$1;
+      if (places == null) {
+        failed++;
+        firstError ??= part.$2;
+        continue;
+      }
+      ok++;
+      for (final Place p in places) {
+        final String key = _dedupKey(p);
+        final Place? existing = dedup[key];
+        if (existing == null || _isRicher(p, existing)) dedup[key] = p;
+      }
+    }
+
+    if (ok == 0) {
+      // Both queries failed — surface the real, typed error (never a fake
+      // empty list masquerading as "no places").
+      NearbyDebug.instance.phase = 'failed';
+      if (firstError != null) throw firstError;
+      throw const ApiException(
+          ApiErrorKind.network, 'Overpass is unreachable right now.');
+    }
+
+    final List<Place> out = dedup.values.toList()
+      ..sort((Place a, Place b) =>
+          (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
+    NearbyDebug.instance.okQueries = ok;
+    NearbyDebug.instance.failQueries = failed;
+    NearbyDebug.instance.parsedCount = out.length;
+    if (failed > 0) {
+      NearbyDebug.instance.error = 'partial: $failed of ${ok + failed} '
+          'provider queries failed';
+    }
+    debugPrint('[places] nearbyAround ok=$ok failed=$failed '
+        'final=${out.length}');
+    return out;
+  }
+
+  Future<(List<Place>?, Object?)> _nearbyCategoriesSafe(
+    LatLng near,
+    double radiusMeters,
+    List<String> categories,
+  ) async {
+    try {
+      final List<Place> places = await _nearbyCategories(
+        near,
+        radiusMeters: radiusMeters,
+        categories: categories,
+        recordDebug: false,
+      );
+      return (places, null);
+    } catch (e) {
+      return (null, e);
+    }
   }
 
   /// Shops only (`shop=*`) — kept as a separate on-demand query so the dense
@@ -1163,13 +1259,16 @@ class FreeGeoClient {
     LatLng near, {
     required double radiusMeters,
     List<String>? categories,
+    bool recordDebug = true,
   }) async {
     final double radius = radiusMeters <= 0 ? 10000 : radiusMeters;
-    NearbyDebug.instance.reset(
-      phase: 'building-query',
-      location:
-          '${near.latitude.toStringAsFixed(5)},${near.longitude.toStringAsFixed(5)}',
-    );
+    if (recordDebug) {
+      NearbyDebug.instance.reset(
+        phase: 'building-query',
+        location:
+            '${near.latitude.toStringAsFixed(5)},${near.longitude.toStringAsFixed(5)}',
+      );
+    }
     // NOTE: the output limit is deliberately high and quadtile-ordered.
     // Overpass fills `out` in statement order, so a small cap (the old
     // `out center 400`) silently truncated the LATER categories (hotel/park/
@@ -1238,8 +1337,8 @@ class FreeGeoClient {
     final List<Place> out = dedup.values.toList()
       ..sort((Place a, Place b) =>
           (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
-    NearbyDebug.instance.parsedCount = out.length;
-    debugPrint('[places] nearbyAround radius=${radius.round()}m '
+    if (recordDebug) NearbyDebug.instance.parsedCount = out.length;
+    debugPrint('[places] nearbyCategories radius=${radius.round()}m '
         'raw=${elements.length} final=${out.length}');
     return out;
   }
@@ -1309,15 +1408,15 @@ class FreeGeoClient {
 
   /// Filters OSM entries that are tagged `tourism=hotel` but are really
   /// marriage/banquet halls — they look fake in a "hotels" list.
+  /// NOTE: only clear banquet-hall terms are excluded. Words like "lawn",
+  /// "function" or "party" are common in genuine Indian hotel names
+  /// (e.g. "Shivam Hotel & Lawn"), so they must NOT be filtered.
   static bool _looksLikeHotel(String name) {
     final String n = name.toLowerCase();
     return !(n.contains('marriage') ||
         n.contains('banquet') ||
         n.contains('wedding') ||
-        n.contains('mandap') ||
-        n.contains('function') ||
-        n.contains('lawn') ||
-        n.contains('party'));
+        n.contains('mandap'));
   }
 
   Future<String?> reverseGeocode(double lat, double lng) async {
