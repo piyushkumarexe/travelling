@@ -306,11 +306,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   initialDate: _when,
                   firstDate: DateTime(2020),
                   lastDate: DateTime.now().add(const Duration(days: 1)));
-              if (d == null) return;
-              if (!mounted) return;
+              if (d == null || !context.mounted) return;
               final TimeOfDay? t = await showTimePicker(
                   context: context, initialTime: TimeOfDay.fromDateTime(_when));
-              if (!mounted) return;
+              if (!context.mounted) return;
 
               setState(() {
                 _when = DateTime(d.year, d.month, d.day,
