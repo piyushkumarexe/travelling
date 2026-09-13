@@ -123,7 +123,7 @@ void main() {
   test('insights are deterministic strings from real data', () {
     final List<Expense> list = <Expense>[
       _e('1', 1240, 'INR', 'food', now),
-      _e('2', 200, 'INR', 'fuel', now),
+      _e('2', 200, 'INR', 'fuel', now.subtract(const Duration(days: 1))),
     ];
     final List<String> tips = ExpenseMath.insights(list, now, 'INR');
     expect(tips.join(' '), contains('You spent 1240 INR today'));

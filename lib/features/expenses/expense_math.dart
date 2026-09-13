@@ -186,17 +186,18 @@ class ExpenseMath {
       if (e.pendingDelete || e.splits.isEmpty) continue;
       final bool selfPaid =
           e.splits.any((SplitParticipant p) => p.isSelf);
-      for (final SplitParticipant p in e.splits) {
-        if (p.isSelf) continue;
-        if (selfPaid) {
-          othersOwe += p.amount; // someone else owes the payer (you)
-        } else {
-          youOwe += p.amount; // you owe for something you didn't pay
-        }
+      final double myShare = e.splits
+          .where((SplitParticipant p) => p.isSelf)
+          .fold(0, (double s, SplitParticipant p) => s + p.amount);
+      if (selfPaid) {
+        // You paid the bill — everyone else's share is owed to you.
+        othersOwe += e.splits
+            .where((SplitParticipant p) => !p.isSelf)
+            .fold(0, (double s, SplitParticipant p) => s + p.amount);
+      } else {
+        // Someone else paid — you owe the rest of the bill (your share).
+        youOwe += (e.amount - myShare).clamp(0, e.amount);
       }
-      // When you paid AND are part of the split, your own share is excluded
-      // from "others owe" by the isSelf check above.
-      if (selfName.isEmpty) continue;
     }
     return (othersOwe: othersOwe, youOwe: youOwe);
   }
