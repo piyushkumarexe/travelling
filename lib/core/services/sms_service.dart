@@ -48,12 +48,13 @@ class SmsService {
   Future<bool> ensureSendSmsPermission() async {
     if (await hasSendSmsPermission()) return true;
     try {
-      final Future<bool> request =
-          _channel.invokeMethod<bool>('requestSendSms') ?? Future<bool>.value(false);
-      return await request.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () async => hasSendSmsPermission(),
-      );
+      return await _channel
+          .invokeMethod<bool>('requestSendSms')
+          .then<bool>((bool? granted) => granted ?? false)
+          .timeout(
+            const Duration(seconds: 20),
+            onTimeout: () async => hasSendSmsPermission(),
+          );
     } on MissingPluginException {
       return false;
     } catch (_) {

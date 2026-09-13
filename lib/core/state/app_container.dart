@@ -26,6 +26,7 @@ import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/sms_service.dart';
 import '../services/storage_service.dart';
+import 'active_trip.dart';
 import 'auth_state.dart';
 
 /// Dependency container for the whole app. Created once in main() and
