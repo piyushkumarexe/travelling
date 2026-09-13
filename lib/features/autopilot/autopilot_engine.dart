@@ -115,11 +115,22 @@ class AutopilotEngine {
     final String t = input.toLowerCase();
     AutopilotBrief out = base ?? const AutopilotBrief();
 
+    // Max travel FIRST: "not more than 20 minutes" must never be counted
+    // as available time — mask it out before parsing the duration.
+    final RegExp maxRe = RegExp(
+        r'(?:not\s*more\s*than|within|under)\s*(\d+)\s*(?:minute|min|km)');
+    String work = t;
+    final RegExpMatch? xm0 = maxRe.firstMatch(work);
+    if (xm0 != null) {
+      out = out.copyWith(maxTravelMinutes: int.parse(xm0.group(1)!));
+      work = work.replaceRange(xm0.start, xm0.end, ' ');
+    }
+
     // Time: "2 hours", "3h", "30 minutes", "1 hour 30 minutes".
     final RegExp hoursRe = RegExp(r'(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)\b');
     final RegExp minsRe = RegExp(r'(\d+)\s*(?:minutes|minute|mins|min)\b');
-    final RegExpMatch? hm = hoursRe.firstMatch(t);
-    final RegExpMatch? mm = minsRe.firstMatch(t);
+    final RegExpMatch? hm = hoursRe.firstMatch(work);
+    final RegExpMatch? mm = minsRe.firstMatch(work);
     int? minutes;
     if (hm != null) {
       minutes = (double.parse(hm.group(1)!) * 60).round();
@@ -137,22 +148,14 @@ class AutopilotEngine {
     // Budget: "₹1000", "rs 500", "budget of 800".
     final RegExp budgetRe =
         RegExp(r'(?:₹|rs\.?\s*|rupees?\s*|budget\s*(?:of|is)?\s*)(\d+)');
-    final RegExpMatch? bm = budgetRe.firstMatch(t);
+    final RegExpMatch? bm = budgetRe.firstMatch(work);
     if (bm != null) {
       out = out.copyWith(budgetRs: int.parse(bm.group(1)!));
     }
 
-    // Max travel: "not more than 20 minutes", "within 15 min".
-    final RegExp maxRe = RegExp(
-        r'(?:not\s*more\s*than|within|under)\s*(\d+)\s*(?:minute|min|km)');
-    final RegExpMatch? xm = maxRe.firstMatch(t);
-    if (xm != null) {
-      out = out.copyWith(maxTravelMinutes: int.parse(xm.group(1)!));
-    }
-
     // Interests + group + mode.
     final Set<AutopilotInterest> found = <AutopilotInterest>{...out.interests};
-    bool re(RegExp r) => r.hasMatch(t);
+    bool re(RegExp r) => r.hasMatch(work);
     if (re(RegExp(
         r'eat|food|lunch|dinner|breakfast|khana|restaurant|street food'))) {
       found.add(AutopilotInterest.eat);
