@@ -38,7 +38,13 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
   }
 
   /// The active trip from the EXISTING planner — never a copy stored here.
-  TripPlan? get _trip => _c.tripPlanStore.active;
+  TripPlan? get _trip {
+    try {
+      return _c.tripPlanStore.active;
+    } catch (_) {
+      return null;
+    }
+  }
 
   List<ItineraryDay> get _plan => <ItineraryDay>[
         for (final day in (_trip?.plan ?? const <ItineraryDay>[])) day,
@@ -46,17 +52,45 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final TripPlan? trip = _trip;
-    return Scaffold(
-      appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
-      body: _build(trip),
-      bottomNavigationBar: const Padding(
-        padding: EdgeInsets.all(10),
-        child: Text('TRAVEL-INTELLIGENCE-BUILD-2026-09-14-01',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 10, color: Colors.grey)),
-      ),
-    );
+    try {
+      final TripPlan? trip = _trip;
+      return Scaffold(
+        appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
+        body: _build(trip),
+        bottomNavigationBar: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Text('TRAVEL-INTELLIGENCE-BUILD-2026-09-14-02',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10, color: Colors.grey)),
+        ),
+      );
+    } catch (e, st) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                const Text('Travel Intelligence failed to load',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(e.toString(),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   Widget _build(TripPlan? trip) {
@@ -93,6 +127,15 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
         _behaviourCard(),
       ],
     );
+    } catch (e) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Failed to build Travel Intelligence: $e',
+              style: const TextStyle(color: Colors.red)),
+        ),
+      );
+    }
   }
 
   /// Always-visible entry card: explain what the engine needs and offer BOTH

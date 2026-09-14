@@ -1,4 +1,4 @@
-/* Tourism secure backend — all third-party secrets stay server-side.
+/* YatraWise secure backend — all third-party secrets stay server-side.
  * Each endpoint is a v2 onRequest export; the export name is the URL path. */
 'use strict';
 
@@ -266,7 +266,7 @@ async function nvidiaChat(messages, { jsonMode = false, maxTokens = 1200 } = {})
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b',
+      model: process.env.NVIDIA_MODEL || 'meta/llama3.1-70b-instruct',
       messages,
       temperature: 0.6,
       top_p: 0.9,
@@ -352,14 +352,11 @@ exports.chat = onRequest(
     }
 
     let system =
-      'You are Tourism, a smart tourism and personal-safety assistant. ' +
+      'You are YatraWise, a smart tourism and personal-safety assistant. ' +
       'Answer travel questions (attractions, food, transport, itineraries, local tips) ' +
       'with practical, current, location-aware advice. Keep replies under 250 words, ' +
       'friendly and specific. If safety is at stake, advise calling local emergency services. ' +
-      'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ' +
-      'LOCALITY RULE: prioritize places IN or VERY NEAR the traveler\'s city/town (within ~40 km), ' +
-      'and give each recommendation an approximate distance. Only mention far-away cities ' +
-      '(over ~100 km) when the traveler asks for them, and clearly label such places with distance. ';
+      'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ';
     if (typeof body.locationLabel === 'string' && body.locationLabel.trim()) {
       system += `The traveler is currently in: ${body.locationLabel.slice(0, 200)}. `;
     }
@@ -610,23 +607,27 @@ function mapPlace(r, base) {
   if (!r || typeof r !== 'object') return null;
   const loc = r.geometry && r.geometry.location ? r.geometry.location : null;
   if (!loc) return null;
+  // Google legacy APIs return lat/lng as numbers, but sometimes as {lat,lng}
+  const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+  const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   const photos = Array.isArray(r.photos)
     ? r.photos.slice(0, 3).map((p) =>
-        `${base}/placesPhoto?photoreference=${encodeURIComponent(p.photo_reference || '')}&maxwidth=1200`)
+        `${base}/placesPhoto?photoreference=${encodeURIComponent(p.photo_reference || p.photoReference || '')}&maxwidth=1200`)
     : [];
-  const openHours = r.open_hours || r.opening_hours || null;
+  const openHours = r.opening_hours || r.open_hours || null;
   return {
-    placeId: r.place_id || '',
+    placeId: r.place_id || r.placeId || '',
     name: r.name || 'Unknown place',
-    lat: loc.lat,
-    lng: loc.lng,
-    address: r.formatted_address || null,
+    lat: lat,
+    lng: lng,
+    address: r.formatted_address || r.vicinity || r.formattedAddress || null,
     rating: typeof r.rating === 'number' ? r.rating : null,
-    userRatingCount: typeof r.user_ratings_total === 'number' ? r.user_ratings_total : null,
+    userRatingCount: typeof r.user_ratings_total === 'number' ? r.user_ratings_total : (typeof r.user_ratings_total === 'number' ? r.user_ratings_total : null),
     primaryType: Array.isArray(r.types) && r.types.length ? r.types[0] : null,
     types: Array.isArray(r.types) ? r.types.slice(0, 10) : [],
     photoUrls: photos,
-    phone: r.formatted_phone_number || r.international_phone_number || null,
+    phone: r.formatted_phone_number || r.international_phone_number || r.formattedPhoneNumber || null,
     website: r.website || null,
     priceLevel: typeof r.price_level === 'number' ? r.price_level : null,
     openNow:
@@ -638,7 +639,14 @@ function mapPlace(r, base) {
   };
 }
 
-async function googlePlacesSearch(body) {
+/**
+ * Improved Places search:
+ * - Uses Text Search when query is present (returns up to 20 results, biased by location)
+ * - Uses Nearby Search when only types + location are present
+ * - Always sorts by distance from user when location is available
+ * - Fixes old bug where findplacefromtext returned candidates but code read results
+ */
+async function googlePlacesSearch(body, req) {
   const key = googleKey();
   const query =
     body.query && String(body.query).trim()
@@ -648,73 +656,88 @@ async function googlePlacesSearch(body) {
     body.location &&
     Number.isFinite(body.location.lat) &&
     Number.isFinite(body.location.lng);
+  const lat = hasLoc ? body.location.lat : null;
+  const lng = hasLoc ? body.location.lng : null;
+  const radius =
+    body.radiusMeters && Number.isFinite(body.radiusMeters)
+      ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
+      : hasLoc ? 25000 : null; // default 25km when location present
   const hasTypes = Array.isArray(body.types) && body.types.length > 0;
+  const base = functionBaseUrl(req || {});
 
-  if (hasLoc && hasTypes) {
-    // Legacy Places API "nearbysearch" accepts ONE type per request (a
-    // pipe-joined list returns INVALID_REQUEST). Query each type separately
-    // and merge, de-duplicated by place_id.
-    const radius =
-      body.radiusMeters && Number.isFinite(body.radiusMeters)
-        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-        : 5000;
-    const base =
-      `${PLACES_URL}/nearbysearchjson?` +
-      `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}` +
-      `&radius=${radius}&key=${encodeURIComponent(key)}`;
-    const seen = new Set();
-    const merged = [];
-    for (const type of body.types.slice(0, 4)) {
-      const d = await fetchJson(`${base}&type=${encodeURIComponent(type)}`);
-      if (d.status === 'ZERO_RESULTS') continue;
-      if (d.status !== 'OK') {
-        throw new HttpError(
-          502,
-          `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200),
-          'upstream',
-        );
-      }
-      for (const r of Array.isArray(d.results) ? d.results : []) {
-        if (!r || !r.place_id || seen.has(r.place_id)) continue;
-        seen.add(r.place_id);
-        merged.push(r);
-        if (merged.length >= 20) break;
-      }
-      if (merged.length >= 20) break;
+  let url;
+  let isTextSearch = false;
+
+  if (query) {
+    // TEXT SEARCH - best for free-form queries like "TS Mishra University", "transport nagar"
+    isTextSearch = true;
+    const params = [`query=${encodeURIComponent(query)}`];
+    if (hasLoc) {
+      params.push(`location=${lat.toFixed(6)},${lng.toFixed(6)}`);
+      if (radius) params.push(`radius=${radius}`);
     }
-    return merged.map((r) => mapPlace(r, functionBaseUrl({}))).filter(Boolean);
+    // If types are also provided, add as type filter for better relevance
+    if (hasTypes && body.types.length === 1) {
+      params.push(`type=${encodeURIComponent(body.types[0])}`);
+    }
+    url = `${PLACES_URL}/textsearch/json?${params.join('&')}`;
+  } else if (hasLoc && hasTypes) {
+    // NEARBY SEARCH - for category browsing without query
+    const params = [
+      `location=${lat.toFixed(6)},${lng.toFixed(6)}`,
+      `radius=${radius || 10000}`,
+    ];
+    // Places API nearbysearch supports single type; use first as type, rest as keyword
+    if (body.types.length >= 1) {
+      params.push(`type=${encodeURIComponent(body.types[0])}`);
+    }
+    if (body.types.length > 1) {
+      params.push(`keyword=${encodeURIComponent(body.types.slice(1).join(' '))}`);
+    }
+    url = `${PLACES_URL}/nearbysearch/json?${params.join('&')}`;
+  } else {
+    throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
   }
 
-  // Free-text search: legacy Places "findplacefromtext".
-  const params = [
-    `input=${encodeURIComponent(query)}`,
-    'inputtype=textquery',
-  ];
-  if (hasLoc) {
-    const radius =
-      body.radiusMeters && Number.isFinite(body.radiusMeters)
-        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-        : 5000;
-    params.push(
-      `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
-    );
-  }
-  const url =
-    `${PLACES_URL}/findplacefromtext/json?${params.join('&')}` +
-    `&key=${encodeURIComponent(key)}`;
+  url += `&key=${encodeURIComponent(key)}`;
   const d = await fetchJson(url);
+
   if (d.status === 'ZERO_RESULTS') return [];
-  if (d.status !== 'OK') {
+  if (d.status !== 'OK' && d.status !== 'ZERO_RESULTS') {
     throw new HttpError(
       502,
       `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200),
-      'upstream',
+      'upstream'
     );
   }
-  return (Array.isArray(d.results) ? d.results : [])
-    .slice(0, 20)
-    .map((r) => mapPlace(r, functionBaseUrl({})))
+
+  // Textsearch returns results, nearbysearch returns results, findplace returned candidates (legacy)
+  let rawResults = [];
+  if (Array.isArray(d.results)) rawResults = d.results;
+  else if (Array.isArray(d.candidates)) rawResults = d.candidates; // backward compat
+  else rawResults = [];
+
+  let mapped = rawResults
+    .slice(0, 30)
+    .map((r) => mapPlace(r, base))
     .filter(Boolean);
+
+  // Sort by distance if we have user location - CRITICAL FIX for "far locations" bug
+  if (hasLoc && mapped.length > 1) {
+    mapped = mapped
+      .map((p) => ({
+        ...p,
+        _dist: haversineMeters(lat, lng, p.lat, p.lng),
+      }))
+      .sort((a, b) => a._dist - b._dist)
+      .map((p) => {
+        const { _dist, ...rest } = p;
+        return rest;
+      });
+  }
+
+  // Limit to 20 after sorting
+  return mapped.slice(0, 20);
 }
 
 exports.placesSearch = onRequest(
@@ -727,7 +750,7 @@ exports.placesSearch = onRequest(
     if (!body.query && !(body.location && Array.isArray(body.types))) {
       throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
     }
-    const places = await googlePlacesSearch(body);
+    const places = await googlePlacesSearch(body, req);
     res.status(200).json({ places });
   }),
 );
@@ -804,13 +827,48 @@ exports.emergencyNearby = onRequest(
       body.radiusMeters && Number.isFinite(body.radiusMeters)
         ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 20000)
         : 5000;
-    const places = await googlePlacesSearch({
-      query: 'emergency services',
-      location: { lat: body.location.lat, lng: body.location.lng },
-      radiusMeters: radius,
-      types: ['hospital', 'police_station', 'fire_station', 'doctor'],
-    });
-    res.status(200).json({ places });
+    const loc = { lat: body.location.lat, lng: body.location.lng };
+    
+    // Search each emergency type separately and merge - ensures we get hospitals, police, fire all nearby
+    const types = ['hospital', 'police_station', 'fire_station'];
+    let allPlaces = [];
+    const seenIds = new Set();
+    
+    for (const t of types) {
+      try {
+        const places = await googlePlacesSearch({
+          location: loc,
+          radiusMeters: radius,
+          types: [t],
+        }, req);
+        for (const p of places) {
+          if (p.placeId && !seenIds.has(p.placeId)) {
+            seenIds.add(p.placeId);
+            allPlaces.push(p);
+          } else if (!p.placeId) {
+            allPlaces.push(p);
+          }
+        }
+      } catch (e) {
+        // Continue with other types if one fails
+        console.warn(`[emergencyNearby] failed for type ${t}:`, e.message);
+      }
+    }
+    
+    // Sort merged results by distance
+    allPlaces = allPlaces
+      .map((p) => ({
+        ...p,
+        _dist: haversineMeters(loc.lat, loc.lng, p.lat, p.lng),
+      }))
+      .sort((a, b) => a._dist - b._dist)
+      .map((p) => {
+        const { _dist, ...rest } = p;
+        return rest;
+      })
+      .slice(0, 20);
+    
+    res.status(200).json({ places: allPlaces });
   }),
 );
 

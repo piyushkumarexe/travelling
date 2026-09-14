@@ -227,12 +227,32 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
     try {
       final Position? pos = _position;
-      final List<Place> places = await _c.placesRepository.suggest(
+      List<Place> places = await _c.placesRepository.suggest(
         q,
         location: pos == null
             ? null
             : LatLng(pos.latitude, pos.longitude),
       );
+      // STRICT NEARBY FILTER: when in Nearby mode, drop far-away noise
+      // (the bug reported: 75km, 430km, 4351km results for \"ts mishra University\")
+      // Keep only places within 30km when location is known and scope is nearby.
+      if (_scope == 'nearby' && pos != null && places.isNotEmpty) {
+        final LatLng here = LatLng(pos.latitude, pos.longitude);
+        // First, try strict 30km filter
+        List<Place> nearby = places
+            .where((Place p) =>
+                GeoUtils.distanceMeters(here, p.coords) <= 30000)
+            .toList();
+        // If strict filter yields results, use it (ensures TS Mishra 11km first)
+        // Otherwise keep original but sorted by distance to avoid showing 12000km first
+        if (nearby.isNotEmpty) {
+          places = nearby;
+        }
+        // Always sort by distance for Nearby
+        places.sort((Place a, Place b) =>
+            GeoUtils.distanceMeters(here, a.coords)
+                .compareTo(GeoUtils.distanceMeters(here, b.coords)));
+      }
       if (!mounted) return;
       setState(() {
         _results = places;
@@ -544,7 +564,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
         radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
         types: types,
       );
-      if (hasCategoryFilters) {
+      // STRICT NEARBY: filter out >30km when in Nearby scope (fixes 75km, 430km bug)
+      if (_scope == 'nearby' && here != null) {
+        List<Place> filtered = places
+            .where((Place p) =>
+                GeoUtils.distanceMeters(here, p.coords) <= 30000)
+            .toList();
+        if (filtered.isNotEmpty) {
+          places = filtered;
+        }
+        // Sort by distance always for Nearby
+        places.sort((Place a, Place b) =>
+            GeoUtils.distanceMeters(here, a.coords)
+                .compareTo(GeoUtils.distanceMeters(here, b.coords)));
+      }
+      if (hasCategoryFilters && _scope != 'nearby') {
         for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
           if (places.isNotEmpty || !mounted) break;
           places = await _c.placesRepository.search(

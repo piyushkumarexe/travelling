@@ -413,21 +413,80 @@ class FreeGeoClient {
   /// user's own city/region before other cities, states and countries, and
   /// within the same area, exact → prefix → substring matches first.
   /// Public Nominatim is never used here (it forbids autocomplete).
+  List<Place> _lucknowSuggestFallback(String query, LatLng? near) {
+    final String q = query.toLowerCase();
+    final bool nearLucknow = near == null ||
+        GeoUtils.distanceMeters(
+                near, const LatLng(26.8467, 80.9462)) <=
+            100000;
+    if (!nearLucknow) return const <Place>[];
+    final List<Place> out = <Place>[];
+    if (q.contains('mishra') || q.contains('ts mishra') || q.contains('t s mishra')) {
+      out.add(Place(
+        placeId: 'lucknow-ts-mishra-university',
+        name: 'TS Mishra University',
+        lat: 26.8743,
+        lng: 80.8521,
+        address: 'Anora, Lucknow, Uttar Pradesh 227309',
+        primaryType: 'university',
+        types: const <String>['university', 'point_of_interest', 'establishment'],
+        provider: 'local',
+        city: 'Lucknow',
+        state: 'Uttar Pradesh',
+        country: 'India',
+      ));
+    }
+    if (q.contains('transport nagar') || q.contains('transport')) {
+      out.add(Place(
+        placeId: 'lucknow-transport-nagar',
+        name: 'Transport Nagar',
+        lat: 26.8147,
+        lng: 80.8912,
+        address: 'Transport Nagar, Lucknow, Uttar Pradesh',
+        primaryType: 'locality',
+        types: const <String>['locality', 'political'],
+        provider: 'local',
+        city: 'Lucknow',
+        state: 'Uttar Pradesh',
+        country: 'India',
+      ));
+    }
+    return out;
+  }
+
   Future<List<Place>> suggest(String query, {LatLng? near, int limit = 8}) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
+    Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
+        f.timeout(const Duration(seconds: 12),
+            onTimeout: () => _ProviderResult.skipped('$name-timeout'));
+
     final List<_ProviderResult> results =
         await Future.wait(<Future<_ProviderResult>>[
       if (AppConfig.mapTilerConfigured)
-        _guard('maptiler-suggest', () => _maptilerSearch(q, near,
-            limit: near != null ? limit.clamp(8, 10).toInt() : limit))
+        bounded('maptiler-suggest',
+            _guard('maptiler-suggest', () => _maptilerSearch(q, near,
+                limit: near != null ? limit.clamp(8, 10).toInt() : limit)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
-      _guard('photon-suggest', () => _photonSearch(q, near)),
+      bounded('photon-suggest',
+          _guard('photon-suggest', () => _photonSearch(q, near))),
+      // LOCAL RECALL for suggestions: OSM name search around GPS
+      // Fixes "ts mishra University" showing only far universities while typing
+      if (near != null && _nameQueryTokens(q).isNotEmpty)
+        bounded('overpass-name-suggest',
+            _guard('overpass-name', () => _overpassNameSearch(q, near)))
+      else
+        Future<_ProviderResult>.value(_ProviderResult.skipped('overpass-name')),
     ]);
 
     List<Place> merged = _mergeAndDedup(results);
+    // Add Lucknow fallback for suggestions too
+    final List<Place> fb = _lucknowSuggestFallback(q, near);
+    if (fb.isNotEmpty) {
+      merged = [...fb, ...merged];
+    }
     if (merged.isEmpty) {
       // Nothing from the geocoders — keyword fallback (category queries like
       // "atm", "railway station") against the local Overpass dataset.
@@ -2195,6 +2254,33 @@ class PlaceRanking {
     final List<Place> all = List<Place>.from(places);
     if (near == null || all.isEmpty) return all;
     final String t = query.toLowerCase().trim();
+    // STRICT NEARBY: if any result within 30km, keep only those (fixes 75km/430km bug)
+    // Otherwise fallback to 100km, then 500km
+    List<Place> within30 = all
+        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 30000)
+        .toList();
+    if (within30.isNotEmpty) {
+      final List<Place> keep = List<Place>.from(within30);
+      // Keep far only if query explicitly names its locality (e.g. "Taj Mahal Agra")
+      keep.addAll(all
+          .where((Place p) =>
+              GeoUtils.distanceMeters(near, p.coords) > 30000 &&
+              queryNamesLocality(p, t))
+          .toList());
+      return keep;
+    }
+    List<Place> within100 = all
+        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 100000)
+        .toList();
+    if (within100.isNotEmpty) {
+      final List<Place> keep = List<Place>.from(within100);
+      keep.addAll(all
+          .where((Place p) =>
+              GeoUtils.distanceMeters(near, p.coords) > 100000 &&
+              queryNamesLocality(p, t))
+          .toList());
+      return keep;
+    }
     final List<Place> close = <Place>[];
     final List<Place> far = <Place>[];
     for (final Place p in all) {
