@@ -132,7 +132,9 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
 
   @override
   void dispose() {
-    _c.tripPlanStore.removeListener(_onStore);
+    try {
+      _c.tripPlanStore.removeListener(_onStore);
+    } catch (_) {}
     _destination.dispose();
     super.dispose();
   }

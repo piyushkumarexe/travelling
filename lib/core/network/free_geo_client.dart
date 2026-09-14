@@ -414,14 +414,18 @@ class FreeGeoClient {
   /// within the same area, exact → prefix → substring matches first.
   /// Public Nominatim is never used here (it forbids autocomplete).
   List<Place> _lucknowSuggestFallback(String query, LatLng? near) {
-    final String q = query.toLowerCase();
+    final String q = query.toLowerCase().trim();
     final bool nearLucknow = near == null ||
         GeoUtils.distanceMeters(
                 near, const LatLng(26.8467, 80.9462)) <=
             100000;
     if (!nearLucknow) return const <Place>[];
     final List<Place> out = <Place>[];
-    if (q.contains('mishra') || q.contains('ts mishra') || q.contains('t s mishra')) {
+    // Precise matching to avoid placeholder bug: janeshwar mishra park should NOT return TS Mishra University
+    final bool isJaneshwar = q.contains('janeshwar') || q.contains('janeshwer') || q.contains('j park') || (q.contains('janesh') && q.contains('park'));
+    final bool isTsMishra = q.contains('ts mishra') || q.contains('t s mishra') || q.contains('t.s. mishra') || q.contains('t s m') || (q.contains('mishra') && q.contains('university') && !isJaneshwar) || (q == 'mishra university') || (q.contains('tsmishra'));
+    // Only return TS Mishra for explicit ts mishra queries, not for janeshwar mishra park
+    if (isTsMishra && !isJaneshwar) {
       out.add(Place(
         placeId: 'lucknow-ts-mishra-university',
         name: 'TS Mishra University',
@@ -436,7 +440,30 @@ class FreeGeoClient {
         country: 'India',
       ));
     }
-    if (q.contains('transport nagar') || q.contains('transport')) {
+    // Janeshwar Mishra Park - real park in Gomti Nagar, Lucknow
+    if (isJaneshwar || (q.contains('janeshwar mishra') || (q.contains('mishra') && q.contains('park') && !q.contains('ts mishra')))) {
+      // Avoid duplicate if query is exactly janeshwar mishra park - return that park, not TS Mishra
+      if (q.contains('janeshwar') || (q.contains('mishra') && q.contains('park'))) {
+        // Only if not explicitly TS Mishra
+        if (!q.contains('ts mishra')) {
+          out.add(Place(
+            placeId: 'lucknow-janeshwar-mishra-park',
+            name: 'Janeshwar Mishra Park',
+            lat: 26.8388,
+            lng: 80.9960,
+            address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
+            primaryType: 'park',
+            types: const <String>['park', 'tourist_attraction', 'point_of_interest'],
+            provider: 'local',
+            city: 'Lucknow',
+            state: 'Uttar Pradesh',
+            country: 'India',
+          ));
+        }
+      }
+    }
+    // Transport Nagar - only for exact phrase, not for generic 'transport'
+    if (q.contains('transport nagar')) {
       out.add(Place(
         placeId: 'lucknow-transport-nagar',
         name: 'Transport Nagar',

@@ -43,16 +43,18 @@ class PlacesRepository {
         .toList();
   }
 
-  // Hardcoded fallback for Lucknow area - ensures TS Mishra University and Transport Nagar show up
+  // Precise fallback for Lucknow - avoids placeholder bug where janeshwar mishra park returns TS Mishra
   List<Place> _lucknowFallback(String query, LatLng? location) {
-    final String q = query.toLowerCase();
+    final String q = query.toLowerCase().trim();
     final bool nearLucknow = location == null ||
         GeoUtils.distanceMeters(
                 location, const LatLng(26.8467, 80.9462)) <=
             100000;
     if (!nearLucknow) return const <Place>[];
     final List<Place> out = <Place>[];
-    if (q.contains('mishra') || q.contains('ts mishra') || q.contains('t s mishra')) {
+    final bool isJaneshwar = q.contains('janeshwar') || q.contains('janeshwer') || (q.contains('janesh') && q.contains('park'));
+    final bool isTsMishra = q.contains('ts mishra') || q.contains('t s mishra') || q.contains('t.s. mishra') || (q.contains('mishra') && q.contains('university') && !isJaneshwar) || q == 'mishra university' || q.contains('tsmishra');
+    if (isTsMishra && !isJaneshwar) {
       out.add(Place(
         placeId: 'lucknow-ts-mishra-university',
         name: 'TS Mishra University',
@@ -67,7 +69,24 @@ class PlacesRepository {
         country: 'India',
       ));
     }
-    if (q.contains('transport nagar') || q.contains('transport')) {
+    if (isJaneshwar || (q.contains('mishra') && q.contains('park') && !q.contains('ts mishra'))) {
+      if (!q.contains('ts mishra')) {
+        out.add(Place(
+          placeId: 'lucknow-janeshwar-mishra-park',
+          name: 'Janeshwar Mishra Park',
+          lat: 26.8388,
+          lng: 80.9960,
+          address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
+          primaryType: 'park',
+          types: const <String>['park', 'tourist_attraction', 'point_of_interest'],
+          provider: 'local',
+          city: 'Lucknow',
+          state: 'Uttar Pradesh',
+          country: 'India',
+        ));
+      }
+    }
+    if (q.contains('transport nagar')) {
       out.add(Place(
         placeId: 'lucknow-transport-nagar',
         name: 'Transport Nagar',
@@ -93,12 +112,12 @@ class PlacesRepository {
   }) async {
     final String q = query.trim();
 
-    // Check Lucknow fallback first - return immediately for known places
-    // Fixes skeleton loaders for transport nagar / ts mishra and ensures nearest-first
+    // Check Lucknow fallback first - return immediately for precise known places only
+    // Avoids placeholder bug: janeshwar mishra park should NOT return TS Mishra University
     final List<Place> fallback = _lucknowFallback(q, location);
-    if (fallback.isNotEmpty && (q.contains('mishra') || q.contains('transport'))) {
-      // For exact known queries, return immediately with distance sort
-      // This ensures TS Mishra University (11km) and Transport Nagar (10km) show first
+    final String ql = q.toLowerCase();
+    final bool isPreciseFallback = ql.contains('ts mishra') || ql.contains('transport nagar') || ql.contains('janeshwar mishra') || (ql.contains('janeshwar') && ql.contains('park'));
+    if (fallback.isNotEmpty && isPreciseFallback) {
       List<Place> fb = List<Place>.from(fallback);
       if (location != null) {
         fb.sort((Place a, Place b) => _distance(a, location).compareTo(_distance(b, location)));
