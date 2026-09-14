@@ -5,7 +5,8 @@
 // screens stay metadata-only. Actions: Edit, Replace File, Delete. File
 // deletion always runs before metadata deletion so no orphan files remain.
 
-import 'package:firebase_storage/firebase_storage.dart' show Task, TaskState;
+import 'package:firebase_storage/firebase_storage.dart'
+    show Task, TaskSnapshot, TaskState;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
@@ -439,10 +440,9 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
           ? await _c.storageService.pickVaultPdf()
           : await _c.storageService.pickVaultImage();
     } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not open the file picker.')));
-      }
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not open the file picker.')));
       return null;
     }
   }
@@ -470,10 +470,10 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
     if (ok != true || !mounted || !context.mounted) return;
     try {
       await _c.vaultService.deleteDocument(d);
-      if (!context.mounted) return;
+      if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (_) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text(
               'The attached file could not be deleted from the server, so the '

@@ -210,7 +210,7 @@ void main() {
       ]..sort((a, b) => a.$1.compareTo(b.$1));
       final List<(DateTime, String)> upcoming = all
           .where(((DateTime, String) e) =>
-              !e.$1.isBefore(DateTime(2026, 9, 14)))
+              !e.$1.isBefore(DateTime(now.year, now.month, now.day)))
           .toList();
       expect(upcoming.length, 4); // flight dep+arr, hotel in+out
       expect(upcoming[0].$1, DateTime(2026, 9, 15, 10, 30));

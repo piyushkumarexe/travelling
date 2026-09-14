@@ -7,14 +7,15 @@
 // the existing StorageService with live progress, cancel and retry to the
 // SAME Storage path (stable document id → no duplicate uploads/orphans).
 
-import 'package:firebase_storage/firebase_storage.dart' show Task, TaskState;
+import 'package:firebase_storage/firebase_storage.dart'
+    show Task, TaskSnapshot, TaskState;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:intl/intl.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../data/models/trip_plan.dart' show TripPlan;
-import '../../travel_document.dart';
+import '../travel_document.dart';
 
 class VaultEditScreen extends StatefulWidget {
   const VaultEditScreen({super.key, this.documentId});

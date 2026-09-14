@@ -8,7 +8,7 @@
 // NotificationService (expiry reminders) — no duplicate systems. This class
 // never logs document contents, numbers, PNRs or file URLs.
 
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamSubscription, unawaited;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart' show Task;
@@ -36,7 +36,7 @@ class VaultService extends ChangeNotifier {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   String? _uid;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
 
   List<TravelDocument> _docs = const <TravelDocument>[];
   bool _loading = false;
@@ -110,7 +110,7 @@ class VaultService extends ChangeNotifier {
   /// cannot duplicate the document.
   Future<void> createDocument(TravelDocument doc) async {
     await _docRef(doc.userId, doc.id).set(doc.toFirestore());
-    refreshReminders();
+    unawaited(refreshReminders());
   }
 
   /// Full-metadata update (edit screen). The stored userId can never be
@@ -118,7 +118,7 @@ class VaultService extends ChangeNotifier {
   Future<void> updateDocument(TravelDocument doc) async {
     assert(doc.userId == _uid, 'vault: ownership mismatch');
     await _docRef(doc.userId, doc.id).set(doc.toFirestore());
-    refreshReminders();
+    unawaited(refreshReminders());
   }
 
   /// Deletes the Storage file first (so no orphan is left behind), then the
@@ -136,7 +136,7 @@ class VaultService extends ChangeNotifier {
       for (final int offset in kVaultReminderOffsets)
         vaultReminderId(doc.id, offset),
     ]);
-    refreshReminders();
+    unawaited(refreshReminders());
   }
 
   // ---------------- file upload (orchestrated by screens) ----------------
