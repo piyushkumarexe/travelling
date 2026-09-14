@@ -301,7 +301,7 @@ class MainActivity : FlutterActivity() {
             val subId = android.telephony.SubscriptionManager
                 .getDefaultSmsSubscriptionId()
             return if (subId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                base.getSmsManagerForSubscriptionId(subId)
+                SmsManager.getSmsManagerForSubscriptionId(subId) // static, API 22+
             } else {
                 base
             }
