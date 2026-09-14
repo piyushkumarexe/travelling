@@ -64,7 +64,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
               style: TextStyle(fontSize: 10, color: Colors.grey)),
         ),
       );
-    } catch (e, st) {
+    } catch (e) {
       return Scaffold(
         appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
         body: Center(
@@ -94,8 +94,9 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
   }
 
   Widget _build(TripPlan? trip) {
-    final bool hasTrip = trip != null && trip.plan.isNotEmpty;
-    final List<ItineraryDay> plan = hasTrip ? _plan : const <ItineraryDay>[];
+    try {
+      final bool hasTrip = trip != null && trip.plan.isNotEmpty;
+      final List<ItineraryDay> plan = hasTrip ? _plan : const <ItineraryDay>[];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
