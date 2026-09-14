@@ -67,7 +67,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: <Widget>[
         if (hasTrip)
-          Text('${trip!.destination} — ${trip.days} day(s)',
+          Text('${trip.destination} — ${trip.days} day(s)',
               style: Theme.of(context)
                   .textTheme
                   .titleSmall
@@ -76,7 +76,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
         const SizedBox(height: 12),
         _robustnessCard(
             hasTrip
-                ? TripIntelligenceEngine.robustness(plan, budgetBand: trip!.budget)
+                ? TripIntelligenceEngine.robustness(plan, budgetBand: trip.budget)
                 : null),
         const SizedBox(height: 12),
         _problemsCard(hasTrip
@@ -390,7 +390,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
   // ---------------- tools ----------------
 
   Widget _toolsGrid(bool hasTrip) {
-    final List<TripPlan>? none = hasTrip ? _trip : null;
+    final TripPlan? none = hasTrip ? _trip : null;
     final List<(IconData, String, String, VoidCallback)> tools =
         <(IconData, String, String, VoidCallback)>[
       (
