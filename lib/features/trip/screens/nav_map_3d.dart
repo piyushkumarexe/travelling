@@ -6,7 +6,7 @@
 // key because vector styles are MapTiler-hosted; without one the parent
 // screen keeps the working 2D map (never a blank screen).
 
-import 'dart:async' show Completer, unawaited;
+import 'dart:async' show Completer, Timer, unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' show Position;
@@ -49,6 +49,7 @@ class _NavMap3DState extends State<NavMap3D> {
   ml.MapLibreMapController? _controller;
   final Completer<void> _styleReady = Completer<void>();
   bool _failed = false;
+  Timer? _styleTimeout;
   double _lastBearing = 0;
   double _lastZoom = 16.5;
   List<ll.LatLng> _lastRoute = const <ll.LatLng>[];
@@ -196,25 +197,30 @@ class _NavMap3DState extends State<NavMap3D> {
         circleStrokeColor: '#FFFFFF',
       ),
     );
-    // 3D buildings (optional — silently skipped if the vector source or
-    // `building` layer is unavailable).
+    // 3D buildings (optional): a vector-tile hiccup must never kill the
+    // route/pin layers — failures here are swallowed and the rest of the
+    // 3D view keeps working.
     final String? tilesJson = AppConfig.vectorTilesJsonUrl;
     if (tilesJson != null) {
-      await c.addSource(
-        'nav_buildings_src',
-        ml.VectorSourceProperties(url: tilesJson),
-      );
-      await c.addFillExtrusionLayer(
-        'nav_buildings_src',
-        'nav_buildings_3d',
-        ml.FillExtrusionLayerProperties(
-          fillExtrusionColor: '#9CA3AF',
-          fillExtrusionHeight: <dynamic>['coalesce', <dynamic>['get', 'render_height'], 8.0],
-          fillExtrusionBase: <dynamic>['coalesce', <dynamic>['get', 'render_min_height'], 0.0],
-          fillExtrusionOpacity: 0.75,
-        ),
-        sourceLayer: 'building',
-      );
+      try {
+        await c.addSource(
+          'nav_buildings_src',
+          ml.VectorSourceProperties(url: tilesJson),
+        );
+        await c.addFillExtrusionLayer(
+          'nav_buildings_src',
+          'nav_buildings_3d',
+          ml.FillExtrusionLayerProperties(
+            fillExtrusionColor: '#9CA3AF',
+            fillExtrusionHeight: <dynamic>['coalesce', <dynamic>['get', 'render_height'], 8.0],
+            fillExtrusionBase: <dynamic>['coalesce', <dynamic>['get', 'render_min_height'], 0.0],
+            fillExtrusionOpacity: 0.75,
+          ),
+          sourceLayer: 'building',
+        );
+      } catch (_) {
+        // Buildings are decorative — ignore.
+      }
     }
   }
 
@@ -249,10 +255,24 @@ class _NavMap3DState extends State<NavMap3D> {
       compassEnabled: true,
       tiltGesturesEnabled: true,
       rotateGesturesEnabled: true,
-      onMapCreated: (ml.MapLibreMapController c) async {
+      onMapCreated: (ml.MapLibreMapController c) {
         _controller = c;
+        // If the style never finishes loading (network/style problem),
+        // fall back to the 2D map instead of showing a bare surface.
+        _styleTimeout = Timer(const Duration(seconds: 12), () {
+          if (!_styleReady.isCompleted && !_failed && mounted) {
+            _failed = true;
+            widget.onUnavailable();
+          }
+        });
+      },
+      onStyleLoadedCallback: () async {
+        // Sources/layers can only be added AFTER the style is loaded —
+        // doing this in onMapCreated throws "style not loaded".
+        if (_styleReady.isCompleted) return;
         try {
           await _buildLayers();
+          _styleTimeout?.cancel();
           _styleReady.complete();
           unawaited(_updateCamera());
         } catch (_) {
@@ -266,10 +286,16 @@ class _NavMap3DState extends State<NavMap3D> {
   }
 
   @override
+  void dispose() {
+    _styleTimeout?.cancel();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(NavMap3D old) {
     super.didUpdateWidget(old);
     final ml.MapLibreMapController? c = _controller;
-    if (c == null || !_styleReady.isCompleted) return;
+    if (c == null || !_styleReady.isCompleted || _failed) return;
     // Route changed → refresh the GeoJSON source in place.
     if (widget.routeLine.length != _lastRoute.length ||
         (widget.routeLine.isNotEmpty &&

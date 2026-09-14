@@ -258,15 +258,22 @@ class FreeGeoClient {
     ]);
 
     List<Place> out = _mergeAndDedup(results);
-    if (near != null) {
+    final bool radiusFiltered =
+        filterToRadius && radiusMeters > 0 && near != null;
+    if (radiusFiltered) {
+      out = out
+          .where((Place p) =>
+              GeoUtils.distanceMeters(near, p.coords) <= radiusMeters + 20)
+          .toList();
+    }
+    if (types == null) {
+      // Pure place-name search (map screen): accuracy ranking — best name
+      // match first, nearest among equals (see [_rankSuggestions]).
+      out = _rankSuggestions(out, q, near);
+    } else if (near != null) {
+      // Category sweeps stay nearest-first.
       out.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
           .compareTo(GeoUtils.distanceMeters(near, b.coords)));
-      if (filterToRadius && radiusMeters > 0) {
-        out = out
-            .where((Place p) =>
-                GeoUtils.distanceMeters(near, p.coords) <= radiusMeters + 20)
-            .toList();
-      }
     }
     debugPrint('[places] query="$q" providers='
         '${results.map((_ProviderResult r) => '${r.provider}:${r.raw}/${r.parsed}').join(', ')} '
@@ -429,49 +436,9 @@ class FreeGeoClient {
     return const <Place>[];
   }
 
-  /// Suggestion ranking: LOCALITY FIRST (own area ≤25 km → ≤100 km → ≤500 km
-  /// → everywhere else), and within the same area, match quality: exact name
-  /// → starts-with → word-boundary → substring. So typing while sitting in
-  /// Zamania/Varanasi surfaces the local match before a same-named place in
-  /// another state or country.
-  List<Place> _rankSuggestions(List<Place> places, String q, LatLng? near) {
-    int matchScore(Place p) {
-      final String n = p.name.toLowerCase();
-      final String t = q.toLowerCase();
-      if (n == t) return 0;
-      if (n.startsWith(t)) return 1;
-      final RegExp boundary = RegExp('\\b${RegExp.escape(t)}');
-      if (boundary.hasMatch(n)) return 2;
-      if (n.contains(t)) return 3;
-      return 4;
-    }
+  List<Place> _rankSuggestions(List<Place> places, String q, LatLng? near) =>
+      PlaceRanking.rankSuggestions(places, q, near);
 
-    int distanceBucket(Place p) {
-      if (near == null) return 1;
-      final double d = GeoUtils.distanceMeters(near, p.coords);
-      if (d <= 25000) return 0; // own city / tehsil area
-      if (d <= 100000) return 1; // own region
-      if (d <= 500000) return 2; // own state-ish
-      return 3; // other state / country
-    }
-
-    final List<Place> out = List<Place>.from(places)
-      ..sort((Place a, Place b) {
-        final int bucket = distanceBucket(a) - distanceBucket(b);
-        if (bucket != 0) return bucket;
-        final int match = matchScore(a) - matchScore(b);
-        if (match != 0) return match;
-        if (near != null) {
-          return GeoUtils.distanceMeters(near, a.coords)
-              .compareTo(GeoUtils.distanceMeters(near, b.coords));
-        }
-        return 0;
-      });
-    return out;
-  }
-
-  /// Re-orders candidates nearest-first relative to [near] (when known), so a
-  /// location search always suggests the closest match first.
   List<Place> _rankByDistance(List<Place> places, LatLng? near) {
     if (near == null) return places;
     final List<Place> out = List<Place>.from(places)
@@ -2005,4 +1972,59 @@ class _ProviderResult {
           error: null,
           raw: 0,
         );
+}
+
+
+/// Public, testable suggestion/text-search ranking (accuracy-first).
+///
+/// 1) name-match quality: exact → starts-with → word-boundary → substring
+///    (name first; name+address as a token fallback),
+/// 2) locality: own area ≤25 km → ≤100 km → ≤500 km → elsewhere,
+/// 3) raw distance — among same-named places, the nearest is on top.
+class PlaceRanking {
+  PlaceRanking._();
+
+  static List<Place> rankSuggestions(
+      List<Place> places, String query, LatLng? near) {
+    final String t = query.toLowerCase().trim();
+
+    int matchScore(Place p) {
+      final String n = p.name.toLowerCase();
+      final String full = '$n ${(p.address ?? '').toLowerCase()}';
+      if (n == t) return 0;
+      if (n.startsWith(t)) return 1;
+      final RegExp boundary = RegExp('\b${RegExp.escape(t)}');
+      if (boundary.hasMatch(n)) return 2;
+      if (n.contains(t)) return 3;
+      final List<String> tokens =
+          t.split(RegExp(r'\s+')).where((String w) => w.isNotEmpty).toList();
+      if (tokens.isNotEmpty && tokens.every(full.contains)) {
+        return 3;
+      }
+      return 4;
+    }
+
+    int distanceBucket(Place p) {
+      if (near == null) return 1;
+      final double d = GeoUtils.distanceMeters(near, p.coords);
+      if (d <= 25000) return 0;
+      if (d <= 100000) return 1;
+      if (d <= 500000) return 2;
+      return 3;
+    }
+
+    final List<Place> out = List<Place>.from(places)
+      ..sort((Place a, Place b) {
+        final int match = matchScore(a) - matchScore(b);
+        if (match != 0) return match;
+        final int bucket = distanceBucket(a) - distanceBucket(b);
+        if (bucket != 0) return bucket;
+        if (near != null) {
+          return GeoUtils.distanceMeters(near, a.coords)
+              .compareTo(GeoUtils.distanceMeters(near, b.coords));
+        }
+        return 0;
+      });
+    return out;
+  }
 }

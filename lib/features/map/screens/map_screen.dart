@@ -376,7 +376,13 @@ class _MapScreenState extends State<MapScreen> {
       _resultsVisible = true; // show the sheet with a spinner while searching
     });
     try {
-      final gm.LatLng? target = _cameraTarget();
+      // Proximity = the DEVICE's real GPS fix when available (camera center
+      // only as fallback) — so "nearest" means nearest to the traveler, not
+      // nearest to wherever the map was panned.
+      final Position? me = _position ?? await _safeFix();
+      final gm.LatLng? target = me != null
+          ? gm.LatLng(me.latitude, me.longitude)
+          : _cameraTarget();
       // Category keywords hit the radius-bound Overpass path: start at 25 km
       // and auto-widen (25 -> 50 -> 100 -> 250 km) so they never dead-end.
       // Pure text search is NOT radius-filtered by the providers — widening
@@ -433,7 +439,11 @@ class _MapScreenState extends State<MapScreen> {
       _resultsVisible = true;
     });
     try {
-      final gm.LatLng? target = _cameraTarget();
+      // Proximity = real GPS fix when available (camera only as fallback).
+      final Position? me = _position ?? await _safeFix();
+      final gm.LatLng? target = me != null
+          ? gm.LatLng(me.latitude, me.longitude)
+          : _cameraTarget();
       // Category searches are radius-bound: auto-widen 25 -> 250 km.
       final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
       List<Place> places = await _c.placesRepository.search(
@@ -477,6 +487,15 @@ class _MapScreenState extends State<MapScreen> {
       'petrol', 'bank', 'shopping', 'mall',
     ];
     return keywords.any(lower.contains);
+  }
+
+  /// Best-effort one-shot GPS fix for search proximity (never throws).
+  Future<Position?> _safeFix() async {
+    try {
+      return await _c.locationService.currentPosition();
+    } catch (_) {
+      return null;
+    }
   }
 
   gm.LatLng? _cameraTarget() {
