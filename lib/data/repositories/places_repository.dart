@@ -113,7 +113,7 @@ class PlacesRepository {
       // entry can never put far-away noise above the user's own area.
       if (types == null) {
         final List<Place> ranked =
-            FreeGeoClient.rankSuggestions(cached, query.trim(), near);
+            PlaceRanking.rankSuggestions(cached, query.trim(), near);
         final List<Place> relevant =
             PlaceRanking.filterRelevant(ranked, query.trim(), near);
         if (relevant.isNotEmpty) return relevant;
