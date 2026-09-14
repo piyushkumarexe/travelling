@@ -309,7 +309,7 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
                 ],
               ),
       );
-    } catch (e, st) {
+    } catch (e) {
       return Scaffold(
         appBar: AppBar(title: const Text('Trip planner')),
         body: Center(
