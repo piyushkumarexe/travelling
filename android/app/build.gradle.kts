@@ -36,7 +36,7 @@ android {
     defaultConfig {
         applicationId = "app.roamio.tourism"
         minSdk = 23
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutterVersionCode
         versionName = flutterVersionName
         // Google Maps Android key: injected from the MAPS_ANDROID_API_KEY
