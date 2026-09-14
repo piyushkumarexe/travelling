@@ -291,23 +291,51 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Trip planner')),
-      body: !_storeLoaded
-          ? const LoadingView(message: 'Loading planner…')
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                _formCard(scheme),
+    try {
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      return Scaffold(
+        appBar: AppBar(title: const Text('Trip planner')),
+        body: !_storeLoaded
+            ? const LoadingView(message: 'Loading planner…')
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  _formCard(scheme),
+                  const SizedBox(height: 12),
+                  _previewCard(scheme),
+                  const SizedBox(height: 12),
+                  _savedPlansCard(scheme),
+                  const SizedBox(height: 24),
+                ],
+              ),
+      );
+    } catch (e, st) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Trip planner')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 12),
-                _previewCard(scheme),
+                const Text('Trip Planner failed to load',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(e.toString(),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(height: 12),
-                _savedPlansCard(scheme),
-                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
               ],
             ),
-    );
+          ),
+        ),
+      );
+    }
   }
 
   Widget _formCard(ColorScheme scheme) {
