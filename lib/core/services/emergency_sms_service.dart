@@ -308,6 +308,17 @@ class EmergencySmsService {
             status: EmergencySmsStatus.permissionDenied,
             detail: 'SEND_SMS permission is not granted.');
       }
+      if (e.code == 'send_failed') {
+        // The OS gave the EXACT reason (e.g. "IllegalArgumentException: No
+        // service", "Invalid destinationAddress"). Show it verbatim — never
+        // a generic fake status.
+        await _setStatus(EmergencySmsStatus.failed);
+        return EmergencySmsResult(
+            status: EmergencySmsStatus.failed,
+            detail:
+                'Android refused the SMS send (${e.message ?? 'unknown OS '
+                'reason'}). This is the exact OS/radio error.');
+      }
       queued = false;
     } catch (_) {
       queued = false;

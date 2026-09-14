@@ -12,6 +12,10 @@ enum ApiErrorKind {
   parser,
   location,
   unknown,
+
+  /// Providers responded, but every result was an irrelevant far-away name
+  /// match while the traveller searched with a known location.
+  noRelevantNearby,
 }
 
 class ApiException implements Exception {

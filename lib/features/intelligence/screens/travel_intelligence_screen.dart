@@ -11,7 +11,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/state_views.dart';
 import '../../../data/models/itinerary.dart';
 import '../../../data/models/places.dart' show Place, RouteInfo;
 import '../../../data/models/trip_plan.dart';
@@ -50,19 +49,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     final TripPlan? trip = _trip;
     return Scaffold(
       appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
-      body: trip == null || trip.plan.isEmpty
-          ? EmptyState(
-              icon: Icons.psychology,
-              title: 'No active trip plan',
-              message:
-                  'Travel Intelligence works on your saved Trip Planner plan '
-                  '(its stops, times and costs). Create a trip in the planner '
-                  'first, then come back — every calculation here runs on '
-                  'that real data.',
-              actionLabel: 'Open Trip Planner',
-              onAction: () => context.push('/planner'),
-            )
-          : _build(trip),
+      body: _build(trip),
       bottomNavigationBar: const Padding(
         padding: EdgeInsets.all(10),
         child: Text('TRAVEL-INTELLIGENCE-BUILD-2026-09-14-01',
@@ -72,39 +59,143 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     );
   }
 
-  Widget _build(TripPlan trip) {
-    final List<ItineraryDay> plan = _plan;
-    final RobustnessReport robust =
-        TripIntelligenceEngine.robustness(plan, budgetBand: trip.budget);
-    final List<Contradiction> problems =
-        TripIntelligenceEngine.contradictions(plan);
-    final (String deadlineText, bool urgent) = _nextDeadline(plan);
+  Widget _build(TripPlan? trip) {
+    final bool hasTrip = trip != null && trip.plan.isNotEmpty;
+    final List<ItineraryDay> plan = hasTrip ? _plan : const <ItineraryDay>[];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: <Widget>[
-        Text('${trip.destination} — ${trip.days} day(s)',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.w800)),
+        if (hasTrip)
+          Text('${trip!.destination} — ${trip.days} day(s)',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+        if (!hasTrip) _noTripCard(),
         const SizedBox(height: 12),
-        _robustnessCard(robust),
+        _robustnessCard(
+            hasTrip
+                ? TripIntelligenceEngine.robustness(plan, budgetBand: trip!.budget)
+                : null),
         const SizedBox(height: 12),
-        _problemsCard(problems),
+        _problemsCard(hasTrip
+            ? TripIntelligenceEngine.contradictions(plan)
+            : null),
         const SizedBox(height: 12),
-        _deadlineCard(deadlineText, urgent),
+        hasTrip
+            ? _deadlineCardWith(_nextDeadline(plan))
+            : _needsTripCard(Icons.timer, 'Next deadline',
+                'Computed from consecutive saved times in your plan.'),
         const SizedBox(height: 12),
-        _toolsGrid(trip),
+        _toolsGrid(hasTrip),
         const SizedBox(height: 12),
         _behaviourCard(),
       ],
     );
   }
 
+  /// Always-visible entry card: explain what the engine needs and offer BOTH
+  /// actions — create a trip or select an existing one.
+  Widget _noTripCard() {
+    final List<TripPlan> plans = _c.tripPlanStore.plans;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(children: <Widget>[
+            Icon(Icons.psychology, color: AppTheme.brandStart),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('No active trip plan',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            'Travel Intelligence works on your saved Trip Planner plan (its '
+            'stops, times and costs). The trip-dependent tools below stay '
+            'locked until you create or select one — the rest works already.',
+            style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              FilledButton.icon(
+                onPressed: () => context.push('/planner'),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Open Trip Planner'),
+              ),
+              if (plans.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: () => _pickTrip(plans),
+                  icon: const Icon(Icons.list, size: 16),
+                  label: Text('Select a trip (${plans.length})'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickTrip(List<TripPlan> plans) async {
+    final String? id = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
+            for (final TripPlan p in plans)
+              ListTile(
+                title: Text(p.destination),
+                subtitle: Text(
+                    '${p.days} day(s) · ${p.plan.length} planned day(s)'),
+                onTap: () => Navigator.pop(ctx, p.id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    await _c.tripPlanStore.setActive(id);
+    if (mounted) setState(() {});
+  }
+
+  /// Shared "this needs a trip" placeholder — never blank space.
+  Widget _needsTripCard(IconData icon, String title, String detail) => AppCard(
+        child: Row(children: <Widget>[
+          Icon(icon, size: 20, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13.5)),
+                const SizedBox(height: 2),
+                Text('Create/select a trip first — $detail',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(fontSize: 11.5)),
+              ],
+            ),
+          ),
+        ]),
+      );
+
   // ---------------- robustness ----------------
 
-  Widget _robustnessCard(RobustnessReport r) {
+  Widget _robustnessCard(RobustnessReport? r) {
+    if (r == null) {
+      return _needsTripCard(Icons.shield_outlined, 'Robustness score (0–100)',
+          'the score is computed from your saved buffers, connections, stop '
+              'load and plan cost.');
+    }
     final Color color = r.score >= 80
         ? AppTheme.success
         : r.score >= 60
@@ -199,7 +290,12 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
 
   // ---------------- problems + deadline ----------------
 
-  Widget _problemsCard(List<Contradiction> problems) {
+  Widget _problemsCard(List<Contradiction>? problems) {
+    if (problems == null) {
+      return _needsTripCard(Icons.fact_check_outlined, 'Active trip problems',
+          'impossible sequences, duplicates and tight transfers are detected '
+              'in your saved stops and times.');
+    }
     if (problems.isEmpty) {
       return AppCard(
         child: Row(children: <Widget>[
@@ -277,6 +373,9 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     return ('No upcoming same-day deadline found in the saved plan.', false);
   }
 
+  Widget _deadlineCardWith((String, bool) d) =>
+      _deadlineCard(d.$1, d.$2);
+
   Widget _deadlineCard(String text, bool urgent) => AppCard(
         child: Row(children: <Widget>[
           Icon(Icons.timer,
@@ -290,26 +389,33 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
 
   // ---------------- tools ----------------
 
-  Widget _toolsGrid(TripPlan trip) {
+  Widget _toolsGrid(bool hasTrip) {
+    final List<TripPlan>? none = hasTrip ? _trip : null;
     final List<(IconData, String, String, VoidCallback)> tools =
         <(IconData, String, String, VoidCallback)>[
       (
         Icons.timelapse,
         'What-If Simulator',
-        'Delays, closures, less time/budget — on a copy',
-        () => _openSimulator(trip)
+        hasTrip
+            ? 'Delays, closures, less time/budget — on a copy'
+            : 'Create/select a trip first',
+        () => _openSimulator(none)
       ),
       (
         Icons.tune,
         'Constraints & Trade-offs',
-        'Must-visit, limits and sliders that really re-plan',
-        () => _openConstraints(trip)
+        hasTrip
+            ? 'Must-visit, limits and sliders that really re-plan'
+            : 'Create/select a trip first',
+        () => _openConstraints(none)
       ),
       (
         Icons.account_tree,
         'Dependency Graph',
-        'What depends on what; change impact',
-        () => _openGraph(trip)
+        hasTrip
+            ? 'What depends on what; change impact'
+            : 'Create/select a trip first',
+        () => _openGraph(none)
       ),
       (
         Icons.history,
@@ -320,14 +426,16 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
       (
         Icons.healing,
         'Recover Trip',
-        'Running late? Re-flow the rest of today',
-        () => _openRecovery(trip)
+        hasTrip
+            ? 'Running late? Re-flow the rest of today'
+            : 'Create/select a trip first',
+        () => _openRecovery(none)
       ),
       (
         Icons.help_center,
         'Why not this place?',
-        'Honest reasons against a place you consider',
-        () => _openWhyNot(trip)
+        'Honest reasons against a place you consider (works without a trip)',
+        () => _openWhyNot()
       ),
     ];
     return Column(
@@ -391,7 +499,17 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
 
   // ---------------- simulator / apply flows ----------------
 
-  Future<void> _openSimulator(TripPlan trip) async {
+  void _showNeedsTrip() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Create or select a trip first — this tool works on '
+            'your saved Trip Planner plan.')));
+  }
+
+  Future<void> _openSimulator(TripPlan? trip) async {
+    if (trip == null) {
+      _showNeedsTrip();
+      return;
+    }
     final ScenarioType? type = await showModalBottomSheet<ScenarioType>(
       context: context,
       showDragHandle: true,
@@ -471,7 +589,11 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     );
   }
 
-  Future<void> _openRecovery(TripPlan trip) async {
+  Future<void> _openRecovery(TripPlan? trip) async {
+    if (trip == null) {
+      _showNeedsTrip();
+      return;
+    }
     final TextEditingController ctrl = TextEditingController(text: '45');
     final SimulationResult? r = await showDialog<SimulationResult>(
       context: context,
@@ -518,7 +640,11 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     );
   }
 
-  Future<void> _openConstraints(TripPlan trip) async {
+  Future<void> _openConstraints(TripPlan? trip) async {
+    if (trip == null) {
+      _showNeedsTrip();
+      return;
+    }
     final TextEditingController must = TextEditingController();
     final TextEditingController avoid = TextEditingController();
     int maxMin = 600;
@@ -638,7 +764,11 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
             onChanged: (double v) => onChanged(v.round())),
       ]);
 
-  Future<void> _openGraph(TripPlan trip) async {
+  Future<void> _openGraph(TripPlan? trip) async {
+    if (trip == null) {
+      _showNeedsTrip();
+      return;
+    }
     final DependencyGraph g = TripIntelligenceEngine.dependencyGraph(_plan);
     int? selected;
     await showModalBottomSheet<void>(
@@ -762,7 +892,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
         DecisionType.stopSkipped => Icons.skip_next,
       };
 
-  Future<void> _openWhyNot(TripPlan trip) async {
+  Future<void> _openWhyNot() async {
     final TextEditingController ctrl = TextEditingController();
     final String? q = await showDialog<String>(
       context: context,

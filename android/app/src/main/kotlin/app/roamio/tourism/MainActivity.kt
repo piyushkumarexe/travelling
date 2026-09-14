@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -104,7 +105,14 @@ class MainActivity : FlutterActivity() {
                         } else if (!hasSendSms()) {
                             result.error("permission", "SEND_SMS not granted", null)
                         } else {
-                            result.success(queueSmsTracked(ref, destination, body))
+                            try {
+                                result.success(queueSmsTracked(ref, destination, body))
+                            } catch (e: Exception) {
+                                // Never swallow the OS reason — Dart shows it
+                                // verbatim so the failure is diagnosable.
+                                Log.w("EmergencySms", "tracked SMS send failed: ${e.javaClass.simpleName}: ${e.message}")
+                                result.error("send_failed", "${e.javaClass.simpleName}: ${e.message}", null)
+                            }
                         }
                     }
                     else -> result.notImplemented()

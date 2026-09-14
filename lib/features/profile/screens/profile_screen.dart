@@ -136,6 +136,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      // OPAQUE background: the app theme sets bottomSheetTheme.backgroundColor
+      // to transparent (for custom-painted sheets) — with no explicit color
+      // this sheet's content floated over the profile page and looked broken
+      // (overlapping/clipped text). Also a rounded top shape and safe area.
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      useSafeArea: true,
       builder: (BuildContext ctx) => _EditProfileSheet(
         profile: p,
         saving: _saving,
@@ -791,10 +800,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 24),
-      child: StatefulBuilder(
-        builder: (BuildContext context, StateSetter setSheet) {
-          return SingleChildScrollView(
+          16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.88),
+        child: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheet) {
+            return SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -921,6 +933,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
           );
         },
+        ),
       ),
     );
   }

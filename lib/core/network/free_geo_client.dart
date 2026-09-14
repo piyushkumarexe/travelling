@@ -278,7 +278,26 @@ class FreeGeoClient {
     debugPrint('[places] query="$q" providers='
         '${results.map((_ProviderResult r) => '${r.provider}:${r.raw}/${r.parsed}').join(', ')} '
         'final=${out.length}');
-    if (out.isNotEmpty) return out;
+    if (types != null) {
+      // Category sweeps keep their strict radius handling — a miss there is
+      // a genuine zero, never "irrelevant".
+      if (out.isNotEmpty) return out;
+    } else {
+      // Pure place-name search: rank (GPS-dominant), then drop irrelevant
+      // far-away name noise. An empty relevance result is a TYPED outcome —
+      // it must not masquerade as an API failure.
+      out = _rankSuggestions(out, q, near);
+      if (out.isNotEmpty) {
+        final List<Place> relevant = PlaceRanking.filterRelevant(out, q, near);
+        if (relevant.isEmpty) {
+          throw ApiException(
+              ApiErrorKind.noRelevantNearby,
+              'No relevant nearby result found for "$q". Try adding the city '
+              'or area name.');
+        }
+        return relevant;
+      }
+    }
 
     // Nothing returned — classify the failure honestly instead of silently
     // returning [] (which would masquerade as "no places found").
@@ -403,7 +422,14 @@ class FreeGeoClient {
         }
       }
     } else {
-      return _rankSuggestions(merged, q, near).take(limit).toList();
+      final List<Place> ranked = _rankSuggestions(merged, q, near);
+      final List<Place> relevant = PlaceRanking.filterRelevant(ranked, q, near);
+      if (relevant.isNotEmpty) return relevant.take(limit).toList();
+      // Providers responded, but every result was irrelevant far-away noise.
+      // That is a genuine "no relevant nearby result" — return empty so the
+      // caller shows its no-results message. It must NOT fall into the
+      // error classification below (the APIs did not fail).
+      return const <Place>[];
     }
 
     // Nothing responded at all — surface the honest error (same wording as
@@ -2074,22 +2100,70 @@ class PlaceRanking {
 
     final List<Place> out = List<Place>.from(places)
       ..sort((Place a, Place b) {
-        final int match = matchScore(a) - matchScore(b);
-        if (match != 0) return match;
-        // EXPLICIT CITY in the query beats GPS proximity: "Taj Mahal Agra"
-        // puts the Agra result ahead of a same-named place next door.
         final bool aNamed = queryNamesLocality(a, t);
         final bool bNamed = queryNamesLocality(b, t);
-        if (aNamed != bNamed) return aNamed ? -1 : 1;
-        final int bucket = distanceBucket(a) - distanceBucket(b);
-        if (bucket != 0) return bucket;
         if (near != null) {
+          // GPS ON: the traveller's area STRONGLY outranks tiny name-match
+          // differences. "Transport" (exact, Vilhelmina ~6400 km away) must
+          // never beat "Transport Nagar" 2 km away.
+          if (aNamed != bNamed) return aNamed ? -1 : 1;
+          final int bucket = distanceBucket(a) - distanceBucket(b);
+          if (bucket != 0) return bucket;
+          final int match = matchScore(a) - matchScore(b);
+          if (match != 0) return match;
           return GeoUtils.distanceMeters(near, a.coords)
               .compareTo(GeoUtils.distanceMeters(near, b.coords));
         }
+        // GPS OFF: text relevance first, explicit locality second.
+        final int match = matchScore(a) - matchScore(b);
+        if (match != 0) return match;
+        if (aNamed != bNamed) return aNamed ? -1 : 1;
         return 0;
       });
     return out;
+  }
+
+  /// Distance-relevance filter for searches made with a known origin.
+  ///
+  /// Rules (user-reported bug: searching "transport" in Lucknow showed
+  /// "Transport" in Vilhelmina (Sweden) and Tustin (California)):
+  ///  - No origin (GPS unavailable AND no camera target): results are kept
+  ///    unchanged — text ranking only, context shown per row.
+  ///  - Results the query explicitly names (city/locality match) always stay.
+  ///  - If ANY result lies within 500 km: keep those (plus query-named far
+  ///    ones, e.g. "Taj Mahal Agra") and DROP the foreign noise.
+  ///  - If nothing is within 500 km: keep only deliberate specific searches
+  ///    (multi-word query exactly matching a far name, "eiffel tower") —
+  ///    generic single-word name matches are dropped. An EMPTY return value
+  ///    means "no relevant nearby result found".
+  static List<Place> filterRelevant(
+      List<Place> places, String query, LatLng? near) {
+    final List<Place> all = List<Place>.from(places);
+    if (near == null || all.isEmpty) return all;
+    final String t = query.toLowerCase().trim();
+    final List<Place> close = <Place>[];
+    final List<Place> far = <Place>[];
+    for (final Place p in all) {
+      final bool isClose =
+          GeoUtils.distanceMeters(near, p.coords) <= 500000;
+      (isClose ? close : far).add(p);
+    }
+    if (close.isNotEmpty) {
+      final List<Place> keep = List<Place>.from(close);
+      keep.addAll(far.where((Place p) => queryNamesLocality(p, t)));
+      return keep;
+    }
+    final List<String> tokens = t
+        .split(RegExp(r'\s+'))
+        .where((String w) => w.isNotEmpty)
+        .toList();
+    if (tokens.length >= 2) {
+      final List<Place> exact = far
+          .where((Place p) => p.name.toLowerCase().trim() == t)
+          .toList();
+      if (exact.isNotEmpty) return exact;
+    }
+    return const <Place>[];
   }
 
   /// "ABC Cafe — Gomti Nagar, Lucknow · 3.2 km" — the disambiguating

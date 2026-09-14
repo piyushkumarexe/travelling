@@ -426,9 +426,13 @@ Power-off safety and the SOS flow now have an **opt-in** offline fallback that s
 ## Search accuracy fix (📍)
 
 Search no longer relies on place names alone:
-- Results are ranked by **name relevance → explicit-city intent → distance buckets from your real GPS** ("Taj Mahal Agra" → Agra even from Lucknow; bare "ABC Cafe" near you → your Lucknow cafe beats the distant namesake; GPS off → name-relevance first).
+- With GPS ON, **distance dominates**: ranking = explicit-city intent → distance buckets from your real GPS (25/100/500 km) → name relevance. Searching "transport" in Lucknow puts **Transport Nagar, Lucknow** first — never "Transport" from Vilhelmina (Sweden) or Tustin (California).
+- **Irrelevant far-away name matches are dropped** whenever any result lies within 500 km of the known origin. If nothing relevant is nearby, the app shows **"No relevant nearby result found"** instead of foreign noise (deliberate specific searches like "eiffel tower" still work; with GPS off nothing is filtered and results are ranked by text relevance with context shown).
+- Query naming a city wins outright ("Taj Mahal **Agra**" → Agra even from Lucknow; "Transport Nagar **Lucknow**" → Lucknow).
+- MapTiler receives `proximity` (lon,lat) and Photon `lat/lon` bias from the same real-GPS origin in both `suggest()` and full text search.
 - Duplicate names are disambiguated with a subtitle: **"ABC Cafe — Gomti Nagar, Lucknow · 2.1 km"** (locality, city, real distance from you) in ride booking, map search, multi-stop and explore screens.
-- Selecting a result stores its **exact canonical coordinates** (placeId/name/lat/lng/city/state/country/address) which ride booking, multi-stop and trip planning reuse — never a silently different city.
+- Selecting a result stores and uses its **exact canonical coordinates** (placeId/name/lat/lng/city/state/country/address) everywhere — the selection is never re-geocoded by name.
+- Map attribution uses `RichAttributionWidget(showFlutterMapAttribution: false)` — only the legally required **© MapTiler © OpenStreetMap contributors** line is shown (the hardcoded "flutter_map |" prefix is gone), tappable to the provider copyright pages.
 ## 3D Navigation (Live Trip) (🗺️)
 
 Live Trip navigation now renders in **true 3D**: MapLibre GL (`maplibre_gl`, no API key) with a MapTiler vector style, camera **tilt 47.5°**, heading-up bearing and the existing speed-adaptive zoom — plus **3D building extrusions** from MapTiler's v3 vector tileset. Route (blue with white casing), destination pin and follow-cam mirror the 2D view; the **3D** button switches back to the original flutter_map 2D view at any time, and the app auto-falls-back to 2D when no MapTiler key is compiled in or the style fails to load. Google Maps 3D was not usable because the project intentionally has no Google Maps API key.

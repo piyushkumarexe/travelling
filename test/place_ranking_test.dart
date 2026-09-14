@@ -157,4 +157,72 @@ void main() {
       expect(ranked.first.name, 'Gomti Nagar');
     });
   });
+
+  group('PlaceRanking — local-first relevance (user-reported bug)', () {
+    // The exact fixtures from the bug report: searching "transport" in
+    // Lucknow showed "Transport" (Vilhelmina, Sweden) and "Transport Nagar"
+    // (Tustin, California) above the traveller's own area.
+    final Place vilhelmina = _p('Transport', 63.8541, 12.3973,
+        address: 'Vilhelmina', city: 'Vilhelmina', country: 'Sweden');
+    final Place tustin = _p('Transport Nagar', 33.7458, -117.8262,
+        address: 'Tustin, CA', country: 'United States');
+    final Place lucknowTN = _p('Transport Nagar', 26.8000, 80.9000,
+        address: 'Lucknow', city: 'Lucknow', country: 'India');
+
+    test('"transport" in Lucknow: Transport Nagar on top, never foreign',
+        () {
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+          <Place>[vilhelmina, tustin, lucknowTN], 'transport', lucknow);
+      expect(ranked.first.city, 'Lucknow');
+      expect(ranked.first.name, 'Transport Nagar');
+    });
+
+    test('"transport nagar" ranks Lucknow first (not exact-match Tustin)',
+        () {
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+          <Place>[tustin, lucknowTN], 'transport nagar', lucknow);
+      expect(ranked.first.city, 'Lucknow');
+    });
+
+    test('relevance filter hides foreign noise when local results exist',
+        () {
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[vilhelmina, tustin, lucknowTN], 'transport', lucknow);
+      expect(kept.any((Place p) => p.city == 'Lucknow'), isTrue);
+      expect(kept.any((Place p) => p.country == 'Sweden'), isFalse);
+      expect(kept.any((Place p) => p.country == 'United States'), isFalse);
+    });
+
+    test('explicit city in query keeps the named result even if far', () {
+      // Searching "Transport Nagar Lucknow" FROM Delhi: Lucknow is ~425 km
+      // away (within 500 km) and the query names it; Tustin is irrelevant.
+      final gm.LatLng delhi = const gm.LatLng(28.6139, 77.2090);
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[tustin, lucknowTN], 'transport nagar lucknow', delhi);
+      expect(kept.any((Place p) => p.city == 'Lucknow'), isTrue);
+      expect(kept.any((Place p) => p.country == 'United States'), isFalse);
+    });
+
+    test('no local result + specific far search ("eiffel tower") is kept',
+        () {
+      final Place eiffel = _p('Eiffel Tower', 48.8584, 2.2945,
+          address: 'Paris', city: 'Paris', country: 'France');
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[eiffel], 'eiffel tower', lucknow);
+      expect(kept, isNotEmpty);
+    });
+
+    test('no local result + generic query → empty ("no relevant nearby")',
+        () {
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[vilhelmina], 'transport', lucknow);
+      expect(kept, isEmpty);
+    });
+
+    test('GPS unavailable: nothing is filtered, text ranking only', () {
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[vilhelmina, tustin], 'transport', null);
+      expect(kept.length, 2);
+    });
+  });
 }

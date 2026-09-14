@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/app_config.dart';
 import '../../../core/network/free_geo_client.dart';
@@ -1106,16 +1107,26 @@ class _MapScreenState extends State<MapScreen> {
               ),
               CircleLayer(circles: _circles),
               PolylineLayer(polylines: _polylines),
-              // Legally-required provider attribution only. SimpleAttributionWidget
-              // renders exactly the text below — no flutter_map branding is added.
-              SimpleAttributionWidget(
-                source: Text(
-                  useMaptiler
-                      ? '© MapTiler  © OpenStreetMap contributors'
-                      : '© OpenStreetMap contributors',
-                  style: const TextStyle(fontSize: 10, height: 1.2),
-                ),
-                backgroundColor: scheme.surface.withValues(alpha: 0.75),
+              // Legally-required provider attribution — with flutter_map's
+              // proper configuration. SimpleAttributionWidget hardcodes the
+              // 'flutter_map | © ' prefix and offers no way to remove it;
+              // RichAttributionWidget(showFlutterMapAttribution: false) is
+              // the supported way to show ONLY the provider attribution
+              // (MapTiler / OpenStreetMap stay visible and tappable).
+              RichAttributionWidget(
+                showFlutterMapAttribution: false,
+                attributions: <SourceAttribution>[
+                  if (useMaptiler)
+                    TextSourceAttribution('© MapTiler',
+                        onTap: () => launchUrl(
+                            Uri.parse('https://www.maptiler.com/copyright/'),
+                            mode: LaunchMode.externalApplication)),
+                  TextSourceAttribution('© OpenStreetMap contributors',
+                      onTap: () => launchUrl(
+                          Uri.parse('https://www.openstreetmap.org/copyright'),
+                          mode: LaunchMode.externalApplication)),
+                ],
+                popupBackgroundColor: scheme.surface,
               ),
             ],
           ),
