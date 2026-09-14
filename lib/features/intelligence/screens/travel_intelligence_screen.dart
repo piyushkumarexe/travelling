@@ -730,7 +730,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
                     TextButton(
                         onPressed: () async {
                           await _replay.clear();
-                          Navigator.pop(ctx);
+                          if (ctx.mounted) Navigator.pop(ctx);
                         },
                         child: const Text('Clear all')),
                   ]),
