@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val CHANNEL = "app.roamio.tourism/emergency_sms"
         const val STATUS_CHANNEL = "app.roamio.tourism/emergency_sms_status"
+        const val LAUNCH_CHANNEL = "app.roamio.tourism/app_launch"
         const val REQ_SEND_SMS = 4711
     }
 
@@ -61,6 +62,32 @@ class MainActivity : FlutterActivity() {
                     statusSink = null
                 }
             })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LAUNCH_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "launchApp" -> {
+                        val pkg = call.argument<String>("package")
+                        if (pkg.isNullOrEmpty()) {
+                            result.error("invalid", "package required", null)
+                        } else {
+                            val intent = packageManager.getLaunchIntentForPackage(pkg)
+                            if (intent == null) {
+                                result.success(false) // genuinely not installed
+                            } else {
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                try {
+                                    startActivity(intent)
+                                    result.success(true)
+                                } catch (e: Exception) {
+                                    result.error("launch_failed", "\${e.javaClass.simpleName}: \${e.message}", null)
+                                }
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -156,6 +183,11 @@ class MainActivity : FlutterActivity() {
                     when (tm.serviceState?.state) {
                         android.telephony.ServiceState.STATE_IN_SERVICE -> "service"
                         android.telephony.ServiceState.STATE_EMERGENCY_ONLY -> "emergency_only"
+                        // Some OEMs return a null ServiceState even WITH
+                        // signal — reporting "no_service" then would be a
+                        // lie and block a perfectly sendable SMS. Report
+                        // unknown and let the actual send decide.
+                        null -> "unknown"
                         else -> "no_service"
                     }
                 }
@@ -228,32 +260,55 @@ class MainActivity : FlutterActivity() {
             Intent("$ref.delivered").setPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return try {
-            val parts = sms.divideMessage(body)
-            if (parts.size <= 1) {
-                sms.sendTextMessage(destination, null, body, sentIntent, deliveryIntent)
-            } else {
-                val sent = ArrayList<PendingIntent>(parts.size)
-                val delivered = ArrayList<PendingIntent>(parts.size)
-                for (i in parts.indices) {
-                    sent.add(sentIntent)
-                    delivered.add(deliveryIntent)
-                }
-                sms.sendMultipartTextMessage(destination, null, parts, sent, delivered)
-            }
-            true
-        } catch (_: Exception) {
-            false
+        val parts = sms.divideMessage(body)
+        if (parts.size <= 1) {
+            // NO swallow: an exception here is the EXACT technical reason
+            // (radio/destination/format) — it propagates to Dart verbatim.
+            sms.sendTextMessage(destination, null, body, sentIntent, deliveryIntent)
+            return true
+        }
+        val sent = ArrayList<PendingIntent>(parts.size)
+        val delivered = ArrayList<PendingIntent>(parts.size)
+        for (i in parts.indices) {
+            sent.add(sentIntent)
+            delivered.add(deliveryIntent)
+        }
+        try {
+            sms.sendMultipartTextMessage(destination, null, parts, sent, delivered)
+            return true
+        } catch (e: Exception) {
+            // Some OEM radios reject multipart sends outright — one honest
+            // retry with a compact single-part message (still the real
+            // location), then the ORIGINAL exception propagates.
+            val compact = compactEmergencyBody(body)
+            sms.sendTextMessage(destination, null, compact, sentIntent, deliveryIntent)
+            return true
         }
     }
 
-    private fun smsManager(): SmsManager? =
+    /** Keeps EMERGENCY header + map link + coords within one SMS part. */
+    private fun compactEmergencyBody(body: String): String {
+        val link = Regex("https://[^\\s]+").find(body)?.value ?: ""
+        val head = body.substring(0, minOf(body.length, 110)).trim()
+        return if (link.isNotEmpty()) "$head\n$link" else head
+    }
+
+    private fun smsManager(): SmsManager? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            getSystemService(SmsManager::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            SmsManager.getDefault()
+            val base = getSystemService(SmsManager::class.java) ?: return null
+            // Dual-SIM: the default SMS subscription's manager is the one the
+            // radio accepts; the base manager can throw on the wrong sub.
+            val subId = android.telephony.SubscriptionManager
+                .getDefaultSmsSubscriptionId()
+            return if (subId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                base.getSmsManagerForSubscriptionId(subId)
+            } else {
+                base
+            }
         }
+        @Suppress("DEPRECATION")
+        return SmsManager.getDefault()
+    }
 
     override fun onRequestPermissionsResult(
         requestCode: Int,

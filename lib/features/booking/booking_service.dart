@@ -166,8 +166,14 @@ class BookingService extends ChangeNotifier {
       // Universal link failed entirely (offline / resolver error).
       _lastLaunchResult = BookingLaunchResult.linkInvalid;
     }
-    // 2) Direct official app launch (package verified).
+    // 2) Direct official app launch — getLaunchIntentForPackage via the
+    //    native channel is the RELIABLE way to open the installed app
+    //    itself (the intent:// MAIN/LAUNCHER URI silently fails to resolve
+    //    on several OEMs, which used to strand the flow on the Play Store
+    //    even when the app WAS installed).
     if (provider.appLaunchPackage != null) {
+      final bool? opened = await _launchAppViaChannel(provider.appLaunchPackage!);
+      if (opened == true) return BookingLaunchResult.openedApp;
       final String intent = 'intent://launch/#Intent;'
           'action=android.intent.action.MAIN;'
           'category=android.intent.category.LAUNCHER;'
@@ -196,6 +202,24 @@ class BookingService extends ChangeNotifier {
     }
     _lastLaunchResult = BookingLaunchResult.linkInvalid;
     return _lastLaunchResult;
+  }
+
+  static const MethodChannel _launchChannel =
+      MethodChannel('app.roamio.tourism/app_launch');
+
+  /// True = app launched; false = package genuinely not installed;
+  /// null = channel unavailable (older native build) — caller falls back.
+  Future<bool?> _launchAppViaChannel(String package) async {
+    try {
+      return await _launchChannel
+          .invokeMethod<bool>('launchApp', <String, dynamic>{'package': package});
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _launch(String url) async {

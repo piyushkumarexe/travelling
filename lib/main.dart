@@ -14,6 +14,51 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
   ]);
 
+  // RELEASE SAFETY NET: Flutter's default ErrorWidget renders NOTHING in
+  // release builds — any build-time exception becomes a featureless WHITE
+  // screen with no way forward (reported: Trip Planner from Travel
+  // Intelligence). From now on a build error shows a real page saying what
+  // to do — the user is never stuck on a blank screen again.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    FlutterError.presentError(details); // still logged for debugging
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const Icon(Icons.report_problem,
+                    size: 44, color: Color(0xFFD97706)),
+                const SizedBox(height: 12),
+                const Text(
+                  'Something went wrong on this screen',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'The rest of the app still works. Go back and try again — '
+                  'if it keeps happening, reopen the app.',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => SystemNavigator.pop(),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Close and reopen the app'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
   bool firebaseReady = false;
   FirebaseApp? app;
   if (firebaseIsConfigured) {

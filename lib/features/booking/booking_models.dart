@@ -171,6 +171,9 @@ class BookingProviders {
     if (q.hasFrom) {
       b.write('&pickup[latitude]=${q.fromLat!.toStringAsFixed(6)}'
           '&pickup[longitude]=${q.fromLng!.toStringAsFixed(6)}');
+      if (q.fromName != null && q.fromName!.isNotEmpty) {
+        b.write('&pickup[nickname]=${Uri.encodeComponent(q.fromName!)}');
+      }
     } else {
       b.write('&pickup[latitude]=my_location'
           '&pickup[longitude]=my_location&pickup[nickname]=My%20location');

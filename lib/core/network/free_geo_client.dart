@@ -243,6 +243,13 @@ class FreeGeoClient {
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
         _guard('overpass', () => _overpass(filters, near, radiusMeters))
+      else if (near != null && _nameQueryTokens(q).isNotEmpty)
+        // LOCAL NAME RECALL: geocoders (MapTiler/Photon) often miss small
+        // local places that ARE mapped in OSM ("TS Mishra University" in
+        // Lucknow). A direct Overpass name-regex sweep around the real GPS
+        // position finds them. This fixed the reported bug where only far
+        // weak matches (Vilhelmina/Tustin) came back for a local query.
+        _guard('overpass-name', () => _overpassNameSearch(q, near))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('overpass')),
       if (attraction && near != null)
@@ -1028,6 +1035,43 @@ class FreeGeoClient {
   // ---------------------------------------------------------------------
   // Overpass POI search (keyless, real OSM data)
   // ---------------------------------------------------------------------
+
+  /// Significant query tokens for the local name-regex sweep (>= 2 chars).
+  static List<String> _nameQueryTokens(String q) => q
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((String t) => t.length >= 2)
+      .toList();
+
+  /// Direct OSM name search around the user's REAL position. Builds an
+  /// ordered-token regex ("ts mishra university" -> "ts.*mishra.*university")
+  /// so "TS Mishra University" matches while generic one-token noise does
+  /// not flood the results. Uses the same throttled runner + parser as the
+  /// category sweeps — no invented data, real OSM elements only.
+  Future<_ProviderResult> _overpassNameSearch(String q, LatLng near) async {
+    final List<String> tokens = _nameQueryTokens(q);
+    if (tokens.isEmpty) {
+      return _ProviderResult.skipped('overpass-name');
+    }
+    // Two ordered variants: the full query AND the query without its last
+    // token — so "ts mishra university lucknow" still matches the OSM name
+    // "TS Mishra University" (the trailing locality is context, not part of
+    // the name).
+    final String full = tokens.map(RegExp.escape).join('.*');
+    String regex = full;
+    if (tokens.length >= 2) {
+      final String shorter = tokens
+          .sublist(0, tokens.length - 1)
+          .map(RegExp.escape)
+          .join('.*');
+      regex = '$full|$shorter';
+    }
+    final String query = '[out:json][timeout:15];('
+        'nwr["name"~"$regex",i]'
+        '(around:25000,${near.latitude},${near.longitude});'
+        ');out center 40;';
+    return _overpassRun(query, false);
+  }
 
   Future<_ProviderResult> _overpass(
     List<(String, String)> filters,

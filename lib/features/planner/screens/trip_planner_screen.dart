@@ -68,13 +68,37 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
     ('walk', 'Walking'),
   ];
 
+  bool _prefsLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
+  }
+
+  // AppScope lookups are NOT allowed before the first build (initState) —
+  // they must happen in didChangeDependencies. Doing it in initState is a
+  // framework contract violation (the reported white screen when opening
+  // the planner from Travel Intelligence).
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_prefsLoading) {
+      _prefsLoading = true;
+      _loadPrefs();
+    }
   }
 
   Future<void> _loadPrefs() async {
+    try {
+      await _loadPrefsInner();
+    } catch (_) {
+      // Never leave the planner stuck on the loader because prefs failed.
+    } finally {
+      if (mounted) setState(() => _storeLoaded = true);
+    }
+  }
+
+  Future<void> _loadPrefsInner() async {
     final String? uid = _c.authRepository.currentUser?.uid;
     if (uid != null) {
       await _c.tripPlanStore.loadFor(uid);
@@ -100,7 +124,6 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
     } catch (_) {
       // Profile prefs are optional.
     }
-    if (mounted) setState(() => _storeLoaded = true);
   }
 
   void _onStore() {
