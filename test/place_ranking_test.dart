@@ -118,10 +118,12 @@ void main() {
     });
 
     test('subtitles show disambiguating context + distance', () {
-      final Place lucknowCafe = _p('ABC Cafe', 26.8500, 80.9440,
+      // Far enough from the origin that the formatter reports km (the
+      // formatter correctly uses metres under 1 km).
+      final Place distantCafe = _p('ABC Cafe', 27.0500, 81.1500,
           address: 'Gomti Nagar', city: 'Lucknow', state: 'Uttar Pradesh');
       final String sub =
-          PlaceRanking.subtitleFor(lucknowCafe, lucknow);
+          PlaceRanking.subtitleFor(distantCafe, lucknow);
       expect(sub, contains('Lucknow'));
       expect(sub, contains('km'));
     });

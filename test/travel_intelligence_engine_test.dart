@@ -163,27 +163,28 @@ void main() {
 
   group('11) last safe decision point', () {
     test('safe / risky / infeasible with real arithmetic', () {
+      // 18:00 deadline, 40 min travel, 15 min buffer -> leave by 17:05.
       final (int dl, String s1) = TripIntelligenceEngine.lastSafeDeparture(
           legMinutes: 40,
           bufferMinutes: 15,
           arrivalDeadlineMin: 18 * 60,
           plannedDepartureMin: 16 * 60);
-      expect(dl, 16 * 60 + 5); // 1080 - 55
-      expect(s1, startsWith('Risky')); // 5 min slack < 15
+      expect(dl, 17 * 60 + 5); // 1080 - 40 - 15 = 1025
+      expect(s1, startsWith('Safe')); // planned 16:00 -> 65 min slack
 
       final (_, String s2) = TripIntelligenceEngine.lastSafeDeparture(
           legMinutes: 40,
           bufferMinutes: 15,
           arrivalDeadlineMin: 18 * 60,
           plannedDepartureMin: 17 * 60);
-      expect(s2, startsWith('No longer feasible'));
+      expect(s2, startsWith('Risky')); // planned 17:00 -> 5 min slack < 15
 
       final (_, String s3) = TripIntelligenceEngine.lastSafeDeparture(
           legMinutes: 40,
           bufferMinutes: 15,
           arrivalDeadlineMin: 18 * 60,
-          plannedDepartureMin: 15 * 60);
-      expect(s3, startsWith('Safe'));
+          plannedDepartureMin: 17 * 60 + 10);
+      expect(s3, startsWith('No longer feasible')); // 17:10 > 17:05 deadline
 
       final (_, String s4) = TripIntelligenceEngine.lastSafeDeparture(
           legMinutes: null,

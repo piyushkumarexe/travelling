@@ -31,11 +31,15 @@ class TripIntelligenceEngine {
   /// Parses an INR amount from a cost string like "₹500" / "INR 1200 per
   /// person". Returns null when no number is present — never a guess.
   static int? costInr(String cost) {
-    final RegExp r = RegExp(r'(?:₹|rs\.?|inr)\s*([0-9][0-9,]*)',
+    // Prefix (₹400, Rs 200, INR 1500) or postfix (200 rupees, 50 inr).
+    final RegExp prefix = RegExp(r'(?:₹|rs\.?|inr)\s*([0-9][0-9,]*)',
         caseSensitive: false);
-    final RegExpMatch? match = r.firstMatch(cost.toLowerCase());
-    if (match == null) return null;
-    return int.tryParse(match.group(1)!.replaceAll(',', ''));
+    final RegExp postfix = RegExp(r'([0-9][0-9,]*)\s*(?:rupees?|rs\.?|inr)',
+        caseSensitive: false);
+    final String low = cost.toLowerCase();
+    final RegExpMatch? m = prefix.firstMatch(low) ?? postfix.firstMatch(low);
+    if (m == null) return null;
+    return int.tryParse(m.group(1)!.replaceAll(',', ''));
   }
 
   /// Total PARSEABLE cost of the plan (unknown costs are not invented).
@@ -411,7 +415,10 @@ class TripIntelligenceEngine {
       );
     }
     final int deadline = arrivalDeadlineMin - legMinutes - bufferMinutes;
-    final int slack = plannedDepartureMin - deadline;
+    // Slack = how much EARLIER than the latest safe departure you leave.
+    // Leaving well before the deadline is Safe; barely making it is Risky;
+    // past the deadline is no longer feasible.
+    final int slack = deadline - plannedDepartureMin;
     final String state = slack >= 15
         ? 'Safe'
         : slack >= 0
