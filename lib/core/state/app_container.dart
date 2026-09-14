@@ -27,6 +27,7 @@ import '../services/eco_tracker.dart';
 import '../services/geofence_service.dart';
 import '../services/live_location_share.dart';
 import '../services/location_service.dart';
+import '../services/emergency_sms_service.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 import '../services/sms_service.dart';
@@ -105,6 +106,12 @@ class AppContainer {
 
   /// Emergency SMS/WhatsApp messaging to the SOS contact.
   late final SmsService smsService = SmsService();
+
+  /// 🆘 Offline Emergency Location SMS — GPS + native cellular SMS only
+  /// (no internet/Firebase/WhatsApp in this path). OFF by default; the user
+  /// enables it explicitly with a configured SOS contact.
+  late final EmergencySmsService emergencySmsService =
+      EmergencySmsService(location: locationService, settings: settings);
 
   /// The trip currently being navigated — survives tab switches so the
   /// shell can offer a one-tap "Resume" from anywhere.

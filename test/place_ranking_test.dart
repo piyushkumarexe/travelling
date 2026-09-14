@@ -4,12 +4,16 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:yatrawise/core/network/free_geo_client.dart';
 import 'package:yatrawise/data/models/places.dart';
 
-Place _p(String name, double lat, double lng, {String? address}) => Place(
+Place _p(String name, double lat, double lng, {String? address,
+    String? city, String? state, String? country}) => Place(
       placeId: 'test-$name-$lat,$lng',
       name: name,
       lat: lat,
       lng: lng,
       address: address,
+      city: city,
+      state: state,
+      country: country,
       primaryType: 'place',
       types: const <String>['point_of_interest'],
       provider: 'test',
@@ -80,6 +84,63 @@ void main() {
         lucknow,
       );
       expect(ranked.first.address, 'Lucknow');
+    });
+
+    test('EXPLICIT CITY in query beats GPS proximity ("taj mahal agra")', () {
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+        <Place>[
+          // Nearby same-name place in the traveller's own city.
+          _p('Taj Mahal Restaurant', 26.8500, 80.9470, address: 'Lucknow'),
+          // The real monument — far away, but the query names Agra.
+          _p('Taj Mahal', 27.1751, 78.0421,
+              address: 'Dharmapuri, Forest Colony, Agra',
+              city: 'Agra', state: 'Uttar Pradesh', country: 'India'),
+        ],
+        'taj mahal agra',
+        lucknow,
+      );
+      expect(ranked.first.name, 'Taj Mahal');
+      expect(ranked.first.city, 'Agra');
+    });
+
+    test('without explicit city, nearby same-name wins ("abc cafe")', () {
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+        <Place>[
+          _p('ABC Cafe', 28.6139, 77.2090, address: 'Connaught Place, Delhi',
+              city: 'Delhi'),
+          _p('ABC Cafe', 26.8500, 80.9440, address: 'Gomti Nagar, Lucknow',
+              city: 'Lucknow'),
+        ],
+        'abc cafe',
+        lucknow,
+      );
+      expect(ranked.first.address, contains('Lucknow'));
+    });
+
+    test('subtitles show disambiguating context + distance', () {
+      final Place lucknowCafe = _p('ABC Cafe', 26.8500, 80.9440,
+          address: 'Gomti Nagar', city: 'Lucknow', state: 'Uttar Pradesh');
+      final String sub =
+          PlaceRanking.subtitleFor(lucknowCafe, lucknow);
+      expect(sub, contains('Lucknow'));
+      expect(sub, contains('km'));
+    });
+
+    test('structured locality is parsed from place data (model roundtrip)',
+        () {
+      final Place p = Place.fromJson(const <String, dynamic>{
+        'placeId': 'mt.123',
+        'name': 'ABC Cafe',
+        'lat': 26.85,
+        'lng': 80.944,
+        'address': 'Gomti Nagar, Lucknow, Uttar Pradesh, India',
+        'city': 'Lucknow',
+        'state': 'Uttar Pradesh',
+        'country': 'India',
+      });
+      expect(p.city, 'Lucknow');
+      expect(p.state, 'Uttar Pradesh');
+      expect(p.contextLine, contains('Lucknow'));
     });
 
     test('works without a location fix (match quality only)', () {

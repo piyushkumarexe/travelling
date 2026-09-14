@@ -19,6 +19,8 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/emergency_event.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
+import '../../../core/services/emergency_sms_service.dart';
+import '../../../core/services/settings_service.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/weather.dart';
@@ -382,6 +384,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
                     children: <Widget>[
                       _statusCard(),
                       const SizedBox(height: 12),
+                      _offlineEmergencyCard(),
+                      const SizedBox(height: 12),
                       _safeRouteSection(),
                       const SizedBox(height: 12),
                       _geofenceCard(),
@@ -710,6 +714,153 @@ class _SafetyScreenState extends State<SafetyScreen> {
         ],
       ),
     );
+  }
+
+  // ---------------- 🆘 Offline Emergency Location SMS ----------------
+
+  bool _emsBusy = false;
+
+  Widget _offlineEmergencyCard() {
+    final SettingsService st = _c.settings;
+    final bool enabled = st.offlineEmergencySms;
+    final bool hasContact = st.hasSosContact;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.sms_failed, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Offline Emergency Location SMS',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800)),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: (bool v) => _toggleOfflineSms(v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Works without internet using GPS + cellular SMS. A mobile '
+            'network/SIM signal is still required to send SMS.',
+            style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          Row(children: <Widget>[
+            const Icon(Icons.person, size: 14),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                  hasContact
+                      ? 'SOS contact: ${st.sosContactName} '
+                          '(${st.sosContactPhone})'
+                      : 'No SOS contact configured — set one above first.',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: <Widget>[
+            const Icon(Icons.location_on, size: 14),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('Last SMS attempt: '
+                  '${st.offlineEmergencyLastStatus.isEmpty ? 'never' : st.offlineEmergencyLastStatus}',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: <Widget>[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: (_emsBusy || !enabled) ? null : _sendTestSms,
+                icon: _emsBusy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.send_to_mobile, size: 16),
+                label: const Text('Send TEST SMS',
+                    style: TextStyle(fontSize: 12.5)),
+              ),
+            ),
+          ]),
+          const Text(
+            'The test sends a real SMS to your SOS contact — clearly marked '
+            'as a test. Delivery depends on your SIM/cellular signal.',
+            style: TextStyle(fontSize: 10.5)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleOfflineSms(bool on) async {
+    if (!on) {
+      await _c.settings.setOfflineEmergencySms(false);
+      setState(() {});
+      return;
+    }
+    if (!_c.settings.hasSosContact) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Set an SOS contact first — the SMS needs a '
+              'recipient.')));
+      return;
+    }
+    final bool granted = await _c.emergencySmsService.requestSendPermission();
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('SEND_SMS permission denied — the feature cannot '
+              'work without it.')));
+      return;
+    }
+    await _c.settings.setOfflineEmergencySms(true);
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Offline Emergency Location SMS is ON. Use the TEST '
+            'button once, with internet OFF, to verify it works for you.')));
+  }
+
+  Future<void> _sendTestSms() async {
+    // Explicit confirmation — this sends a REAL SMS.
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('Send TEST emergency SMS?'),
+        content: Text(
+            'A real SMS marked as a TEST will be sent to '
+            '${_c.settings.sosContactName} (${_c.settings.sosContactPhone}) '
+            'with your current or last-known location. Normal SMS charges '
+            'apply.'),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send test SMS')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _emsBusy = true);
+    try {
+      final EmergencySmsResult r =
+          await _c.emergencySmsService.sendOfflineEmergencySms(
+              travelerName: _c.settings.sosContactName.isEmpty
+                  ? 'Tourism test'
+                  : _c.settings.sosContactName);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Test result: ${r.status.label}. ${r.detail}')));
+    } finally {
+      if (mounted) setState(() => _emsBusy = false);
+    }
   }
 
   Widget _statusCard() {

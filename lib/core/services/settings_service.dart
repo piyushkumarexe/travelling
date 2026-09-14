@@ -8,6 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SettingsService extends ChangeNotifier {
   static const String _kAutoReadReplies = 'settings.auto_read_replies';
   static const String _kPowerOffSafety = 'power_off_safety.enabled';
+  static const String _kOfflineEmergencySms =
+      'offline_emergency_sms.enabled';
+  static const String _kOfflineEmergencyLastStatus =
+      'offline_emergency_sms.last_status';
+  static const String _kBehaviourPackedness = 'behaviour.packedness.v1';
 
   // SOS contact: device-local source of truth shared by the SOS screen and
   // Profile (Power-Off Safety Location). Stored locally so adding/editing/
@@ -27,6 +32,8 @@ class SettingsService extends ChangeNotifier {
 
   bool _autoReadReplies = false;
   bool _powerOffSafety = false;
+  bool _offlineEmergencySms = false;
+  String _offlineEmergencyLastStatus = '';
   String _sosContactName = '';
   String _sosContactPhone = '';
 
@@ -40,6 +47,26 @@ class SettingsService extends ChangeNotifier {
   /// is shutting down. It NEVER claims a fresh GPS fix after power-off.
   bool get powerOffSafety => _powerOffSafety;
 
+  /// Offline Emergency Location SMS. Defaults to OFF — the user must enable
+  /// it explicitly. When ON, SOS actions (and the shutdown flow) also send a
+  /// plain cellular SMS with the device location via the native SmsManager —
+  /// no internet involved. SMS still needs SIM/cellular signal; that limit
+  /// is shown honestly in the UI.
+  bool get offlineEmergencySms => _offlineEmergencySms;
+
+  /// Human-readable result of the last offline-SMS attempt (locally
+  /// persisted, never logged elsewhere). Empty until the first attempt.
+  String get offlineEmergencyLastStatus => _offlineEmergencyLastStatus;
+
+  Future<void> setOfflineEmergencyLastStatus(String status) async {
+    _offlineEmergencyLastStatus = status;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kOfflineEmergencyLastStatus, status);
+    } catch (_) {}
+    notifyListeners();
+  }
+
   /// SOS contact (device-local source of truth).
   String get sosContactName => _sosContactName;
   String get sosContactPhone => _sosContactPhone;
@@ -51,11 +78,22 @@ class SettingsService extends ChangeNotifier {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       _autoReadReplies = prefs.getBool(_kAutoReadReplies) ?? false;
       _powerOffSafety = prefs.getBool(_kPowerOffSafety) ?? false;
+      _offlineEmergencySms =
+          prefs.getBool(_kOfflineEmergencySms) ?? false;
+      _offlineEmergencyLastStatus =
+          prefs.getString(_kOfflineEmergencyLastStatus) ?? '';
+      _behaviourPackedness = (prefs.getStringList(_kBehaviourPackedness) ??
+              const <String>[])
+          .map((String e) => double.tryParse(e) ?? 0)
+          .toList();
       _sosContactName = prefs.getString(_kSosContactName) ?? '';
       _sosContactPhone = prefs.getString(_kSosContactPhone) ?? '';
     } catch (_) {
       _autoReadReplies = false;
       _powerOffSafety = false;
+      _offlineEmergencySms = false;
+      _offlineEmergencyLastStatus = '';
+      _behaviourPackedness = const <double>[];
       _sosContactName = '';
       _sosContactPhone = '';
     }
@@ -85,6 +123,70 @@ class SettingsService extends ChangeNotifier {
       }
     } catch (_) {
       // Persistence is best-effort; the in-memory value still applies.
+    }
+  }
+
+  // ---- personal behaviour model (non-sensitive, action-derived) ----
+  // Records ONLY the packedness (stops/day) of plans the user actually
+  // applied in Travel Intelligence. No location history, no identities.
+
+  List<double> _behaviourPackedness = <double>[];
+
+  Future<void> recordBehaviour({required double packedness}) async {
+    _behaviourPackedness = <double>[..._behaviourPackedness, packedness];
+    if (_behaviourPackedness.length > 20) {
+      _behaviourPackedness = _behaviourPackedness.sublist(
+          _behaviourPackedness.length - 20);
+    }
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+          _kBehaviourPackedness,
+          _behaviourPackedness.map((double v) => v.toStringAsFixed(1)).toList());
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Human-readable summary from real recorded actions; honest when empty.
+  List<String> behaviourSummary() {
+    if (_behaviourPackedness.isEmpty) {
+      return const <String>[
+        'No planning behaviour recorded yet. Apply a What-If, recovery or '
+            'constraint plan and your pacing preference (stops per day) is '
+            'learned here.'
+      ];
+    }
+    final double avg = _behaviourPackedness.fold<double>(
+            0, (double a, double v) => a + v) /
+        _behaviourPackedness.length;
+    final String pace = avg >= 5
+        ? 'packed days (many stops)'
+        : avg >= 3.5
+            ? 'balanced days'
+            : 'relaxed days (few stops)';
+    return <String>[
+      'Preferred pacing: $pace (average ${avg.toStringAsFixed(1)} stops/day '
+          'across ${_behaviourPackedness.length} applied plan(s)).',
+    ];
+  }
+
+  Future<void> resetBehaviour() async {
+    _behaviourPackedness = <double>[];
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kBehaviourPackedness);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  Future<void> setOfflineEmergencySms(bool value) async {
+    _offlineEmergencySms = value;
+    notifyListeners();
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kOfflineEmergencySms, value);
+    } catch (_) {
+      // In-memory value still applies.
     }
   }
 

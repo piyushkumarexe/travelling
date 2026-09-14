@@ -375,6 +375,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _toolRow('🗂️', 'Travel Document & Booking Vault',
                   'All your travel documents and bookings in one secure place.',
                   '/vault'),
+          const Divider(height: 1, indent: 54),
+          _toolRow('🧠', 'Travel Intelligence',
+                  'Robustness score, what-if simulator, recovery and constraints.',
+                  '/intelligence'),
         ],
       ),
     );

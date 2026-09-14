@@ -17,6 +17,7 @@ import '../../../core/widgets/live_share_banner.dart';
 import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/incident.dart';
+import '../../../core/network/free_geo_client.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
@@ -487,6 +488,12 @@ class _MapScreenState extends State<MapScreen> {
       'petrol', 'bank', 'shopping', 'mall',
     ];
     return keywords.any(lower.contains);
+  }
+
+  gm.LatLng? _searchOriginLatLng() {
+    final Position? me = _position;
+    if (me != null) return gm.LatLng(me.latitude, me.longitude);
+    return _cameraTarget();
   }
 
   /// Best-effort one-shot GPS fix for search proximity (never throws).
@@ -1700,11 +1707,8 @@ class _MapScreenState extends State<MapScreen> {
                     title: Text(p.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
-                      [
-                        if (p.address != null) p.address!,
-                        if (_distanceTo(p.lat, p.lng) != null)
-                          GeoUtils.formatDistance(_distanceTo(p.lat, p.lng)!),
-                      ].join(' · '),
+                      PlaceRanking.subtitleFor(
+                          p, _searchOriginLatLng()),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

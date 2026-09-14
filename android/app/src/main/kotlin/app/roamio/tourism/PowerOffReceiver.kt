@@ -173,7 +173,8 @@ class PowerOffReceiver : BroadcastReceiver() {
             name = name.ifEmpty { "Traveler" },
             lat = lat,
             lng = lng,
-            fixAgeMs = fixAgeMs
+            fixAgeMs = fixAgeMs,
+            accuracyM = readAccuracy(prefs)
         )
         val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             context.getSystemService(SmsManager::class.java)
@@ -194,15 +195,35 @@ class PowerOffReceiver : BroadcastReceiver() {
         return true
     }
 
-    private fun buildMessage(name: String, lat: Double, lng: Double, fixAgeMs: Long?): String {
+    private fun readAccuracy(prefs: android.content.SharedPreferences): Double? {
+        return try {
+            val raw = prefs.getString(K_LAST_POS, null) ?: return null
+            val json = JSONObject(raw)
+            val a = json.optDouble("accuracy")
+            if (a.isNaN() || a <= 0.0) null else a
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun buildMessage(
+        name: String,
+        lat: Double,
+        lng: Double,
+        fixAgeMs: Long?,
+        accuracyM: Double?
+    ): String {
         val sb = StringBuilder()
         sb.append("EMERGENCY (Tourism): ").append(name)
             .append("'s phone is switching OFF now. Last known location: ")
             .append(lat).append(",").append(lng)
             .append(" https://maps.google.com/?q=").append(lat).append(",").append(lng)
+        if (accuracyM != null && accuracyM > 0.0) {
+            sb.append(" (accuracy ±").append(accuracyM.toInt()).append(" m)")
+        }
         if (fixAgeMs != null && fixAgeMs >= 0) {
             val ageMin = fixAgeMs / 60000L
-            sb.append(" (location ")
+            sb.append(" (LAST KNOWN fix ")
             when {
                 ageMin < 1 -> sb.append("less than a minute")
                 ageMin < 120 -> sb.append(ageMin).append(" min")

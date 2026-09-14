@@ -22,6 +22,9 @@ class Place {
     this.provider,
     this.distanceMeters,
     this.metadata = const <String, dynamic>{},
+    this.city,
+    this.state,
+    this.country,
   });
 
   final String placeId;
@@ -55,6 +58,34 @@ class Place {
   /// Provider-specific extras (OSM tags, etc.). Never fabricated.
   final Map<String, dynamic> metadata;
 
+  /// Structured locality context, when the provider supplies it (MapTiler
+  /// context / Photon properties / Nominatim address). Null = unknown —
+  /// never fabricated. Used for locality-aware ranking and for showing
+  /// "Name — Area, City" context when same-named places exist in several
+  /// cities.
+  final String? city;
+  final String? state;
+  final String? country;
+
+  /// " — Area, City, State" context suffix (without the name), for
+  /// disambiguating same-named places. Empty when nothing is known.
+  String get contextLine {
+    final List<String> parts = <String>[
+      if (address != null && address!.isNotEmpty && address != name)
+        address!,
+      if (city != null && city!.isNotEmpty &&
+          (address == null || !(address!.contains(city!)))) city!,
+      if (state != null && state!.isNotEmpty) state!,
+      if (country != null && country!.isNotEmpty && (state == null)) country!,
+    ];
+    final List<String> seen = <String>[];
+    for (final String part in parts) {
+      final String t = part.trim();
+      if (t.isNotEmpty && !seen.contains(t)) seen.add(t);
+    }
+    return seen.isEmpty ? '' : ' — ${seen.join(', ')}';
+  }
+
   factory Place.fromJson(Map<String, dynamic> m) => Place(
         placeId: (m['placeId'] as String?) ?? '',
         name: (m['name'] as String?) ?? 'Unknown place',
@@ -81,6 +112,9 @@ class Place {
             ? (m['metadata'] as Map).map((Object? k, Object? v) =>
                 MapEntry(k.toString(), v))
             : <String, dynamic>{},
+        city: m['city'] as String?,
+        state: m['state'] as String?,
+        country: m['country'] as String?,
       );
 
   LatLng get coords => LatLng(lat, lng);

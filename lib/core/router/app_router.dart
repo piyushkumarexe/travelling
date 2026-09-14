@@ -25,6 +25,7 @@ import '../../features/explore/screens/explore_screen.dart';
 import '../../features/explore/screens/place_detail_screen.dart';
 import '../../features/guardian/screens/payment_guardian_screen.dart';
 import '../../features/home/screens/home_screen.dart';
+import '../../features/intelligence/screens/travel_intelligence_screen.dart';
 import '../../features/incidents/screens/incident_detail_screen.dart';
 import '../../features/incidents/screens/incident_history_screen.dart';
 import '../../features/incidents/screens/report_incident_screen.dart';
@@ -306,6 +307,11 @@ class AppRouter {
         path: '/admin/zone/:id',
         builder: (BuildContext context, GoRouterState state) =>
             ZoneEditorScreen(zoneId: state.pathParameters['id'] ?? ''),
+      ),
+      GoRoute(
+        path: '/intelligence',
+        builder: (BuildContext context, GoRouterState state) =>
+            const TravelIntelligenceScreen(),
       ),
       GoRoute(
         path: '/vault',

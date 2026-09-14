@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
+import '../../../core/network/free_geo_client.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
@@ -39,6 +40,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
   List<({String name, double lat, double lng})> _recents =
       const <({String name, double lat, double lng})>[];
   List<Place> _suggestions = const <Place>[];
+  Position? _suggestFix; // GPS fix used for the current suggestions
   Timer? _debounce;
   bool _pickingOnMap = false;
   RouteInfo? _route;
@@ -109,11 +111,21 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
           limit: 6,
         );
         if (!mounted) return;
-        setState(() => _suggestions = places);
+        setState(() {
+          _suggestFix = me;
+          _suggestions = places;
+        });
       } catch (_) {
         if (mounted) setState(() => _suggestions = const <Place>[]);
       }
     });
+  }
+
+  /// Contextual suggestion subtitle: " — Area, City · 3.2 km".
+  String _subtitleFor(Place p) {
+    final Position? me = _suggestFix;
+    return PlaceRanking.subtitleFor(
+        p, me == null ? null : gm.LatLng(me.latitude, me.longitude));
   }
 
   void _pickSuggestion(Place p) {
@@ -392,11 +404,9 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
                   title: Text(p.name,
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 13)),
-                  subtitle: p.address == null
-                      ? null
-                      : Text(p.address!,
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11)),
+                  subtitle: Text(_subtitleFor(p),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11)),
                   onTap: () => _pickSuggestion(p),
                 ),
             ],

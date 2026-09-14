@@ -908,20 +908,25 @@ class FreeGeoClient {
       final String name = ((props['name'] as String?) ?? '').trim();
       if (name.isEmpty) continue;
       final String type = (props['osm_value'] as String?) ?? '';
-      final String city = ((props['city'] as String?) ??
+      final String pCity = ((props['city'] as String?) ??
               (props['county'] as String?) ??
-              (props['state'] as String?) ??
+              (props['district'] as String?) ??
               '')
           .trim();
+      final String pState = ((props['state'] as String?) ?? '').trim();
+      final String pCountry = ((props['country'] as String?) ?? '').trim();
       out.add(Place(
         placeId: 'ph-${f['type'] ?? 'p'}-$lat,$lon',
         name: name,
         lat: lat,
         lng: lon,
-        address: city.isEmpty ? null : city,
+        address: pCity.isEmpty ? null : pCity,
         primaryType: type.isEmpty ? 'poi' : type,
         types: const <String>['point_of_interest'],
         provider: 'photon',
+        city: pCity.isEmpty ? null : pCity,
+        state: pState.isEmpty ? null : pState,
+        country: pCountry.isEmpty ? null : pCountry,
       ));
     }
     return _ProviderResult(
@@ -1756,6 +1761,30 @@ class FreeGeoClient {
       final List<String> placeType = (f['place_type'] is List)
           ? (f['place_type'] as List).whereType<String>().toList()
           : <String>[];
+      // Structured locality context from MapTiler's context array — entries
+      // look like {"id":"locality.123","text":"Gomti Nagar"},
+      // {"id":"region.4","text":"Uttar Pradesh"},
+      // {"id":"country.9","text":"India","short_code":"in"}.
+      String? city;
+      String? state;
+      String? country;
+      final Object? ctx = f['context'];
+      if (ctx is List) {
+        for (final dynamic c in ctx) {
+          if (c is! Map) continue;
+          final String id = (c['id'] as String?) ?? '';
+          final String text = ((c['text'] as String?) ?? '').trim();
+          if (text.isEmpty) continue;
+          if (id.startsWith('locality.') || id.startsWith('place.') ||
+              id.startsWith('district.') || id.startsWith('borough.')) {
+            city ??= text;
+          } else if (id.startsWith('region.')) {
+            state ??= text;
+          } else if (id.startsWith('country.')) {
+            country ??= text;
+          }
+        }
+      }
       out.add(Place(
         placeId: (f['id'] as String?) ?? '$lat,$lng',
         name: name,
@@ -1764,6 +1793,9 @@ class FreeGeoClient {
         address: placeName,
         primaryType: placeType.isNotEmpty ? placeType.first : 'poi',
         types: placeType,
+        city: city,
+        state: state,
+        country: country,
       ));
     }
     return out;
@@ -1984,6 +2016,33 @@ class _ProviderResult {
 class PlaceRanking {
   PlaceRanking._();
 
+  /// True when the query EXPLICITLY names a place's locality (e.g.
+  /// "Taj Mahal Agra" — 'agra' appears among the candidate's city / state /
+  /// country / address). Such a result must outrank same-named places from
+  /// the traveller's own area: the user asked for THAT city.
+  static bool queryNamesLocality(Place p, String normalizedQuery) {
+    final List<String> areas = <String>[
+      p.city ?? '',
+      p.state ?? '',
+      p.country ?? '',
+      p.address ?? '',
+    ];
+    for (final String a in areas) {
+      final String lo = a.toLowerCase().trim();
+      if (lo.length < 3) continue;
+      final RegExp boundary = RegExp('\\b${RegExp.escape(lo)}');
+      if (boundary.hasMatch(normalizedQuery)) return true;
+      // City names often appear as a query token ("agra" inside
+      // "taj mahal agra").
+      for (final String token in normalizedQuery.split(RegExp(r'\s+'))) {
+        if (token.length >= 4 && (lo == token || lo.startsWith(token))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   static List<Place> rankSuggestions(
       List<Place> places, String query, LatLng? near) {
     final String t = query.toLowerCase().trim();
@@ -2017,6 +2076,11 @@ class PlaceRanking {
       ..sort((Place a, Place b) {
         final int match = matchScore(a) - matchScore(b);
         if (match != 0) return match;
+        // EXPLICIT CITY in the query beats GPS proximity: "Taj Mahal Agra"
+        // puts the Agra result ahead of a same-named place next door.
+        final bool aNamed = queryNamesLocality(a, t);
+        final bool bNamed = queryNamesLocality(b, t);
+        if (aNamed != bNamed) return aNamed ? -1 : 1;
         final int bucket = distanceBucket(a) - distanceBucket(b);
         if (bucket != 0) return bucket;
         if (near != null) {
@@ -2026,5 +2090,17 @@ class PlaceRanking {
         return 0;
       });
     return out;
+  }
+
+  /// "ABC Cafe — Gomti Nagar, Lucknow · 3.2 km" — the disambiguating
+  /// subtitle for suggestions. Never invents parts that are unknown.
+  static String subtitleFor(Place p, LatLng? near) {
+    final String context = p.contextLine;
+    final List<String> parts = <String>[
+      if (context.isNotEmpty) context,
+      if (near != null)
+        GeoUtils.formatDistance(GeoUtils.distanceMeters(near, p.coords)),
+    ];
+    return parts.join(' · ');
   }
 }

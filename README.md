@@ -394,6 +394,41 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## Travel Intelligence Engine (🧠)
+
+**Round 3 (2026-09-14):** a deterministic decision layer on top of the **existing** Trip Planner (no new data model, no invented content) — Home → "Travel Intelligence" → `/intelligence`.
+
+- **Robustness score 0–100** with a factor breakdown (tight transfers, overload, missing buffers, plan cost) and an "Improve Robustness" action that previews a concrete relaxation in the simulator.
+- **What-If Simulator** — train/flight delay, closure, weather-if-reliable, transport unavailable, reduced time/budget, changed start/destination, late check-in, removed stop, custom — always simulated on a **copy**; nothing changes until you press *Apply*, which writes through the existing `TripPlanStore` and records a replay entry.
+- **Constraint Solver & Trade-Off Sliders** — must-visit, avoid, max time/day, budget cap (only *parsed* ₹ costs are counted), items/day, walking/mode limits, deadlines; infeasible sets report the conflicts and the closest feasible plan. Sliders (relaxed↔packed, budget, travel, time↔experience) really re-solve the plan.
+- **Dependency Graph** — each stop depends on the previous saved time; tap a stop to see exactly what slides when it runs late.
+- **Auto Recovery** — "running late by N minutes" re-flows the rest of the day, never silently editing fixed events; stops pushed past 23:30 are reported as dropped, not hidden.
+- **Why not this place?** — checks a place against your **real GPS + OSRM route + parsed costs** and returns honest reasons (time, detour, day end, budget, your own avoid-list) or "Nothing against it"; never invents missing data.
+- **Decision Replay** — an append-only device-local log of your *real* applied decisions (scenario/recovery/constraints/edits). No fabricated history; clearable any time.
+- **Last Safe Decision Point** — Safe/Risky/No-longer-feasible leave-by arithmetic (leg time + safety buffer); unknown leg times are labelled unknown.
+- **Group Conflict Resolver** — maximises liked preferences across members, reports compromises explicitly.
+- **Contradiction Detector** — Critical/Warning/Info with actual values (impossible sequence, duplicates, tight transfers, unset/late-night times).
+- **Time-to-Enjoyment** — travel time labelled *OSRM-known* vs *unknown*; visit duration is never fabricated.
+- **Personal behaviour model** — optional, non-sensitive: learns preferred pacing only from plans *you applied*; view/reset in the dashboard. No location history, no sensitive traits.
+- **Perf & data rules**: cache-first, parallel requests, deduped geocoding, OSRM `lng,lat` order, no blocking work on the UI thread, full error states. Nearby keeps the exact 10 km Haversine filter with no artificial result cap.
+
+## Offline Emergency SMS (🔋 NEW)
+
+Power-off safety and the SOS flow now have an **opt-in** offline fallback that sends a real SMS **without internet**:
+
+- **Where**: Safety → "Offline Emergency SMS (works without internet)" card. Default **OFF**; enabling requires a configured SOS contact and the `SEND_SMS` permission (requested in-app with an explanation).
+- **How it works**: native Android `SmsManager` only — no internet, Firebase, WhatsApp or gateway in this path. Fresh GPS is fetched first (12 s cap) with a last-known cache fallback; the message labels the fix as **CURRENT location (GPS)** or **LAST KNOWN location** with its age and ±accuracy. No fix at all → a typed failure — coordinates are never invented.
+- **Honest statuses**: pending / sending / sent / failed / no-service / no-SIM / permission-denied / no-location / queued (15 s without radio confirmation = "handed to the radio, no confirmation"). Sent + delivery callbacks are tracked via Android PendingIntents on an EventChannel; the last status is stored locally on-device only.
+- **Power-off path**: `ACTION_SHUTDOWN` attempts the SMS as early as possible with the same last-known fix. Honest limits: delivery after shutdown cannot be guaranteed and depends on the network.
+- **Privacy**: no coordinates or phone numbers are logged; no emergency-location history is written to Firebase.
+- **Test SMS**: labelled "TEST SMS", requires explicit confirmation, sends a clearly-marked message to your SOS contact.
+
+## Search accuracy fix (📍)
+
+Search no longer relies on place names alone:
+- Results are ranked by **name relevance → explicit-city intent → distance buckets from your real GPS** ("Taj Mahal Agra" → Agra even from Lucknow; bare "ABC Cafe" near you → your Lucknow cafe beats the distant namesake; GPS off → name-relevance first).
+- Duplicate names are disambiguated with a subtitle: **"ABC Cafe — Gomti Nagar, Lucknow · 2.1 km"** (locality, city, real distance from you) in ride booking, map search, multi-stop and explore screens.
+- Selecting a result stores its **exact canonical coordinates** (placeId/name/lat/lng/city/state/country/address) which ride booking, multi-stop and trip planning reuse — never a silently different city.
 ## 3D Navigation (Live Trip) (🗺️)
 
 Live Trip navigation now renders in **true 3D**: MapLibre GL (`maplibre_gl`, no API key) with a MapTiler vector style, camera **tilt 47.5°**, heading-up bearing and the existing speed-adaptive zoom — plus **3D building extrusions** from MapTiler's v3 vector tileset. Route (blue with white casing), destination pin and follow-cam mirror the 2D view; the **3D** button switches back to the original flutter_map 2D view at any time, and the app auto-falls-back to 2D when no MapTiler key is compiled in or the style fails to load. Google Maps 3D was not usable because the project intentionally has no Google Maps API key.
