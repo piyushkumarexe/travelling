@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../../../data/models/trip_plan.dart' show TripPlan;
 import '../travel_document.dart';
+import '../vault_service.dart';
 
 class VaultEditScreen extends StatefulWidget {
   const VaultEditScreen({super.key, this.documentId});

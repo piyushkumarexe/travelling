@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../travel_document.dart';
+import '../vault_service.dart';
 
 class VaultDetailScreen extends StatefulWidget {
   const VaultDetailScreen({super.key, required this.documentId});
