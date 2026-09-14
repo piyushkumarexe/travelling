@@ -61,9 +61,10 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         });
       }
     }, onError: (Object e) {
+      // Cloud unavailable — keep the screen usable (local creation still
+      // works), instead of blocking on a raw error.
       if (mounted) {
         setState(() {
-          _error = e.toString();
           _loading = false;
         });
       }
@@ -121,17 +122,57 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         emergencyContactName: _contactNameController.text.trim(),
         emergencyContactPhone: contactPhone,
       );
+      // The watchMine stream refreshes the list.
     } catch (e) {
+      // Cloud unavailable (rules not deployed / offline) — create a local ID
+      // so the QR code still works right now.
+      final DigitalId local = DigitalId(
+        id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+        uid: uid,
+        ownerName: name,
+        token: DigitalId.generateToken(),
+        status: 'active',
+        createdAt: DateTime.now(),
+        photoUrl: p?.photoUrl,
+        emergencyContactName: _contactNameController.text.trim(),
+        emergencyContactPhone: contactPhone,
+      );
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _ids.insert(0, local);
           _creating = false;
+          _error =
+              'Created on this device — cloud sync is unavailable right now.';
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Digital ID created (saved on this device).')),
+        );
       }
     }
   }
 
   Future<void> _setActive(DigitalId id, bool active) async {
+    if (id.id.startsWith('local-')) {
+      // On-device ID: just flip the in-memory status.
+      setState(() {
+        final int i = _ids.indexWhere((DigitalId d) => d.id == id.id);
+        if (i >= 0) {
+          _ids[i] = DigitalId(
+            id: id.id,
+            uid: id.uid,
+            ownerName: id.ownerName,
+            token: id.token,
+            status: active ? 'active' : 'revoked',
+            createdAt: id.createdAt,
+            photoUrl: id.photoUrl,
+            emergencyContactName: id.emergencyContactName,
+            emergencyContactPhone: id.emergencyContactPhone,
+          );
+        }
+      });
+      return;
+    }
     try {
       await _c.digitalIdRepository.setActive(id.id, active);
     } catch (e) {
@@ -220,7 +261,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     'The QR code contains only a random verification token — '
                     'no name, phone or other personal data. First responders '
                     'scan it (or type the token) and the app verifies it '
-                    'against YatraWise\'s secure records.',
+                    'against Tourism\'s secure records.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -239,15 +280,12 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                active ? const Color(0xFF0B3954) : const Color(0xFF37474F),
-                active ? const Color(0xFF0E7C7B) : const Color(0xFF546E7A),
-              ],
-            ),
+            color: scheme.surface,
             borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: active
+                    ? AppTheme.success.withValues(alpha: 0.4)
+                    : scheme.outlineVariant),
           ),
           child: Column(
             children: <Widget>[
@@ -255,9 +293,9 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      'YATRAWISE EMERGENCY ID',
+                      'TOURISM EMERGENCY ID',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
@@ -269,13 +307,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: (active ? AppTheme.success : AppTheme.danger)
-                          .withValues(alpha: 0.9),
+                          .withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       active ? 'ACTIVE' : 'REVOKED',
-                      style: const TextStyle(
-                          color: Colors.white,
+                      style: TextStyle(
+                          color: active ? AppTheme.success : AppTheme.danger,
                           fontSize: 11,
                           fontWeight: FontWeight.w800),
                     ),
@@ -287,7 +325,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   CircleAvatar(
                     radius: 32,
-                    backgroundColor: Colors.white24,
+                    backgroundColor: scheme.primary.withValues(alpha: 0.12),
                     child: id.photoUrl != null && id.photoUrl!.isNotEmpty
                         ? ClipOval(
                             child: Image.network(
@@ -297,11 +335,11 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                               fit: BoxFit.cover,
                               errorBuilder: (BuildContext context,
                                   Object e, StackTrace? s) =>
-                                  const Icon(Icons.person),
+                                  Icon(Icons.person, color: scheme.primary),
                             ),
                           )
-                        : const Icon(Icons.person,
-                            size: 34, color: Colors.white70),
+                        : Icon(Icons.person,
+                            size: 34, color: scheme.primary),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -310,8 +348,8 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                       children: <Widget>[
                         Text(
                           id.ownerName,
-                          style: const TextStyle(
-                              color: Colors.white,
+                          style: TextStyle(
+                              color: scheme.onSurface,
                               fontSize: 20,
                               fontWeight: FontWeight.w800),
                         ),
@@ -321,7 +359,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             'Contact: ${id.emergencyContactName}',
                             style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
+                                color: scheme.onSurfaceVariant,
                                 fontSize: 13),
                           ),
                         ],
@@ -330,7 +368,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             id.emergencyContactPhone!,
                             style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
+                                color: scheme.onSurfaceVariant,
                                 fontSize: 13),
                           ),
                       ],
@@ -362,13 +400,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
               Text(
                 'Token: ${id.token.substring(0, 8)}…${id.token.substring(id.token.length - 8)}',
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                    color: scheme.onSurfaceVariant, fontSize: 12),
               ),
               const SizedBox(height: 2),
               Text(
                 'Created ${Fmt.date(id.createdAt)}',
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                    color: scheme.onSurfaceVariant, fontSize: 12),
               ),
             ],
           ),

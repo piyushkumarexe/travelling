@@ -172,7 +172,20 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         videoUrl: videoUrl,
         createdAt: DateTime.now(),
       );
-      final String id = await _c.incidentsRepository.create(incident);
+      final String id;
+      try {
+        id = await _c.incidentsRepository.create(incident);
+      } catch (_) {
+        // Firestore unreachable / rules not deployed (Spark free tier): be
+        // honest instead of pretending the report was saved.
+        if (!mounted) return;
+        setState(() {
+          _stage = _Stage.form;
+          _error = 'Incident reporting service is currently unavailable. '
+              'Please try again later.';
+        });
+        return;
+      }
       final Incident created = Incident(
         id: id,
         uid: uid,
