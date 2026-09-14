@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/free_geo_client.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
@@ -398,15 +399,22 @@ class _MultiStopScreenState extends State<MultiStopScreen> {
                 itemCount: _searchResults.length,
                 itemBuilder: (BuildContext context, int i) {
                   final Place p = _searchResults[i];
+                  // Disambiguating context: "Name — Locality, City · X km"
+                  // so same-name places in different cities never blur.
+                  final String ctx = PlaceRanking.subtitleFor(
+                      p,
+                      _position != null
+                          ? gm.LatLng(_position!.latitude, _position!.longitude)
+                          : null);
                   return ListTile(
                     dense: true,
                     leading: const Icon(Icons.place, size: 18),
                     title: Text(p.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: (p.address != null && p.address!.isNotEmpty)
-                        ? Text(p.address!,
-                            maxLines: 1, overflow: TextOverflow.ellipsis)
-                        : null,
+                    subtitle: ctx.isEmpty
+                        ? null
+                        : Text(ctx,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
                     trailing: const Icon(Icons.add_circle_outline, size: 18),
                     onTap: () => _addStop(p),
                   );

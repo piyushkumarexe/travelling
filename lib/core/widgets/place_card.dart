@@ -56,10 +56,9 @@ class PlaceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = colorFor(context, place);
-    final String subtitle = <String>[
-      if (place.address != null && place.address!.isNotEmpty)
-        place.address!,
-    ].join(' · ');
+    // contextLine = address + city/state (when structured data exists) —
+    // strictly richer than address-only and disambiguates same-name places.
+    final String subtitle = place.contextLine;
     final String ratingText = place.rating != null
         ? '★ ${place.rating!.toStringAsFixed(1)}'
             '${place.userRatingCount != null ? ' (${place.userRatingCount})' : ''}'
