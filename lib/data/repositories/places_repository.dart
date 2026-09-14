@@ -94,10 +94,11 @@ class PlacesRepository {
     final String q = query.trim();
 
     // Check Lucknow fallback first - return immediately for known places
-    // Fixes skeleton loaders for transport nagar / ts mishra
+    // Fixes skeleton loaders for transport nagar / ts mishra and ensures nearest-first
     final List<Place> fallback = _lucknowFallback(q, location);
-    if (fallback.isNotEmpty && (q.contains('mishra') || q.contains('transport nagar'))) {
+    if (fallback.isNotEmpty && (q.contains('mishra') || q.contains('transport'))) {
       // For exact known queries, return immediately with distance sort
+      // This ensures TS Mishra University (11km) and Transport Nagar (10km) show first
       List<Place> fb = List<Place>.from(fallback);
       if (location != null) {
         fb.sort((Place a, Place b) => _distance(a, location).compareTo(_distance(b, location)));

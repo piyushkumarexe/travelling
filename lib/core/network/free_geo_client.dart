@@ -460,10 +460,16 @@ class FreeGeoClient {
 
     // IMMEDIATE fallback for Lucknow known places - return instantly without network wait
     // Fixes skeleton loaders stuck for "transport nagar" / "ts mishra"
+    // Ensures TS Mishra University (11km) and Transport Nagar (10km) are first, sorted by distance
     final List<Place> immediateFb = _lucknowSuggestFallback(q, near);
     if (immediateFb.isNotEmpty) {
-      // Return immediately, don't wait for slow network providers
-      return immediateFb.take(limit).toList();
+      // Return immediately, sorted by distance nearest-first, don't wait for slow network providers
+      List<Place> sortedFb = List<Place>.from(immediateFb);
+      if (near != null) {
+        sortedFb.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+            .compareTo(GeoUtils.distanceMeters(near, b.coords)));
+      }
+      return sortedFb.take(limit).toList();
     }
 
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>

@@ -35,21 +35,37 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
   bool _previewing = false;
   String? _error;
 
+  bool _prefsLoaded = false;
+
   @override
   void initState() {
     super.initState();
-    // Pre-fill interests from the profile when available.
-    final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid != null) {
-      _c.profileRepository.get(uid).then((Profile? p) {
-        if (mounted && p != null) {
-          setState(() {
-            _interests.addAll(p.interests);
-            _budget = p.budget;
-            _style = p.travelStyle;
-          });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_prefsLoaded) {
+      _prefsLoaded = true;
+      // Pre-fill interests from the profile when available.
+      // Must be in didChangeDependencies, not initState, because AppScope.of(context)
+      // is not available in initState (causes white screen).
+      try {
+        final String? uid = _c.authRepository.currentUser?.uid;
+        if (uid != null) {
+          _c.profileRepository.get(uid).then((Profile? p) {
+            if (mounted && p != null) {
+              setState(() {
+                _interests.addAll(p.interests);
+                _budget = p.budget;
+                _style = p.travelStyle;
+              });
+            }
+          }).catchError((Object _) {});
         }
-      }).catchError((Object _) {});
+      } catch (_) {
+        // Never crash the screen if profile load fails.
+      }
     }
   }
 
@@ -349,6 +365,33 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
         ],
       ),
     );
+    } catch (e) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('New AI itinerary')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                const Text('Itinerary failed to load',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(e.toString(),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   Widget _dayView(ItineraryDay day) {
