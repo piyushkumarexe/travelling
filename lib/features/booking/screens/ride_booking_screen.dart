@@ -233,7 +233,8 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     setState(() => _launching = null);
     final String message = switch (result) {
       BookingLaunchResult.opened =>
-        '${provider.providerName} opened with your pickup & drop. '
+        '${provider.providerName} opened'
+            '${provider.appSchemePrefillsLocation ? ' with your pickup & drop prefilled' : ''}. '
             'Complete the booking there — booking happens in ${provider.providerName}, not in Tourism.',
       BookingLaunchResult.openedApp =>
         'Official ${provider.providerName} app opened. Set your pickup & drop '
@@ -269,6 +270,8 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
             const SizedBox(height: 10),
             _routeCard(),
           ],
+          const SizedBox(height: 10),
+          _fareCard(),
           const SizedBox(height: 14),
           Text('Continue with a provider',
               style: Theme.of(context)
@@ -281,7 +284,8 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
           const SizedBox(height: 10),
           Text(
             'Booking and payment happen in the provider\'s own app/site. '
-            'Tourism never shows fares or availability — the provider does.',
+            'The estimates above are rough public-rate comparisons, not live '
+            'prices — live fares & availability come from the provider.',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
@@ -289,7 +293,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
           ),
           const SizedBox(height: 16),
           const Center(
-            child: Text('TRAVEL-BOOKING-HUB-2026-09-13-01',
+            child: Text('TRAVEL-BOOKING-HUB-2026-09-14-01',
                 style: TextStyle(fontSize: 10, color: Colors.grey)),
           ),
         ],
@@ -553,6 +557,108 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
                 : Text(_routeError ?? '',
                     style: const TextStyle(
                         fontSize: 12, color: AppTheme.warning)),
+      ),
+    );
+  }
+
+  /// Approximate fare comparison across the three providers for the
+  /// selected service type, computed from PUBLIC rate cards (never live
+  /// APIs). Cheapest band first. Clearly labelled as estimates — the live
+  /// fare is decided inside the provider's app.
+  Widget _fareCard() {
+    final RouteInfo? route = _route;
+    if (route == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Text(
+              'Fare estimates appear here once a route preview is available '
+              '(distance-based, from public rate cards).',
+              style: TextStyle(fontSize: 12.5)),
+        ),
+      );
+    }
+    final double km = route.distanceMeters / 1000;
+    final List<(BookingProvider, RideFareEstimate)> rows =
+        <(BookingProvider, RideFareEstimate)>[];
+    for (final BookingProvider p
+        in BookingProviders.forCategory(BookingCategory.ride)) {
+      final RideFareEstimate? est = RideFareEstimates.estimate(
+          providerId: p.providerId, serviceType: _serviceType, km: km);
+      if (est != null) rows.add((p, est));
+    }
+    rows.sort(((BookingProvider, RideFareEstimate) a,
+            (BookingProvider, RideFareEstimate) b) =>
+        a.$2.low.compareTo(b.$2.low));
+    final RideFareEstimate? first = rows.isEmpty ? null : rows.first.$2;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(children: <Widget>[
+              const Expanded(
+                child: Text('Approx. fare comparison',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('ESTIMATE',
+                    style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.warning)),
+              ),
+            ]),
+            const SizedBox(height: 2),
+            Text('For ~${km.toStringAsFixed(1)} km ${_serviceType} trip — '
+                'cheapest first',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            for (final (BookingProvider p, RideFareEstimate est) in rows)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: <Widget>[
+                  Text(p.emoji, style: const TextStyle(fontSize: 16)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(p.providerName,
+                        style: const TextStyle(
+                            fontSize: 13.5, fontWeight: FontWeight.w700)),
+                  ),
+                  if (first != null && identical(est, first))
+                    const Padding(
+                      padding: EdgeInsets.only(right: 6),
+                      child: Text('likely lowest',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.success)),
+                    ),
+                  Text('₹${est.low} – ₹${est.high}',
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+            if (rows.isEmpty)
+              const Text('Price unavailable for this service type.',
+                  style: TextStyle(fontSize: 12.5)),
+            const SizedBox(height: 8),
+            if (first != null)
+              Text('How: ${first.basis}. Excludes time charges, surge and '
+                  'tolls — the live fare is shown by the provider\'s own app.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 10.5)),
+          ],
+        ),
       ),
     );
   }

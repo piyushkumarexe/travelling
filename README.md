@@ -394,6 +394,10 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## 3D Navigation (Live Trip) (🗺️)
+
+Live Trip navigation now renders in **true 3D**: MapLibre GL (`maplibre_gl`, no API key) with a MapTiler vector style, camera **tilt 47.5°**, heading-up bearing and the existing speed-adaptive zoom — plus **3D building extrusions** from MapTiler's v3 vector tileset. Route (blue with white casing), destination pin and follow-cam mirror the 2D view; the **3D** button switches back to the original flutter_map 2D view at any time, and the app auto-falls-back to 2D when no MapTiler key is compiled in or the style fails to load. Google Maps 3D was not usable because the project intentionally has no Google Maps API key.
+
 ## Travel Document & Booking Vault (🗂️)
 
 One secure, private place for every travel document and booking — works for domestic and international travellers.
@@ -410,6 +414,10 @@ One secure, private place for every travel document and booking — works for do
 - **Packages added**: `file_picker` (PDF picking), `timezone` (reminder scheduling; already a transitive dependency of flutter_local_notifications). Manifest: `RECEIVE_BOOT_COMPLETED` added so scheduled reminders re-register after reboot.
 
 ## Travel Booking Hub (🧳)
+
+**Round 2 update (2026-09-14):**
+- **Direct app hand-off:** Android `<queries>` package visibility added for Uber/Ola/Rapido/IRCTC, and the launch cascade now tries the provider's **native app scheme first** — `uber://?action=setPickup…` (prefills pickup & drop, per developer.uber.com "Standard Deep Links") and `olacabs://app/launch` (per developers.olacabs.com), then direct app launch, then the prefilled https web flow, then the Play Store. If the app is installed it opens the app — no more Play-Store detour.
+- **Approx. fare comparison:** with a route preview, the ride screen shows a clearly-labelled **ESTIMATE** band per provider (₹low–₹high, cheapest first) computed ONLY from public rate cards (Maharashtra STA bike-taxi ₹15 + ₹10.27/km; Pune govt cab ₹37 + ₹25/km; 2026 published comparisons). Surge/time charges/tolls excluded; live price is always the provider's.
 
 Home card "Travel Booking Hub — Book rides, flights, trains, buses, hotels
 and activities." (route `/booking`).

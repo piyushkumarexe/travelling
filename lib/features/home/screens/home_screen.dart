@@ -323,15 +323,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: <Widget>[
                   _autopilotCard(),
                   const SizedBox(height: 12),
-                  _expenseGuardCard(),
-                  const SizedBox(height: 12),
-                  _bookingHubCard(),
-                  const SizedBox(height: 12),
-                  _vaultCard(),
-                  const SizedBox(height: 12),
                   _weatherCard(),
                   const SizedBox(height: 12),
                   _safetyCard(),
+                  const SectionHeader(title: 'Travel tools'),
+                  _travelToolsCard(),
                   const SizedBox(height: 12),
                   if (_activeTrip != null) ...<Widget>[
                     _continueTripCard(),
@@ -362,6 +358,68 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 🧭 TRAVEL AUTOPILOT — prominent entry point. Works with zero
   /// itinerary: current location + "I have 2 hours" is enough.
+  /// 🧰 Travel tools — compact grouped entry points so the dashboard stays
+  /// clean instead of stacking a new card per feature.
+  Widget _travelToolsCard() {
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Column(
+        children: <Widget>[
+          _toolRow('💰', 'Travel Expense Guard',
+                  'Track every rupee of your trip.', '/expenses'),
+          const Divider(height: 1, indent: 54),
+          _toolRow('🧳', 'Travel Booking Hub',
+                  'Book rides, flights, trains, buses, hotels and activities.',
+                  '/booking'),
+          const Divider(height: 1, indent: 54),
+          _toolRow('🗂️', 'Travel Document & Booking Vault',
+                  'All your travel documents and bookings in one secure place.',
+                  '/vault'),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolRow(String emoji, String title, String subtitle, String route) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => context.push(route),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Row(
+          children: <Widget>[
+            Text(emoji, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 14)),
+                  const SizedBox(height: 1),
+                  Text(subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _autopilotCard() {
     final bool resuming = _c.autopilotService.session != null;
     return DecoratedBox(
@@ -415,120 +473,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 💰 Travel Expense Guard — record, organize and understand trip
   /// expenses. Amount + category is all it takes to save one.
-  Widget _expenseGuardCard() {
-    return AppCard(
-      onTap: () => context.push('/expenses'),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: AppTheme.success.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-                child: Text('💰', style: TextStyle(fontSize: 22))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('Travel Expense Guard',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                const SizedBox(height: 2),
-                Text('Track every rupee of your trip.',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right),
-        ],
-      ),
-    );
-  }
-
   /// 🧳 Travel Booking Hub — continue into official booking flows
   /// (rides via Uber/Ola/Rapido, IRCTC trains, flights, hotels…).
-  Widget _bookingHubCard() {
-    return AppCard(
-      onTap: () => context.push('/booking'),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(child: Text('🧳', style: TextStyle(fontSize: 22))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('Travel Booking Hub',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                const SizedBox(height: 2),
-                Text('Book rides, flights, trains, buses, hotels and activities.',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right),
-        ],
-      ),
-    );
-  }
-
-  Widget _vaultCard() {
-    return AppCard(
-      onTap: () => context.push('/vault'),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(child: Text('🗂️', style: TextStyle(fontSize: 22))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('Travel Document & Booking Vault',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                const SizedBox(height: 2),
-                Text('All your travel documents and bookings in one secure place.',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right),
-        ],
-      ),
-    );
-  }
-
   Widget _weatherCard() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     if (_weatherLoading) {

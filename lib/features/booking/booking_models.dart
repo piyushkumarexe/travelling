@@ -86,10 +86,12 @@ class BookingProvider {
     required this.category,
     required this.emoji,
     required this.locationFormat,
-    this.appDeepLinkBuilder, // verified deep/universal link (app + web)
+    this.appDeepLinkBuilder, // verified native-scheme deep link (opens the app)
     this.appLaunchPackage, // verified Android package for app-launch intent
+    this.webLinkBuilder, // verified https link with prefill (app or mobile web)
     this.plainWebUrl, // verified official website (no prefill)
     this.playStoreUrl, // verified official listing (fallback install path)
+    this.appSchemePrefillsLocation = false, // scheme carries pickup/drop
     this.handoffNote = '',
   });
 
@@ -101,6 +103,8 @@ class BookingProvider {
   /// Builds the VERIFIED official deep/universal link (may open the provider
   /// app via App Links, else the provider's mobile web).
   final String Function(BookingQuery q)? appDeepLinkBuilder;
+  final String Function(BookingQuery q)? webLinkBuilder;
+  final bool appSchemePrefillsLocation;
 
   /// Verified Android package name — the app is launched directly via an
   /// Android intent (used when no documented deep link exists).
@@ -124,11 +128,12 @@ class BookingProviders {
   BookingProviders._();
 
   static const String _uberDocNote =
-      'Pickup & drop passed via Uber\'s official deep link (developer.uber.com). '
-      'The Uber app opens when installed, else Uber mobile web.';
+      'Uber opens with your pickup & drop prefilled (uber:// scheme + '
+      'm.uber.com universal link — developer.uber.com).';
   static const String _olaDocNote =
-      'Pickup & drop passed via Ola\'s official out-of-app flow '
-      '(developers.olacabs.com).';
+      'Opens the Ola app directly (olacabs://app/launch — '
+      'developers.olacabs.com). Ola\'s app scheme does not carry location '
+      'parameters, so set the drop inside Ola (pickup = your GPS).';
   static const String _rapidoNote =
       'Opens the official Rapido app (Bike/Auto/Cab). Rapido has no public '
       'deep link, so pickup/drop are NOT prefilled — set them in Rapido.';
@@ -140,13 +145,28 @@ class BookingProviders {
     category: BookingCategory.ride,
     emoji: '🚕',
     locationFormat: LocationFormat.latLng,
-    appDeepLinkBuilder: _uberLink,
+    appDeepLinkBuilder: _uberAppLink,
+    webLinkBuilder: _uberLink,
+    appLaunchPackage: 'com.ubercab',
+    playStoreUrl:
+        'https://play.google.com/store/apps/details?id=com.ubercab',
+    appSchemePrefillsLocation: true,
     handoffNote: _uberDocNote,
   );
 
+  /// Official native scheme (developer.uber.com, "Standard Deep Links":
+  /// "the Uber rider app can be opened using the uber:// schema") — opens
+  /// the installed app directly with the same setPickup parameters.
+  static String _uberAppLink(BookingQuery q) =>
+      _uberParams('uber://', q);
+
   static String _uberLink(BookingQuery q) {
-    // Official: https://m.uber.com/ul/?action=setPickup&pickup[latitude]=…
-    final StringBuffer b = StringBuffer('https://m.uber.com/ul/')
+    // Official universal link: https://m.uber.com/ul/?action=setPickup&…
+    return _uberParams('https://m.uber.com/ul/', q);
+  }
+
+  static String _uberParams(String base, BookingQuery q) {
+    final StringBuffer b = StringBuffer(base)
         ..write('?action=setPickup');
     if (q.hasFrom) {
       b.write('&pickup[latitude]=${q.fromLat!.toStringAsFixed(6)}'
@@ -171,9 +191,19 @@ class BookingProviders {
     category: BookingCategory.ride,
     emoji: '🚙',
     locationFormat: LocationFormat.latLng,
-    appDeepLinkBuilder: _olaLink,
+    appDeepLinkBuilder: _olaAppLink,
+    appLaunchPackage: 'com.olacabs',
+    webLinkBuilder: _olaLink,
+    playStoreUrl:
+        'https://play.google.com/store/apps/details?id=com.olacabs',
     handoffNote: _olaDocNote,
   );
+
+  /// Official app scheme (developers.olacabs.com): `olacabs://app/launch`
+  /// "will open Ola App if it is present on the mobile device, else it will
+  /// redirect the user to the Ola website". No location parameters are
+  /// documented for the scheme — so none are invented here.
+  static String _olaAppLink(BookingQuery q) => 'olacabs://app/launch';
 
   static String _olaLink(BookingQuery q) {
     // Official sample: book.olacabs.com/?lat=..&lng=..&drop_lat=..&drop_lng=..
@@ -368,4 +398,84 @@ abstract class BookingApi {
   bool get isConfigured;
   Future<Object?> search(BookingQuery q);
   Future<Object?> book(BookingQuery q);
+}
+
+
+/// 🚕 Rough fare comparison across ride providers, computed ONLY from
+/// public rate information — never from live provider APIs (none exist for
+/// us). Every row carries its `basis` so the UI can show where the number
+/// came from, and the UI must always label these as estimates: real fares
+/// depend on surge, time charges, city and taxes and are decided inside
+/// the provider's own app.
+///
+/// Sources (public, Sept 2025–2026):
+///  - Maharashtra STA bike-taxi rate card: ₹15 minimum (first 1.5 km),
+///    ₹10.27/km thereafter (Financial Express, Sep 2025).
+///  - Pune government-approved cab rates: ₹37 first 1.5 km + ₹25/km for
+///    Ola/Uber/Rapido cabs (May 2025).
+///  - 2026 public fare comparisons (comparekro): autos ₹25–30 base +
+///    ₹9–14/km (Uber/Ola), Rapido bike ₹15–20 base + ₹6–9/km,
+///    Rapido auto ~₹25 base + ₹10/km.
+class RideFareEstimate {
+  const RideFareEstimate(this.low, this.high, this.basis);
+  final int low; // rupees
+  final int high; // rupees
+  final String basis;
+}
+
+class RideFareEstimates {
+  RideFareEstimates._();
+
+  /// Bands per (providerId, serviceType). Missing combinations fall back to
+  /// the service-type band. Time charges and surge are deliberately NOT
+  /// modelled (not publicly fixed) — estimates exclude them.
+
+  /// Kilometres included in the minimum/base fare on public rate cards.
+  static const double _includedKm = 1.5;
+
+  /// [minBase, maxBase, minPerKm, maxPerKm] in rupees, per km beyond 1.5.
+  static const Map<String, List<int>> _bands = <String, List<int>>{
+    // bike — Maharashtra rate card upper bound + Rapido published band.
+    'bike': <int>[15, 20, 6, 11],
+    // auto — 2026 public comparisons (₹25–30 base, ₹9–14/km).
+    'auto': <int>[25, 30, 9, 14],
+    // cab — government-approved cab rates ₹37 + ₹25/km (Pune 2025) as the
+    // upper band; published city-cab per-km (~₹14+) as the lower band.
+    'cab': <int>[37, 45, 14, 25],
+  };
+
+  /// Slightly better Rapido bike band from published comparisons
+  /// (₹15–20 base, ₹6–9/km) — kept provider-specific where sources differ.
+  static const Map<String, List<int>> _providerOverrides =
+      <String, List<int>>{
+    'rapido|bike': <int>[15, 20, 6, 9],
+    'rapido|auto': <int>[25, 30, 10, 12],
+  };
+
+  /// Estimate for a trip of [km] kilometres. Returns null when the
+  /// service type is unknown (caller shows "Price unavailable").
+  static RideFareEstimate? estimate({
+    required String providerId,
+    required String serviceType,
+    required double km,
+  }) {
+    final List<int>? band =
+        _providerOverrides['$providerId|$serviceType'] ?? _bands[serviceType];
+    if (band == null || km < 0) return null;
+    final double extraKm = km <= _includedKm ? 0 : km - _includedKm;
+    final int low = (band[0] + (extraKm * band[2]).ceil()).round();
+    final int high = (band[1] + (extraKm * band[3]).ceil()).round();
+    return RideFareEstimate(low, high, _basisFor(serviceType));
+  }
+
+  static String _basisFor(String serviceType) => switch (serviceType) {
+        'bike' =>
+          'Maharashtra STA bike-taxi card (₹15 first 1.5 km + up to '
+              '₹10.27/km) & 2026 public comparisons',
+        'auto' => 'Published 2026 India comparisons (₹25–30 base + '
+            '₹9–14/km)',
+        'cab' => 'Government-approved cab rates (₹37 first 1.5 km + '
+            '₹25/km, Pune 2025); other cities differ',
+        _ => 'Public rate cards',
+      };
 }

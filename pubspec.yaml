@@ -44,6 +44,9 @@ dependencies:
   file_picker: ^8.1.7
   timezone: ^0.9.4
 
+  # --- 3D navigation map (MapLibre GL: tilt/3D buildings, no API key) ---
+  maplibre_gl: ">=0.25.0 <0.27.0"
+
   # --- Voice assistant (speech-to-text input + text-to-speech replies) ---
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5

@@ -18,6 +18,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/live_share_banner.dart';
 import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
+import 'nav_map_3d.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
@@ -67,6 +68,11 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   /// Google-style navigation camera: map follows the traveler and rotates
   /// to the travel direction (toggleable), zoomed in like a real nav app.
   bool _followCam = true;
+
+  /// True 3D navigation (MapLibre GL: camera tilt + 3D buildings). Falls
+  /// back to the 2D map automatically when vector styles are unavailable
+  /// (no MapTiler key) or the style fails to load.
+  bool _map3d = true;
   bool _headingUp = true;
   String _navMode = 'car'; // profile vehicle: car | bike | auto | walk
   bool _arrived = false;
@@ -511,7 +517,25 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
     final Color primary = Theme.of(context).colorScheme.primary;
     return Stack(
       children: <Widget>[
-        FlutterMap(
+        if (_map3d)
+          NavMap3D(
+            key: ValueKey<String>(
+                'nav3d-${_satellite ? 'hybrid' : 'streets'}'),
+            position: _position,
+            routeLine: _routeLine,
+            destination: _destination,
+            follow: _followCam,
+            satellite: _satellite,
+            onUnavailable: () {
+              if (!mounted) return;
+              setState(() => _map3d = false);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text(
+                      '3D view unavailable here — switched to the 2D map.')));
+            },
+          )
+        else
+          FlutterMap(
           mapController: _controller,
           options: MapOptions(
             initialCenter: _position != null
@@ -568,6 +592,24 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              FloatingActionButton.small(
+                heroTag: 'trip-3d',
+                tooltip: _map3d
+                    ? '3D navigation (on) — tap for 2D'
+                    : '2D map — tap for 3D',
+                backgroundColor: _map3d
+                    ? primary
+                    : Theme.of(context).colorScheme.surface,
+                onPressed: () => setState(() => _map3d = !_map3d),
+                child: Text('3D',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: _map3d
+                            ? Colors.white
+                            : Theme.of(context).colorScheme.onSurface)),
+              ),
+              const SizedBox(height: 8),
               FloatingActionButton.small(
                 heroTag: 'trip-follow',
                 tooltip: _followCam

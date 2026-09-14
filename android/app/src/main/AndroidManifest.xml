@@ -68,6 +68,15 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
+
+        <!-- Package visibility for the official ride/train provider apps
+             (Android 11+): lets the app detect & launch them directly
+             instead of falling back to the Play Store when they ARE
+             installed. -->
+        <package android:name="com.ubercab" />
+        <package android:name="com.olacabs" />
+        <package android:name="com.rapido.passenger" />
+        <package android:name="cris.org.in.prs.ima" />
     </queries>
 
     <application

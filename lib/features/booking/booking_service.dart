@@ -166,7 +166,7 @@ class BookingService extends ChangeNotifier {
       // Universal link failed entirely (offline / resolver error).
       _lastLaunchResult = BookingLaunchResult.linkInvalid;
     }
-    // 2) Direct official app launch (package verified) → Play Store fallback.
+    // 2) Direct official app launch (package verified).
     if (provider.appLaunchPackage != null) {
       final String intent = 'intent://launch/#Intent;'
           'action=android.intent.action.MAIN;'
@@ -174,21 +174,23 @@ class BookingService extends ChangeNotifier {
           'package=${provider.appLaunchPackage};end';
       final bool ok = await _launch(intent);
       if (ok) return BookingLaunchResult.openedApp;
-      if (provider.playStoreUrl != null &&
-          await _launch(provider.playStoreUrl!)) {
-        return BookingLaunchResult.appNotInstalled;
-      }
-      _lastLaunchResult = BookingLaunchResult.appNotInstalled;
-      return _lastLaunchResult;
     }
-    // 3) Official website without prefill.
+    // 3) Verified https link with prefill — opens the provider's mobile web
+    //    flow (or their app, when the OS hands the universal link over).
+    if (provider.webLinkBuilder != null) {
+      final String link = provider.webLinkBuilder!(q);
+      final bool ok = await _launch(link);
+      if (ok) return BookingLaunchResult.openedWeb;
+    }
+    // 4) Play Store fallback (official listing).
+    if (provider.playStoreUrl != null &&
+        await _launch(provider.playStoreUrl!)) {
+      return BookingLaunchResult.appNotInstalled;
+    }
+    // 5) Official website without prefill.
     if (provider.plainWebUrl != null) {
       final bool ok = await _launch(provider.plainWebUrl!);
-      if (ok) {
-        return _lastLaunchResult == BookingLaunchResult.linkInvalid
-            ? BookingLaunchResult.openedWeb
-            : BookingLaunchResult.openedWeb;
-      }
+      if (ok) return BookingLaunchResult.openedWeb;
       _lastLaunchResult = BookingLaunchResult.networkError;
       return _lastLaunchResult;
     }

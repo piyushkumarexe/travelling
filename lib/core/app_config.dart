@@ -179,6 +179,20 @@ class AppConfig {
   static String? get tileFallbackUrl =>
       mapTilerConfigured ? fallbackTileUrl : null;
 
+  /// MapTiler hosted STYLE JSON for vector rendering (MapLibre GL 3D nav):
+  /// `https://api.maptiler.com/maps/{style}/style.json?key=…`. Returns null
+  /// in keyless mode — the 3D navigation view needs vector styles, so the
+  /// app falls back to the 2D map when no key is compiled in.
+  static String? styleJsonUrl(String style) => mapTilerConfigured
+      ? 'https://api.maptiler.com/maps/$style/style.json?key=$mapTilerApiKey'
+      : null;
+
+  /// MapTiler v3 vector TileJSON (contains the `building` source-layer with
+  /// render_height) used for the 3D building extrusions in the nav view.
+  static String? get vectorTilesJsonUrl => mapTilerConfigured
+      ? 'https://api.maptiler.com/tiles/v3/tiles.json?key=$mapTilerApiKey'
+      : null;
+
   /// Keyless OpenStreetMap tile source (real streets/labels, no API key).
   /// Used as the primary source in keyless mode and as the fallback when a
   /// MapTiler key is compiled in.
