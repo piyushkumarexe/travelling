@@ -387,8 +387,8 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
           setState(() => _replaceProgress = s.bytesTransferred / s.totalBytes);
         }
       });
-      await task;
-      final String url = await task.ref.getDownloadURL();
+      final TaskSnapshot snap = await task;
+      final String url = await snap.ref.getDownloadURL();
       await _c.vaultService.completeUpload(
         uid: uid,
         docId: d.id,

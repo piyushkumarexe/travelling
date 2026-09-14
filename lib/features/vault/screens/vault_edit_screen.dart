@@ -316,8 +316,9 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
               () => _uploadProgress = s.bytesTransferred / s.totalBytes);
         }
       });
-      await task; // throws FirebaseException('canceled') / errors
-      final String url = await task.ref.getDownloadURL();
+      final TaskSnapshot snap =
+          await task; // throws FirebaseException('canceled') / errors
+      final String url = await snap.ref.getDownloadURL();
       final TravelDocument withFile = doc.copyWith(
         fileUrl: url,
         storagePath: 'users/$uid/travelDocuments/${doc.id}/file',
@@ -385,7 +386,7 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
 
   TravelDocument _buildDocument(String docId, String uid) {
     final DateTime now = DateTime.now();
-    final TravelDocument base = _existing;
+    final TravelDocument? base = _existing;
     String? s(TextEditingController c) {
       final String v = c.text.trim();
       return v.isEmpty ? null : v;
@@ -468,7 +469,8 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
           decoration: InputDecoration(
             labelText: label,
             hintText: hint,
-            prefixIcon: icon,
+            prefixIcon:
+                icon == null ? null : Icon(icon, size: 18),
             isDense: true,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
@@ -482,27 +484,37 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: onPick,
-          child: InputDecorator(
-            isDense: true,
-            decoration: InputDecoration(
-              labelText: label,
-              prefixIcon: Icon(icon),
-              suffixIcon: value == null
-                  ? const Icon(Icons.edit_calendar, size: 18)
-                  : IconButton(
-                      icon: const Icon(Icons.close, size: 16),
-                      onPressed: onClear,
-                    ),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              value == null ? 'Not set' : DateFormat('dd MMM yyyy').format(value),
-              style: TextStyle(
-                  fontSize: 14,
-                  color: value == null
-                      ? Theme.of(context).hintColor
-                      : Theme.of(context).textTheme.bodyMedium?.color),
+            child: Row(
+              children: <Widget>[
+                Icon(icon, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    value == null
+                        ? label
+                        : '$label — ${DateFormat('dd MMM yyyy').format(value)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        color: value == null
+                            ? Theme.of(context).hintColor
+                            : Theme.of(context).textTheme.bodyMedium?.color),
+                  ),
+                ),
+                if (onClear != null)
+                  GestureDetector(
+                    onTap: onClear,
+                    child: const Icon(Icons.close, size: 16),
+                  ),
+              ],
             ),
           ),
         ),
