@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
 import 'package:yatrawise/core/network/free_geo_client.dart';
 import 'package:yatrawise/data/models/places.dart';
@@ -17,7 +17,7 @@ Place _p(String name, double lat, double lng, {String? address}) => Place(
 
 void main() {
   // Lucknow city centre (the traveller's area in the reported bug).
-  final LatLng lucknow = const LatLng(26.8467, 80.9462);
+  final gm.LatLng lucknow = const gm.LatLng(26.8467, 80.9462);
 
   group('PlaceRanking — accuracy-first suggestions', () {
     test('among same-named places, the NEAREST is on top', () {
