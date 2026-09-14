@@ -47,9 +47,6 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
     super.didChangeDependencies();
     if (!_prefsLoaded) {
       _prefsLoaded = true;
-      // Pre-fill interests from the profile when available.
-      // Must be in didChangeDependencies, not initState, because AppScope.of(context)
-      // is not available in initState (causes white screen).
       try {
         final String? uid = _c.authRepository.currentUser?.uid;
         if (uid != null) {
@@ -63,9 +60,7 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
             }
           }).catchError((Object _) {});
         }
-      } catch (_) {
-        // Never crash the screen if profile load fails.
-      }
+      } catch (_) {}
     }
   }
 
@@ -142,8 +137,9 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Scaffold(
+    try {
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      return Scaffold(
       appBar: AppBar(
         title: const Text('New AI itinerary'),
         actions: <Widget>[
