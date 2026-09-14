@@ -245,6 +245,36 @@ service cloud.firestore {
       allow delete: if isSelf(uid);
     }
 
+    // ---- Travel Document & Booking Vault: private per user ----
+    // Metadata only — files live in Storage (see storage.rules).
+    match /users/{uid}/travelDocuments/{documentId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.documentId == documentId
+        && request.resource.data.type in [
+          'passport', 'visa', 'idProof', 'flightTicket', 'trainTicket',
+          'busTicket', 'hotelBooking', 'cabRental', 'activityTicket',
+          'travelInsurance', 'other'
+        ]
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.uploadStatus in ['none', 'uploaded', 'uploadFailed']
+        && (!('tripId' in request.resource.data)
+            || request.resource.data.tripId == null
+            || request.resource.data.tripId is string)
+        && (!('notes' in request.resource.data)
+            || request.resource.data.notes == null
+            || (request.resource.data.notes is string
+                && request.resource.data.notes.size() <= 2000));
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.documentId == documentId;
+      allow delete: if isSelf(uid);
+    }
+
     // ---- Rate limits are backend-only ----
     match /rateLimits/{key} {
       allow read, write: if false;

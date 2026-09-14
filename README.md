@@ -394,6 +394,21 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
   actually show up instead of far-away same-named places in other states
   or countries.
 
+## Travel Document & Booking Vault (🗂️)
+
+One secure, private place for every travel document and booking — works for domestic and international travellers.
+
+- **Where**: Home → "Travel Document & Booking Vault" card → `/vault`.
+- **What you can store**: Passport, Visa, ID Proof, Flight / Train / Bus tickets, Hotel bookings, Cab/Car rental, Activity tickets, Travel Insurance, Other. Upload a PDF/JPG/PNG (images auto-compressed by the picker) or enter details manually — only the title is required; every other field is optional because document types differ.
+- **Booking-specific fields** (all optional & editable): flights (airline, flight number, PNR, airports, departure/arrival date-time, terminal, seat), hotels (hotel name, booking ID, check-in/out, address, contact), trains/buses (operator, PNR/booking ID, origin/destination, departure/arrival, seat/coach), activities (provider, booking ID, venue, date-time, location).
+- **Main screen**: upcoming bookings timeline (real saved dates only), documents expiring soon, recent entries, trips with documents, search (title / PNR / booking ID / airline / hotel / trip name), filter by type and by trip.
+- **Trip linking**: documents reference the existing Trip Planner `tripId` — no trip data is duplicated.
+- **Expiry reminders**: computed from the real current date (Expired / Expires today / Expires in X days / Valid) plus local notifications at 90 / 30 / 7 / 1 days before expiry through the existing `NotificationService` (only for documents that have an expiry date; reminders self-heal on every app start).
+- **Storage**: metadata in Firestore `users/{uid}/travelDocuments/{documentId}` (owner-only rules), files in Firebase Storage `users/{uid}/travelDocuments/{documentId}/file` (owner-only, PDF/image only, 10 MB cap). Firestore never stores the file itself. Old files are deleted/replaced in place — no orphans. Uploads show progress, can be cancelled and retried to the same path (stable IDs — retries can't duplicate).
+- **Privacy**: no document contents, numbers, PNRs or file URLs are logged or sent to analytics; files are never public.
+- **OCR**: this project has no OCR capability, so nothing pretends to read documents — entry is manual and verified by you.
+- **Packages added**: `file_picker` (PDF picking), `timezone` (reminder scheduling; already a transitive dependency of flutter_local_notifications). Manifest: `RECEIVE_BOOT_COMPLETED` added so scheduled reminders re-register after reboot.
+
 ## Travel Booking Hub (🧳)
 
 Home card "Travel Booking Hub — Book rides, flights, trains, buses, hotels

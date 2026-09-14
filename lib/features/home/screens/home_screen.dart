@@ -327,6 +327,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   _bookingHubCard(),
                   const SizedBox(height: 12),
+                  _vaultCard(),
+                  const SizedBox(height: 12),
                   _weatherCard(),
                   const SizedBox(height: 12),
                   _safetyCard(),
@@ -478,6 +480,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                 const SizedBox(height: 2),
                 Text('Book rides, flights, trains, buses, hotels and activities.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+    );
+  }
+
+  Widget _vaultCard() {
+    return AppCard(
+      onTap: () => context.push('/vault'),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(child: Text('🗂️', style: TextStyle(fontSize: 22))),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('Travel Document & Booking Vault',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text('All your travel documents and bookings in one secure place.',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall

@@ -39,6 +39,9 @@ import '../../features/route/screens/multi_stop_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
 import '../../features/trip/screens/live_trip_screen.dart';
+import '../../features/vault/screens/vault_detail_screen.dart';
+import '../../features/vault/screens/vault_edit_screen.dart';
+import '../../features/vault/screens/vault_screen.dart';
 import '../../features/vehicle/screens/vehicle_screen.dart';
 import '../../features/wallet/screens/wallet_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
@@ -303,6 +306,24 @@ class AppRouter {
         path: '/admin/zone/:id',
         builder: (BuildContext context, GoRouterState state) =>
             ZoneEditorScreen(zoneId: state.pathParameters['id'] ?? ''),
+      ),
+      GoRoute(
+        path: '/vault',
+        builder: (BuildContext context, GoRouterState state) =>
+            const VaultScreen(),
+      ),
+      GoRoute(
+        path: '/vault/edit',
+        builder: (BuildContext context, GoRouterState state) =>
+            VaultEditScreen(
+                documentId: state.extra is String
+                    ? state.extra as String
+                    : null),
+      ),
+      GoRoute(
+        path: '/vault/detail',
+        builder: (BuildContext context, GoRouterState state) =>
+            VaultDetailScreen(documentId: state.extra as String),
       ),
     ],
   );

@@ -16,6 +16,9 @@
 
     <!-- Notifications (safety alerts, geofence warnings, SOS events) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- flutter_local_notifications: re-register scheduled notifications
+         (document expiry reminders) after device reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Emergency SMS: SOS + Power-Off Safety Location send the traveler's
          location and coordinates to their SOS contact by SMS. SMS is the

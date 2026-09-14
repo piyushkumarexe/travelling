@@ -53,6 +53,21 @@ service firebase.storage {
       allow delete: if isSelf(uid);
     }
 
+    // Travel Document & Booking Vault files: strict owner-only path
+    // users/{uid}/travelDocuments/{documentId}/file — PDF or image,
+    // 10 MB cap. Never public.
+    function isVaultDocument() {
+      return isImage() || request.resource.contentType == 'application/pdf';
+    }
+
+    match /users/{uid}/travelDocuments/{documentId}/file {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid)
+        && isVaultDocument()
+        && request.resource.size <= 10485760; // 10 MB
+      allow delete: if isSelf(uid);
+    }
+
     // Everything else is denied by default.
     match /{allPaths=**} {
       allow read, write: if false;

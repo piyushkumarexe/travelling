@@ -18,6 +18,7 @@ import '../../data/repositories/weather_repository.dart';
 import '../../data/repositories/zones_repository.dart';
 import '../../features/autopilot/autopilot_service.dart';
 import '../../features/booking/booking_service.dart';
+import '../../features/vault/vault_service.dart';
 import '../../features/expenses/expense_repository.dart';
 import '../app_config.dart';
 import '../network/api_client.dart';
@@ -117,6 +118,18 @@ class AppContainer {
 
   /// Shared OSRM routing client (single instance for the app).
   late final OsrmClient osrmClient = OsrmClient();
+
+  /// 🗂️ Travel Document & Booking Vault — private document/booking metadata
+  /// (Firestore users/{uid}/travelDocuments), files in Storage
+  /// (users/{uid}/travelDocuments/{documentId}/file), expiry reminders via
+  /// the existing NotificationService, trip linking via the existing
+  /// TripPlanStore.
+  late final VaultService vaultService = VaultService(
+    storage: storageService,
+    notifications: notificationService,
+    trips: tripPlanStore,
+  );
+
 
   /// 💰 Travel Expense Guard — offline-first expense store (Firestore
   /// users/{uid}/expenses + receipts in Storage, reusing trip store).

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_10y.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
 /// Android local notifications with dedicated channels per alert type.
 /// Handles notification permission (Android 13+) explicitly and never
@@ -9,6 +11,7 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _ready = false;
+  bool _tzReady = false;
 
   /// Last tapped notification payload (handled when app is opened from a
   /// notification).
@@ -91,6 +94,63 @@ class NotificationService {
         'emergency' => 'Emergency (SOS)',
         'incident' => 'Incident updates',
         'weather' => 'Weather alerts',
+        'vault' => 'Document expiry reminders',
         _ => 'General',
       };
+
+  /// Schedules a one-shot notification. [at] is device-local wall-clock
+  /// time. Uses inexact scheduling (no special alarm permission) and
+  /// converts the local time using the device's current UTC offset (the
+  /// app has no native IANA timezone lookup; India has no DST so this is
+  /// exact for the primary market). Returns true when scheduled.
+  Future<bool> schedule({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime at,
+    String channel = 'general',
+    String? payload,
+  }) async {
+    if (!_ready) return false;
+    try {
+      if (!_tzReady) {
+        tzdata.initializeTimeZones();
+        _tzReady = true;
+      }
+      final tz.TZDateTime when = tz.TZDateTime.utc(
+              at.year, at.month, at.day, at.hour, at.minute)
+          .subtract(DateTime.now().timeZoneOffset);
+      if (!when.isAfter(tz.TZDateTime.now(tz.local))) return false;
+      final AndroidNotificationDetails details = AndroidNotificationDetails(
+        channel,
+        _channelName(channel),
+        channelDescription: 'Tourism ${_channelName(channel.toLowerCase())}',
+        importance: Importance.high,
+        priority: Priority.defaultPriority,
+        icon: '@mipmap/ic_launcher',
+      );
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        NotificationDetails(android: details),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('NotificationService.schedule failed: $e');
+      return false;
+    }
+  }
+
+  /// Cancels a pending scheduled notification (no-op when none).
+  Future<void> cancelScheduled(int id) async {
+    try {
+      await _plugin.cancel(id);
+    } catch (_) {}
+  }
 }

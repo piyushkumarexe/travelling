@@ -40,6 +40,10 @@ dependencies:
   flutter_markdown: ^0.7.4+3
   shared_preferences: ^2.3.2
 
+  # --- Travel Document & Booking Vault: PDF picking + reminder scheduling ---
+  file_picker: ^8.1.7
+  timezone: ^0.9.4
+
   # --- Voice assistant (speech-to-text input + text-to-speech replies) ---
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
