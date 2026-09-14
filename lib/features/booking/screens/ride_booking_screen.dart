@@ -617,7 +617,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
               ),
             ]),
             const SizedBox(height: 2),
-            Text('For ~${km.toStringAsFixed(1)} km ${_serviceType} trip — '
+            Text('For ~${km.toStringAsFixed(1)} km $_serviceType trip — '
                 'cheapest first',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),

@@ -200,17 +200,20 @@ class _NavMap3DState extends State<NavMap3D> {
     // `building` layer is unavailable).
     final String? tilesJson = AppConfig.vectorTilesJsonUrl;
     if (tilesJson != null) {
-      await c.addVectorSource('nav_buildings_src', tilesJson);
+      await c.addSource(
+        'nav_buildings_src',
+        ml.VectorSourceProperties(url: tilesJson),
+      );
       await c.addFillExtrusionLayer(
         'nav_buildings_src',
         'nav_buildings_3d',
         ml.FillExtrusionLayerProperties(
-          sourceLayer: 'building',
           fillExtrusionColor: '#9CA3AF',
           fillExtrusionHeight: <dynamic>['coalesce', <dynamic>['get', 'render_height'], 8.0],
           fillExtrusionBase: <dynamic>['coalesce', <dynamic>['get', 'render_min_height'], 0.0],
           fillExtrusionOpacity: 0.75,
         ),
+        sourceLayer: 'building',
       );
     }
   }
@@ -242,7 +245,7 @@ class _NavMap3DState extends State<NavMap3D> {
         tilt: _tilt,
       ),
       myLocationEnabled: true,
-      myLocationRenderMode: ml.MyLocationRenderMode.GPS,
+      myLocationRenderMode: ml.MyLocationRenderMode.gps,
       compassEnabled: true,
       tiltGesturesEnabled: true,
       rotateGesturesEnabled: true,

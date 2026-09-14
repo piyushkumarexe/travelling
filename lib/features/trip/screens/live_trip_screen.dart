@@ -18,12 +18,12 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/live_share_banner.dart';
 import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
-import 'nav_map_3d.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/trip_plan.dart';
+import 'nav_map_3d.dart';
 
 /// Live Trip mode: tracks the traveler in real time toward a destination,
 /// showing remaining distance, ETA, the route on a map and a live safety
