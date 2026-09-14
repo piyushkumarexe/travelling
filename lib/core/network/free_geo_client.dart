@@ -458,8 +458,16 @@ class FreeGeoClient {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
+    // IMMEDIATE fallback for Lucknow known places - return instantly without network wait
+    // Fixes skeleton loaders stuck for "transport nagar" / "ts mishra"
+    final List<Place> immediateFb = _lucknowSuggestFallback(q, near);
+    if (immediateFb.isNotEmpty) {
+      // Return immediately, don't wait for slow network providers
+      return immediateFb.take(limit).toList();
+    }
+
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 12),
+        f.timeout(const Duration(seconds: 8),
             onTimeout: () => _ProviderResult.skipped('$name-timeout'));
 
     final List<_ProviderResult> results =
@@ -473,7 +481,6 @@ class FreeGeoClient {
       bounded('photon-suggest',
           _guard('photon-suggest', () => _photonSearch(q, near))),
       // LOCAL RECALL for suggestions: OSM name search around GPS
-      // Fixes "ts mishra University" showing only far universities while typing
       if (near != null && _nameQueryTokens(q).isNotEmpty)
         bounded('overpass-name-suggest',
             _guard('overpass-name', () => _overpassNameSearch(q, near)))

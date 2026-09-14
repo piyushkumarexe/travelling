@@ -93,8 +93,17 @@ class PlacesRepository {
   }) async {
     final String q = query.trim();
 
-    // Check Lucknow fallback first for known universities/localities
+    // Check Lucknow fallback first - return immediately for known places
+    // Fixes skeleton loaders for transport nagar / ts mishra
     final List<Place> fallback = _lucknowFallback(q, location);
+    if (fallback.isNotEmpty && (q.contains('mishra') || q.contains('transport nagar'))) {
+      // For exact known queries, return immediately with distance sort
+      List<Place> fb = List<Place>.from(fallback);
+      if (location != null) {
+        fb.sort((Place a, Place b) => _distance(a, location).compareTo(_distance(b, location)));
+      }
+      return fb;
+    }
     
     // Try free providers first (Overpass + MapTiler + Photon + Nominatim)
     List<Place> free = <Place>[];
