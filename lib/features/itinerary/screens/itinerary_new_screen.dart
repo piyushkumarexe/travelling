@@ -307,11 +307,18 @@ class _ItineraryNewScreenState extends State<ItineraryNewScreen> {
           if (_previewing) ...<Widget>[
             const SizedBox(height: 20),
             SectionHeader(title: 'Your plan · ${_plan.length} day(s)'),
-            if (_plan.isNotEmpty && _plan.length > 0)
+            if (_plan.isEmpty)
+              const AppCard(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Plan is empty. Try regenerating with different details.'),
+                ),
+              ),
+            if (_plan.isNotEmpty)
               AppCard(
                 padding: const EdgeInsets.all(4),
                 child: DefaultTabController(
-                  length: _plan.length > 0 ? _plan.length : 1,
+                  length: _plan.length,
                   initialIndex: 0,
                   child: Column(
                     children: <Widget>[
