@@ -240,28 +240,38 @@ class FreeGeoClient {
     // sparse/failed Overpass response never hides what MapTiler/Photon/
     // Nominatim found, and vice-versa.
     final bool attraction = _isAttractionQuery(q, types);
+    // HARD BOUND: every provider is capped so a stalled Overpass mirror can
+    // never leave the search spinner running forever (reported: skeletons
+    // stuck indefinitely on "ts mishra university"). Slow-but-complete beats
+    // never-returning: on timeout the provider simply counts as skipped.
+    Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
+        f.timeout(const Duration(seconds: 12),
+            onTimeout: () => _ProviderResult.skipped('$name-timeout'));
+
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
-        _guard('overpass', () => _overpass(filters, near, radiusMeters))
+        bounded('overpass', _guard('overpass', () => _overpass(filters, near, radiusMeters)))
       else if (near != null && _nameQueryTokens(q).isNotEmpty)
         // LOCAL NAME RECALL: geocoders (MapTiler/Photon) often miss small
         // local places that ARE mapped in OSM ("TS Mishra University" in
         // Lucknow). A direct Overpass name-regex sweep around the real GPS
         // position finds them. This fixed the reported bug where only far
         // weak matches (Vilhelmina/Tustin) came back for a local query.
-        _guard('overpass-name', () => _overpassNameSearch(q, near))
+        bounded('overpass-name',
+            _guard('overpass-name', () => _overpassNameSearch(q, near)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('overpass')),
       if (attraction && near != null)
-        _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters))
+        bounded('wikipedia',
+            _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
       if (AppConfig.mapTilerConfigured)
-        _guard('maptiler', () => _maptilerSearch(q, near))
+        bounded('maptiler', _guard('maptiler', () => _maptilerSearch(q, near)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
-      _guard('photon', () => _photonSearch(q, near)),
-      _guard('nominatim', () => _nominatimSearch(q, near)),
+      bounded('photon', _guard('photon', () => _photonSearch(q, near))),
+      bounded('nominatim', _guard('nominatim', () => _nominatimSearch(q, near))),
     ]);
 
     List<Place> out = _mergeAndDedup(results);

@@ -107,7 +107,22 @@ class PlacesRepository {
       radiusMeters,
     );
     final List<Place>? cached = await SearchCache.read(cacheKey);
-    if (cached != null && cached.isNotEmpty) return cached;
+    if (cached != null && cached.isNotEmpty) {
+      // Cached lists were written by whatever ranking existed at write time.
+      // Re-apply local-first ranking + relevance so a stale or old-format
+      // entry can never put far-away noise above the user's own area.
+      if (types == null) {
+        final List<Place> ranked =
+            FreeGeoClient.rankSuggestions(cached, query.trim(), near);
+        final List<Place> relevant =
+            PlaceRanking.filterRelevant(ranked, query.trim(), near);
+        if (relevant.isNotEmpty) return relevant;
+        // Cached entry is entirely irrelevant now (e.g. written by an old
+        // build) — fall through to a fresh network search instead.
+      } else {
+        return cached;
+      }
+    }
     try {
       final List<Place> result = await _free.searchPlaces(
         query,

@@ -309,15 +309,20 @@ class EmergencySmsService {
             detail: 'SEND_SMS permission is not granted.');
       }
       if (e.code == 'send_failed') {
-        // The OS gave the EXACT reason (e.g. "IllegalArgumentException: No
-        // service", "Invalid destinationAddress"). Show it verbatim — never
-        // a generic fake status.
+        final String reason = e.message ?? 'unknown OS reason';
+        final bool securityBlocked = reason.contains('SecurityException');
         await _setStatus(EmergencySmsStatus.failed);
         return EmergencySmsResult(
             status: EmergencySmsStatus.failed,
-            detail:
-                'Android refused the SMS send (${e.message ?? 'unknown OS '
-                'reason'}). This is the exact OS/radio error.');
+            detail: securityBlocked
+                ? 'Blocked by your phone\'s security layer '
+                    '($reason). Fix: open Android Settings → Apps → this app '
+                    '→ Permissions → SMS = Allow (on Xiaomi/MIUI also enable '
+                    'it in Security app → Permissions), then send the test '
+                    'again. We retried on both SIM managers before showing '
+                    'this.'
+                : 'Android refused the SMS send ($reason). This is the exact '
+                    'OS/radio error.');
       }
       queued = false;
     } catch (_) {

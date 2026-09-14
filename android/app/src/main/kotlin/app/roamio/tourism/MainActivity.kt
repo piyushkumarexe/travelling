@@ -260,6 +260,26 @@ class MainActivity : FlutterActivity() {
             Intent("$ref.delivered").setPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        try {
+            return sendOn(sms, destination, body, sentIntent, deliveryIntent)
+        } catch (e: SecurityException) {
+            // OEM / Android-14 security layer blocking the subscription-
+            // specific send (getGroupIdLevel1 class). The BASE manager is a
+            // different code path and often still works.
+            val base = baseSmsManager() ?: throw e
+            if (base === sms) throw e
+            return sendOn(base, destination, body, sentIntent, deliveryIntent)
+        }
+    }
+
+    /** One honest send attempt — exceptions propagate verbatim. */
+    private fun sendOn(
+        sms: SmsManager,
+        destination: String,
+        body: String,
+        sentIntent: PendingIntent,
+        deliveryIntent: PendingIntent
+    ): Boolean {
         val parts = sms.divideMessage(body)
         if (parts.size <= 1) {
             // NO swallow: an exception here is the EXACT technical reason
@@ -293,21 +313,36 @@ class MainActivity : FlutterActivity() {
         return if (link.isNotEmpty()) "$head\n$link" else head
     }
 
-    private fun smsManager(): SmsManager? {
+    /** The DEFAULT (no-subscription) manager — works on every Android version. */
+    private fun baseSmsManager(): SmsManager? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val base = getSystemService(SmsManager::class.java) ?: return null
-            // Dual-SIM: the default SMS subscription's manager is the one the
-            // radio accepts; the base manager can throw on the wrong sub.
-            val subId = android.telephony.SubscriptionManager
-                .getDefaultSmsSubscriptionId()
-            return if (subId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-                SmsManager.getSmsManagerForSubscriptionId(subId) // static, API 22+
-            } else {
+            getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
+        }
+
+    /**
+     * Preferred manager: the default SMS subscription's (dual-SIM — the radio
+     * accepts sends only on that sub). Some OEM/Android-14 builds throw
+     * SecurityException (getGroupIdLevel1) on the subscription-specific send
+     * even with SEND_SMS granted — the callers therefore fall back to
+     * [baseSmsManager] when a SecurityException comes out of this one.
+     */
+    private fun smsManager(): SmsManager? {
+        val base = baseSmsManager() ?: return null
+        val subId = android.telephony.SubscriptionManager
+            .getDefaultSmsSubscriptionId()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            subId != android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID
+        ) {
+            return try {
+                SmsManager.getSmsManagerForSubscriptionId(subId)
+            } catch (_: Exception) {
                 base
             }
         }
-        @Suppress("DEPRECATION")
-        return SmsManager.getDefault()
+        return base
     }
 
     override fun onRequestPermissionsResult(
