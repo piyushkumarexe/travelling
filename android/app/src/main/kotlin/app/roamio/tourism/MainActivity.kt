@@ -369,18 +369,35 @@ class MainActivity : FlutterActivity() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Queues the message with the radio. True when handed off successfully. */
+    /** Queues the message with the radio. True when handed off successfully.
+     *  Handles the Xiaomi/Android-14 SecurityException(getGroupIdLevel1) by
+     *  falling back from subscription-specific to base SmsManager. */
     private fun queueSms(destination: String, body: String): Boolean {
         val sms: SmsManager? = smsManager()
         if (sms == null) return false
-        val parts = sms.divideMessage(body)
         return try {
+            val parts = sms.divideMessage(body)
             if (parts.size <= 1) {
                 sms.sendTextMessage(destination, null, body, null, null)
             } else {
                 sms.sendMultipartTextMessage(destination, null, parts, null, null)
             }
             true
+        } catch (e: SecurityException) {
+            // Subscription-specific manager blocked by OEM security layer.
+            val base = baseSmsManager()
+            if (base == null || base === sms) return false
+            try {
+                val parts = base.divideMessage(body)
+                if (parts.size <= 1) {
+                    base.sendTextMessage(destination, null, body, null, null)
+                } else {
+                    base.sendMultipartTextMessage(destination, null, parts, null, null)
+                }
+                true
+            } catch (_: Exception) {
+                false
+            }
         } catch (_: Exception) {
             false
         }

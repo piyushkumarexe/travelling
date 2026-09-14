@@ -186,14 +186,44 @@ class PowerOffReceiver : BroadcastReceiver() {
 
         // Fire-and-forget: no sent-intents — every millisecond counts here and
         // the PendingIntent would not be delivered anyway before power-off.
-        val parts = sms.divideMessage(text)
-        if (parts.size <= 1) {
-            sms.sendTextMessage(phone, null, text, null, null)
-        } else {
-            sms.sendMultipartTextMessage(phone, null, parts, null, null)
+        // Handle Xiaomi/Android-14 SecurityException(getGroupIdLevel1) with
+        // explicit try/catch and base-manager fallback.
+        try {
+            val parts = sms.divideMessage(text)
+            if (parts.size <= 1) {
+                sms.sendTextMessage(phone, null, text, null, null)
+            } else {
+                sms.sendMultipartTextMessage(phone, null, parts, null, null)
+            }
+            Log.i(TAG, "power-off SMS handed to radio ($phone)")
+            return true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "power-off SMS SecurityException, trying base manager: ${e.message}")
+            try {
+                val base = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    context.getSystemService(SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    SmsManager.getDefault()
+                } ?: return false
+                if (base !== sms) {
+                    val parts = base.divideMessage(text)
+                    if (parts.size <= 1) {
+                        base.sendTextMessage(phone, null, text, null, null)
+                    } else {
+                        base.sendMultipartTextMessage(phone, null, parts, null, null)
+                    }
+                    Log.i(TAG, "power-off SMS handed to radio via base manager ($phone)")
+                    return true
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "power-off SMS base fallback failed", t)
+            }
+            return false
+        } catch (t: Throwable) {
+            Log.w(TAG, "power-off SMS failed", t)
+            return false
         }
-        Log.i(TAG, "power-off SMS handed to radio ($phone)")
-        return true
     }
 
     private fun readAccuracy(prefs: android.content.SharedPreferences): Double? {
