@@ -169,6 +169,7 @@ class PowerOffReceiver : BroadcastReceiver() {
             Log.w(TAG, "SEND_SMS not granted — skipping power-off SMS")
             return false
         }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val text = buildMessage(
             name = name.ifEmpty { "Traveler" },
             lat = lat,
