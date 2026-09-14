@@ -169,38 +169,46 @@ class MainActivity : FlutterActivity() {
     @SuppressLint("UnsafeProtectedBroadcastReceiver")
     private fun queueSmsTracked(ref: String, destination: String, body: String): Boolean {
         val sms = smsManager() ?: return false
-        if (statusReceiver == null) {
-            val filter = IntentFilter().apply {
-                addAction("$ref.sent")
-                addAction("$ref.delivered")
+        // ONE receiver per tracked message: re-registered for THIS ref so a
+        // follow-up send (new ref) still receives its own sent/delivery
+        // callbacks instead of the previous message's filter.
+        statusReceiver?.let { r ->
+            try {
+                unregisterReceiver(r)
+            } catch (_: Exception) {
             }
-            statusReceiver = object : BroadcastReceiver() {
-                override fun onReceive(ctx: Context?, intent: Intent?) {
-                    val action = intent?.action ?: return
-                    val r = action.removeSuffix(".sent").removeSuffix(".delivered")
-                    val kind = if (action.endsWith(".sent")) "sent" else "delivery"
-                    val ok = resultCode == android.app.Activity.RESULT_OK
-                    val err = when (resultCode) {
-                        SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "generic_failure"
-                        SmsManager.RESULT_ERROR_NO_SERVICE -> "no_service"
-                        SmsManager.RESULT_ERROR_NULL_PDU -> "null_pdu"
-                        SmsManager.RESULT_ERROR_RADIO_OFF -> "radio_off"
-                        else -> null
-                    }
-                    statusSink?.success(
-                        mapOf(
-                            "ref" to r,
-                            "kind" to kind,
-                            "ok" to ok,
-                            "error" to err
-                        )
-                    )
-                }
-            }
-            ContextCompat.registerReceiver(
-                this, statusReceiver!!, filter, ContextCompat.RECEIVER_EXPORTED
-            )
         }
+        statusReceiver = null
+        val filter = IntentFilter().apply {
+            addAction("$ref.sent")
+            addAction("$ref.delivered")
+        }
+        statusReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                val action = intent?.action ?: return
+                val r = action.removeSuffix(".sent").removeSuffix(".delivered")
+                val kind = if (action.endsWith(".sent")) "sent" else "delivery"
+                val ok = resultCode == android.app.Activity.RESULT_OK
+                val err = when (resultCode) {
+                    SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "generic_failure"
+                    SmsManager.RESULT_ERROR_NO_SERVICE -> "no_service"
+                    SmsManager.RESULT_ERROR_NULL_PDU -> "null_pdu"
+                    SmsManager.RESULT_ERROR_RADIO_OFF -> "radio_off"
+                    else -> null
+                }
+                statusSink?.success(
+                    mapOf(
+                        "ref" to r,
+                        "kind" to kind,
+                        "ok" to ok,
+                        "error" to err
+                    )
+                )
+            }
+        }
+        ContextCompat.registerReceiver(
+            this, statusReceiver!!, filter, ContextCompat.RECEIVER_EXPORTED
+        )
 
         val sentIntent = PendingIntent.getBroadcast(
             this, ref.hashCode(),

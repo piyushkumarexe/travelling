@@ -6,16 +6,14 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' show Position;
 import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart';
-
-import '../../../core/network/osrm_client.dart' show RouteInfo;
+import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/itinerary.dart';
-import '../../../data/models/places.dart' show Place;
+import '../../../data/models/places.dart' show Place, RouteInfo;
 import '../../../data/models/trip_plan.dart';
 import '../engine/decision_replay_store.dart';
 import '../engine/engine_models.dart';
@@ -372,7 +370,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
               onPressed: () async {
                 await _c.settings.resetBehaviour();
                 if (mounted) setState(() {});
-              }),
+              },
               child: const Text('Reset', style: TextStyle(fontSize: 12)),
             ),
           ]),
@@ -437,20 +435,25 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
           FilledButton(
             onPressed: () {
               final int v = int.tryParse(amountCtrl.text.trim()) ?? 60;
-              Navigator.pop(
-                  ctx,
-                  TripIntelligenceEngine.simulate(
-                    _plan,
-                    ScenarioSpec(
-                      type: type,
-                      delayMinutes: v,
-                      dayIndex: 0,
-                      removeDayIndex: 0,
-                      removeItemIndex: (v - 1).clamp(0, _plan.isEmpty ? 0 : _plan.first.items.length - 1),
-                      availableMinutesPerDay: v * 60,
-                      budgetPct: v.clamp(10, 150),
-                    ),
-                  ));
+              // One parameter per scenario type — no cross-contamination.
+              final ScenarioSpec spec = switch (type) {
+                ScenarioType.reducedTime => ScenarioSpec(
+                    type: type, availableMinutesPerDay: v.clamp(60, 840)),
+                ScenarioType.reducedBudget =>
+                  ScenarioSpec(type: type, budgetPct: v.clamp(10, 150)),
+                ScenarioType.removedStop => ScenarioSpec(
+                    type: type,
+                    removeDayIndex: 0,
+                    removeItemIndex: _plan.isEmpty ||
+                            _plan.first.items.isEmpty
+                        ? 0
+                        : (v - 1) >= _plan.first.items.length
+                            ? _plan.first.items.length - 1
+                            : v - 1,
+                  ),
+                _ => ScenarioSpec(type: type, delayMinutes: v),
+              };
+              Navigator.pop(ctx, TripIntelligenceEngine.simulate(_plan, spec));
             },
             child: const Text('Simulate'),
           ),
@@ -500,6 +503,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
                           type: ScenarioType.custom,
                           delayMinutes:
                               int.tryParse(ctrl.text.trim()) ?? 45))),
+              child: const Text('Simulate recovery')),
         ],
       ),
     );
@@ -681,7 +685,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w800,
                         fontSize: 13)),
                 const SizedBox(height: 4),
-                for (final int a in g.affectedBy(selected, 45))
+                for (final int a in g.affectedBy(selected!, 45))
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Text(
@@ -690,7 +694,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
                         style: const TextStyle(fontSize: 12,
                             color: AppTheme.warning)),
                   ),
-                if (g.affectedBy(selected, 45).isEmpty)
+                if (g.affectedBy(selected!, 45).isEmpty)
                   const Text('Nothing downstream in this day.',
                       style: TextStyle(fontSize: 12)),
               ],
@@ -803,14 +807,12 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
         return;
       }
       final Place p = results.first;
-      final RouteInfo? route = await _c.placesRepository.route(
+      final RouteInfo route = await _c.placesRepository.route(
         LatLng(me.latitude, me.longitude),
         LatLng(p.lat, p.lng),
       );
       final int nowMin = DateTime.now().hour * 60 + DateTime.now().minute;
-      final int? legMin = route == null
-          ? null
-          : (route.durationSeconds / 60).round();
+      final int legMin = (route.durationSeconds / 60).round();
       final List<WhyNotReason> reasons = TripIntelligenceEngine.whyNot(
         placeName: p.name,
         legMinutes: legMin,
@@ -832,7 +834,11 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
               if (p.contextLine.isNotEmpty)
                 Text(p.contextLine, style: Theme.of(ctx).textTheme.bodySmall),
               const SizedBox(height: 8),
-              Text(TripIntelligenceEngine.timeToEnjoyment(legMin),
+              Text(
+                  route.isApproximate
+                      ? 'Travel ~$legMin min (straight-line estimate — no road '
+                          'route available right now); visit duration unknown.'
+                      : TripIntelligenceEngine.timeToEnjoyment(legMin),
                   style: const TextStyle(fontSize: 12.5)),
               const SizedBox(height: 8),
               for (final WhyNotReason r in reasons)
@@ -980,7 +986,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
       detail: '${trip.destination}: plan updated via Travel Intelligence.',
       tripId: trip.id,
     );
-    _c.settings.recordBehaviour(
+    await _c.settings.recordBehaviour(
         packedness: days.fold<int>(0, (int a, ItineraryDay d) => a + d.items.length) /
             (days.isEmpty ? 1 : days.length));
     if (mounted) {

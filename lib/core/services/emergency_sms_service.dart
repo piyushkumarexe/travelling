@@ -149,7 +149,7 @@ class EmergencySmsService {
     required bool fresh,
   }) {
     final DateTime now = DateTime.now();
-    final String two(int n) => n.toString().padLeft(2, '0');
+    String two(int n) => n.toString().padLeft(2, '0');
     final String ts =
         '${now.day}/${now.month}/${now.year} ${two(now.hour)}:${two(now.minute)}';
     final int ageMin =
@@ -263,7 +263,7 @@ class EmergencySmsService {
 
     final Completer<EmergencySmsResult> done =
         Completer<EmergencySmsResult>();
-    _sub?.cancel();
+    unawaited(_sub?.cancel());
     _sub = _statusEvents.listen((Map<String, dynamic> e) {
       if (e['ref'] != ref || done.isCompleted) return;
       final String kind = e['kind'] as String? ?? '';
@@ -284,10 +284,14 @@ class EmergencySmsService {
                   : 'The radio rejected the SMS (${error ?? 'generic'}).'));
         }
       } else if (kind == 'delivery' && ok) {
+        // Delivery often arrives after the sent callback — always persist
+        // the upgrade; only complete the UI result if nothing reported yet.
         unawaited(_setStatus(EmergencySmsStatus.delivered));
-        done.complete(const EmergencySmsResult(
-            status: EmergencySmsStatus.delivered,
-            detail: 'Carrier confirmed delivery.'));
+        if (!done.isCompleted) {
+          done.complete(const EmergencySmsResult(
+              status: EmergencySmsStatus.delivered,
+              detail: 'Carrier confirmed delivery.'));
+        }
       }
     });
 

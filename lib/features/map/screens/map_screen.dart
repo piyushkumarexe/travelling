@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/app_config.dart';
+import '../../../core/network/free_geo_client.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/utils/geo.dart';
@@ -17,7 +18,6 @@ import '../../../core/widgets/live_share_banner.dart';
 import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/incident.dart';
-import '../../../core/network/free_geo_client.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';

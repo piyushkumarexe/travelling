@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/emergency_sms_service.dart';
 import '../../../core/services/geofence_service.dart';
 import '../../../core/services/safety_engine.dart';
+import '../../../core/services/settings_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
@@ -19,8 +21,6 @@ import '../../../core/widgets/state_views.dart';
 import '../../../data/models/emergency_event.dart';
 import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
-import '../../../core/services/emergency_sms_service.dart';
-import '../../../core/services/settings_service.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/weather.dart';
@@ -811,6 +811,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
       return;
     }
     final bool granted = await _c.emergencySmsService.requestSendPermission();
+    if (!mounted) return;
     if (!granted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('SEND_SMS permission denied — the feature cannot '

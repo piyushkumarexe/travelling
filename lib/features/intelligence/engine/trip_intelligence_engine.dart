@@ -130,7 +130,7 @@ class TripIntelligenceEngine {
     int prev = -1;
     for (int i = 0; i < day.items.length; i++) {
       final ItineraryItem it = day.items[i];
-      final int original = timeToMin(it.time);
+      final int? original = timeToMin(it.time);
       int t = (original ?? 0) + shift;
       if (prev >= 0 && t < prev) t = prev; // never overlap
       if (t >= 23 * 60 + 30 && i > 0) {
@@ -238,7 +238,6 @@ class TripIntelligenceEngine {
     int overlaps = 0;
     int totalGaps = 0;
     int gapDays = 0;
-    int overloadDays = 0;
     final List<String> tightNames = <String>[];
 
     for (final ItineraryDay d in plan) {
@@ -247,7 +246,6 @@ class TripIntelligenceEngine {
           if (timeToMin(i.time) case final int t) t,
       ]..sort();
       if (times.length > 6) {
-        overloadDays++;
         factors.add(RobustnessFactor(
             'Overloaded day ${d.day}',
             -8,
@@ -262,7 +260,7 @@ class TripIntelligenceEngine {
         if (gap < 20) {
           tight++;
           if (tightNames.length < 3) {
-            tightNames.add('${minToTime(times[i - 1)}→${minToTime(times[i])}');
+            tightNames.add('${minToTime(times[i - 1])}→${minToTime(times[i])}');
           }
           if (gap <= 0) overlaps++;
         }
@@ -564,7 +562,7 @@ class TripIntelligenceEngine {
         satisfied += likes;
         if (likes == 0 && dislikes > 0 && members.length > 1) {
           dropped.add('Day ${d.day + 1}: ${d.items[i].title} — nobody '
-              'selected it and ${dislikes} member(s) dislike it.');
+              'selected it and $dislikes member(s) dislike it.');
           d.items.removeAt(i);
         } else if (dislikes > 0 && likes > 0) {
           compromises.add('"${d.items[i].title}" kept: $likes like(s) vs '
@@ -645,6 +643,6 @@ class TripIntelligenceEngine {
       return 'Travel time unknown (route unavailable) · visit duration '
           'unknown';
     }
-    return 'Travel ${legMinutes} min (OSRM) · visit duration unknown';
+    return 'Travel $legMinutes min (OSRM) · visit duration unknown';
   }
 }
