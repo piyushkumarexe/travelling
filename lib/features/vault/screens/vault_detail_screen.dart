@@ -472,13 +472,12 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
       await _c.vaultService.deleteDocument(d);
       if (!mounted) return;
       Navigator.of(context).pop(true);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'The attached file could not be deleted from the server, so the '
-              'entry was kept to avoid leaving an orphaned file. Check your '
-              'internet connection and try again.')));
+              'The entry was kept (nothing was half-deleted). '
+              '${VaultService.describeVaultError(e)}')));
     }
   }
 

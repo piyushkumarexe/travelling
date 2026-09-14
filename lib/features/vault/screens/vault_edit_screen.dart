@@ -292,13 +292,11 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
         if (!mounted || !context.mounted) return;
         Navigator.of(context).pop(true);
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not save: the document metadata could not be synced. '
-            'Check your internet connection — it will be queued and retried '
-            'automatically by the app when you are back online.';
+        _error = VaultService.describeVaultError(e);
       });
     }
   }

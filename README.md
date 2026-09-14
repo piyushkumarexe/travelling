@@ -408,6 +408,7 @@ One secure, private place for every travel document and booking — works for do
 - **Main screen**: upcoming bookings timeline (real saved dates only), documents expiring soon, recent entries, trips with documents, search (title / PNR / booking ID / airline / hotel / trip name), filter by type and by trip.
 - **Trip linking**: documents reference the existing Trip Planner `tripId` — no trip data is duplicated.
 - **Expiry reminders**: computed from the real current date (Expired / Expires today / Expires in X days / Valid) plus local notifications at 90 / 30 / 7 / 1 days before expiry through the existing `NotificationService` (only for documents that have an expiry date; reminders self-heal on every app start).
+- **⚠️ Deploy the rules once** (`bash scripts/deploy-rules.sh` from the project, owner login required) — until then vault reads/saves fail with a permission error by design; the app shows this exact instruction.
 - **Storage**: metadata in Firestore `users/{uid}/travelDocuments/{documentId}` (owner-only rules), files in Firebase Storage `users/{uid}/travelDocuments/{documentId}/file` (owner-only, PDF/image only, 10 MB cap). Firestore never stores the file itself. Old files are deleted/replaced in place — no orphans. Uploads show progress, can be cancelled and retried to the same path (stable IDs — retries can't duplicate).
 - **Privacy**: no document contents, numbers, PNRs or file URLs are logged or sent to analytics; files are never public.
 - **OCR**: this project has no OCR capability, so nothing pretends to read documents — entry is manual and verified by you.
@@ -417,7 +418,7 @@ One secure, private place for every travel document and booking — works for do
 
 **Round 2 update (2026-09-14):**
 - **Direct app hand-off:** Android `<queries>` package visibility added for Uber/Ola/Rapido/IRCTC, and the launch cascade now tries the provider's **native app scheme first** — `uber://?action=setPickup…` (prefills pickup & drop, per developer.uber.com "Standard Deep Links") and `olacabs://app/launch` (per developers.olacabs.com), then direct app launch, then the prefilled https web flow, then the Play Store. If the app is installed it opens the app — no more Play-Store detour.
-- **Approx. fare comparison:** with a route preview, the ride screen shows a clearly-labelled **ESTIMATE** band per provider (₹low–₹high, cheapest first) computed ONLY from public rate cards (Maharashtra STA bike-taxi ₹15 + ₹10.27/km; Pune govt cab ₹37 + ₹25/km; 2026 published comparisons). Surge/time charges/tolls excluded; live price is always the provider's.
+- **No fares:** Tourism shows no fare estimates — without partner APIs any number would be invented, so live prices come only from the provider app.
 
 Home card "Travel Booking Hub — Book rides, flights, trains, buses, hotels
 and activities." (route `/booking`).

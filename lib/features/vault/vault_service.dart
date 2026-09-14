@@ -11,6 +11,7 @@
 import 'dart:async' show StreamSubscription, unawaited;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_storage/firebase_storage.dart' show Task;
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
@@ -83,10 +84,9 @@ class VaultService extends ChangeNotifier {
         notifyListeners();
         refreshReminders();
       },
-      onError: (Object _) {
+      onError: (Object e) {
         _loading = false;
-        _lastError = 'Could not load your documents. Check your internet '
-            'connection and try again.';
+        _lastError = describeVaultError(e);
         notifyListeners();
       },
     );
@@ -242,6 +242,29 @@ class VaultService extends ChangeNotifier {
     return DateTime(expiry.year, expiry.month, expiry.day)
         .difference(DateTime(reminderAt.year, reminderAt.month, reminderAt.day))
         .inDays;
+  }
+
+  // ---------------- errors ----------------
+
+  /// Honest, specific text for the known failure modes. The most common one
+  /// (permission-denied) means the DEPLOYED Firebase rules predate this
+  /// feature — the repo rules must be deployed once by the account owner.
+  static String describeVaultError(Object e) {
+    if (e is FirebaseException && e.code == 'permission-denied') {
+      return 'The server security rules for the Document Vault are not '
+          'deployed yet, so this device may not read or save vault entries. '
+          'Run "bash scripts/deploy-rules.sh" from the project once — no '
+          'reinstall is needed.';
+    }
+    if (e is FirebaseException && e.code == 'unavailable') {
+      return 'Could not reach the document service. Check your internet '
+          'connection — changes made offline sync automatically.';
+    }
+    if (e is FirebaseException && e.code == 'unauthenticated') {
+      return 'Your session expired. Sign in again to use the vault.';
+    }
+    return 'Something went wrong while syncing your documents. Check your '
+        'internet connection and try again.';
   }
 
   // ---------------- trip helpers ----------------
