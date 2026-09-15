@@ -22,17 +22,7 @@ class TripPlannerScreen extends StatefulWidget {
 }
 
 class _TripPlannerScreenState extends State<TripPlannerScreen> {
-  AppContainer? _cachedContainer;
-  AppContainer get _c {
-    try {
-      final c = AppScope.of(context);
-      _cachedContainer = c;
-      return c;
-    } catch (_) {
-      if (_cachedContainer != null) return _cachedContainer!;
-      throw Exception('AppScope not available');
-    }
-  }
+  AppContainer get _c => AppScope.of(context);
 
   final TextEditingController _destination = TextEditingController();
 

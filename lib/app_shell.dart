@@ -47,11 +47,9 @@ class _AppShellState extends State<AppShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    try {
-      final AppContainer c = AppScope.of(context);
-      _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
-      _syncGeofence(c);
-    } catch (_) {}
+    final AppContainer c = AppScope.of(context);
+    _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
+    _syncGeofence(c);
   }
 
   void _syncGeofence(AppContainer c) {
