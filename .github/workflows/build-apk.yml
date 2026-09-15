@@ -24,12 +24,6 @@ jobs:
           channel: stable  # latest stable (2026 deps need a modern SDK)
           cache: true
 
-      - name: Disable native assets for stable Flutter builds
-        # The current stable Dart SDK does not expose the Architecture.arm64e
-        # member referenced by objective_c 9.6.1. This APK does not use native
-        # Dart assets, so keep the native-assets hook disabled in CI.
-        run: flutter config --no-enable-native-assets || true
-
       - name: Install dependencies
         run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
 
@@ -70,7 +64,6 @@ jobs:
 
       - name: Run tests
         run: |
-          flutter config --no-enable-native-assets || true
           set -o pipefail; flutter test --no-pub 2>&1 | tee test.log || echo "Tests failed but continuing"
           exit 0
 
@@ -104,9 +97,7 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          flutter config --no-enable-native-assets || true
-          flutter pub get
+        run: flutter pub get
 
       - name: Restore upload keystore (permanent signing key)
         env:
@@ -166,8 +157,8 @@ jobs:
           if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
             DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
           fi
-          # Fix objective_c native assets failure (arm64e member not found) - disable native assets
-          flutter config --no-enable-native-assets || true
+          # objective_c is pinned in pubspec.yaml to the stable-compatible
+          # release, so its native Dart assets can build normally.
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
           set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
