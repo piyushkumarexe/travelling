@@ -183,6 +183,21 @@ jobs:
           tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
+      - name: Post failure to PR comment
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Posting failure tail to PR..."
+          TAIL=$(tail -n 150 gradle.log | sed 's/`/\\`/g' | head -c 50000)
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            gh pr comment ${{ github.event.pull_request.number }} --body "### Build failed (run ${{ github.run_id }})
+\`\`\`
+$TAIL
+\`\`\`" || true
+          fi
+          echo "$TAIL"
+
       - name: Upload gradle log on failure
         if: failure()
         uses: actions/upload-artifact@v4
