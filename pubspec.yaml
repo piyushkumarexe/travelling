@@ -36,6 +36,13 @@ dependencies:
   url_launcher: ^6.3.1
   flutter_local_notifications: ^17.2.3
 
+dependency_overrides:
+  # objective_c 9.6.1 currently references Dart's Architecture.arm64e,
+  # which is not available in the stable Flutter SDK used by CI. Keep the
+  # compatible 9.6.0 release while path_provider_foundation still gets the
+  # newer APIs it needs.
+  objective_c: 9.6.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -24,6 +24,11 @@ jobs:
           channel: stable  # latest stable (2026 deps need a modern SDK)
           cache: true
 
+      - name: Disable native assets for stable Android builds
+        # objective_c's native asset hook can reference Dart APIs newer than
+        # the stable Flutter SDK. Native assets are not needed by this APK.
+        run: flutter config --no-enable-native-assets || true
+
       - name: Install dependencies
         run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
 
@@ -95,6 +100,11 @@ jobs:
         with:
           channel: stable  # latest stable (2026 deps need a modern SDK)
           cache: true
+
+      - name: Disable native assets for stable Android builds
+        # objective_c's native asset hook can reference Dart APIs newer than
+        # the stable Flutter SDK. Native assets are not needed by this APK.
+        run: flutter config --no-enable-native-assets || true
 
       - name: Install dependencies
         run: flutter pub get
