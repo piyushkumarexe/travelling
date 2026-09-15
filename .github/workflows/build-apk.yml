@@ -169,42 +169,16 @@ jobs:
       - name: Surface build errors as annotations
         if: failure()
         run: |
-          echo "=== Full gradle.log tail (200) ==="
-          tail -n 200 gradle.log || true
+          echo "=== Full gradle.log tail (500) ==="
+          tail -n 500 gradle.log || true
           echo "=== Grep What went wrong ==="
-          grep -a -A 15 "What went wrong" gradle.log | head -n 60 || true
-          echo "=== Grep e: FAILED error ==="
-          grep -a -E "e: |FAILED|error:|Exception|Caused by" gradle.log | tail -n 100 || true
-          # Force annotations with tail content
-          TAIL=$(tail -n 80 gradle.log | sed 's/%/%25/g; s/\r//g' | tr '\n' ';' | cut -c1-4000)
-          echo "::error title=gradle-tail::$TAIL"
-          grep -a -A 8 "What went wrong" gradle.log | head -n 20 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g' | cut -c1-1000)
-            echo "::error title=gradle-what::$MSG"
-          done
-          grep -a -E "^e: |FAILED|error: " gradle.log | head -n 12 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g' | cut -c1-1000)
-            echo "::error title=gradle-e::$MSG"
-          done
-
-      - name: Post failure log to step summary and PR comment
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "## Build failure tail" >> $GITHUB_STEP_SUMMARY
+          grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
+          echo "=== Grep FAILED/error ==="
+          grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
+          echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 300 gradle.log >> $GITHUB_STEP_SUMMARY || true
+          tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
-          # Try to post comment to PR
-          if [ -n "${{ github.event.pull_request.number }}" ]; then
-            echo "Posting comment to PR ${{ github.event.pull_request.number }}"
-            gh pr comment ${{ github.event.pull_request.number }} --body "Build failed, tail:
-
-\`\`\`
-$(tail -n 100 gradle.log)
-\`\`\`" || true
-          fi
 
       - name: Upload gradle log on failure
         if: failure()
