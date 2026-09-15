@@ -64,10 +64,8 @@ jobs:
 
       - name: Run tests
         run: |
-          # Disable native assets to avoid objective_c build failure on Linux (known Flutter issue)
           flutter config --no-enable-native-assets || true
-          set -o pipefail; flutter test --no-pub 2>&1 | tee test.log || echo "Tests failed but continuing - native assets issue is known and not blocking APK build"
-          # Always pass this step - APK build is what matters, tests are best-effort
+          set -o pipefail; flutter test --no-pub 2>&1 | tee test.log || echo "Tests failed but continuing"
           exit 0
 
       - name: Surface test failures as annotations
@@ -94,9 +92,7 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v4
-        # Continue on failure - flutter-action already provides SDK
-        continue-on-error: true
+        uses: android-actions/setup-android@v3
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
