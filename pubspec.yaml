@@ -1,7 +1,7 @@
 name: yatrawise
-description: "YatraWise - Smart Tourism & Safety Assistant for Android."
+description: "Tourism - Smart Tourism & Safety Assistant for Android."
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.8+9
 
 environment:
   sdk: ">=3.5.0 <5.0.0"
@@ -21,8 +21,10 @@ dependencies:
   # --- Google Sign-In ---
   google_sign_in: ^6.2.2
 
-  # --- Maps & location (real Google Maps SDK, real GPS) ---
+  # --- Maps & location (real GPS + MapTiler tiles, no Google Maps key) ---
   google_maps_flutter: ^2.12.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.9.1
   geolocator: ^13.0.1
 
   # --- Navigation, networking, UI ---
@@ -35,6 +37,25 @@ dependencies:
   image_picker: ^1.1.2
   url_launcher: ^6.3.1
   flutter_local_notifications: ^17.2.3
+  flutter_markdown: ^0.7.4+3
+  shared_preferences: ^2.3.2
+
+  # --- Travel Document & Booking Vault: PDF picking + reminder scheduling ---
+  file_picker: ^8.1.7
+  timezone: ^0.9.4
+
+  # --- 3D navigation map (MapLibre GL: tilt/3D buildings, no API key) ---
+  maplibre_gl: ">=0.25.0 <0.27.0"
+
+  # --- Voice assistant (speech-to-text input + text-to-speech replies) ---
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
+
+dependency_overrides:
+  # Fix: objective_c 9.6.1 fails with arm64e member not found on Flutter stable 3.47.4
+  # Pin to 7.0.0 which doesn't use native assets hook that breaks
+  objective_c: 5.0.0
+  ffi: 2.1.4
 
 dev_dependencies:
   flutter_test:

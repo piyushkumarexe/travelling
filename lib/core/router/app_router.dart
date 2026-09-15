@@ -2,27 +2,49 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app_shell.dart';
+import '../../data/models/places.dart';
 import '../../features/admin/screens/admin_screen.dart';
 import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/autopilot/screens/autopilot_screen.dart';
+import '../../features/booking/booking_models.dart';
+import '../../features/booking/screens/booking_hub_screen.dart';
+import '../../features/booking/screens/ride_booking_screen.dart';
+import '../../features/booking/screens/travel_booking_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
 import '../../features/eco/screens/eco_screen.dart';
+import '../../features/essentials/screens/essentials_screen.dart';
+import '../../features/expenses/expense_models.dart';
+import '../../features/expenses/screens/add_expense_screen.dart';
+import '../../features/expenses/screens/expense_detail_screen.dart';
+import '../../features/expenses/screens/expense_guard_screen.dart';
+import '../../features/expenses/screens/expense_history_screen.dart';
 import '../../features/explore/screens/explore_screen.dart';
 import '../../features/explore/screens/place_detail_screen.dart';
+import '../../features/guardian/screens/payment_guardian_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/incidents/screens/incident_detail_screen.dart';
 import '../../features/incidents/screens/incident_history_screen.dart';
 import '../../features/incidents/screens/report_incident_screen.dart';
+import '../../features/intelligence/screens/travel_intelligence_screen.dart';
 import '../../features/itinerary/screens/itinerary_detail_screen.dart';
 import '../../features/itinerary/screens/itinerary_list_screen.dart';
 import '../../features/itinerary/screens/itinerary_new_screen.dart';
 import '../../features/map/screens/map_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
+import '../../features/planner/screens/trip_planner_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
+import '../../features/route/screens/multi_stop_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
+import '../../features/trip/screens/live_trip_screen.dart';
+import '../../features/vault/screens/vault_detail_screen.dart';
+import '../../features/vault/screens/vault_edit_screen.dart';
+import '../../features/vault/screens/vault_screen.dart';
+import '../../features/vehicle/screens/vehicle_screen.dart';
+import '../../features/wallet/screens/wallet_screen.dart';
 import '../../features/weather/screens/weather_screen.dart';
 import '../state/app_container.dart';
 import '../state/auth_state.dart';
@@ -63,6 +85,63 @@ class AppRouter {
         builder: (BuildContext context, GoRouterState state) =>
             const LoginScreen(),
       ),
+      GoRoute(
+        path: '/autopilot',
+        builder: (BuildContext context, GoRouterState state) =>
+            const AutopilotScreen(),
+      ),
+      GoRoute(
+        path: '/expenses',
+        builder: (BuildContext context, GoRouterState state) =>
+            const ExpenseGuardScreen(),
+      ),
+      GoRoute(
+        path: '/booking',
+        builder: (BuildContext context, GoRouterState state) =>
+            const BookingHubScreen(),
+      ),
+      GoRoute(
+        path: '/booking/ride',
+        builder: (BuildContext context, GoRouterState state) =>
+            const RideBookingScreen(),
+      ),
+      GoRoute(
+        path: '/booking/travel',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          final String cat = extra is Map
+              ? (extra['category'] as String? ?? 'flight')
+              : 'flight';
+          final BookingCategory category = BookingCategory.values
+              .where((BookingCategory c) => c.name == cat)
+              .firstOrNull ?? BookingCategory.flight;
+          return TravelBookingScreen(category: category);
+        },
+      ),
+      GoRoute(
+        path: '/expenses/add',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          Expense? editing;
+          if (extra is Map && extra['expense'] is Expense) {
+            editing = extra['expense'] as Expense;
+          }
+          return AddExpenseScreen(expense: editing);
+        },
+      ),
+      GoRoute(
+        path: '/expenses/detail',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          final String id = extra is Map ? (extra['id'] as String? ?? '') : '';
+          return ExpenseDetailScreen(expenseId: id);
+        },
+      ),
+      GoRoute(
+        path: '/expenses/history',
+        builder: (BuildContext context, GoRouterState state) =>
+            const ExpenseHistoryScreen(),
+      ),
       ShellRoute(
         builder: (BuildContext context, GoRouterState state, Widget child) =>
             AppShell(child: child),
@@ -82,6 +161,8 @@ class AppRouter {
             builder: (BuildContext context, GoRouterState state) {
               final Map<String, String> qp = state.uri.queryParameters;
               return MapScreen(
+                key: ValueKey<String>(
+                    'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}'),
                 initialLat: double.tryParse(qp['lat'] ?? ''),
                 initialLng: double.tryParse(qp['lng'] ?? ''),
                 initialName: qp['name'],
@@ -91,19 +172,61 @@ class AppRouter {
           GoRoute(
             path: '/safety',
             builder: (BuildContext context, GoRouterState state) =>
-                const SafetyScreen(),
+                SafetyScreen(
+              openSosContact:
+                  state.uri.queryParameters['addContact'] == '1',
+            ),
           ),
           GoRoute(
             path: '/profile',
             builder: (BuildContext context, GoRouterState state) =>
                 const ProfileScreen(),
           ),
+          GoRoute(
+            path: '/vehicle',
+            builder: (BuildContext context, GoRouterState state) =>
+                const VehicleScreen(),
+          ),
+          GoRoute(
+            path: '/essentials',
+            builder: (BuildContext context, GoRouterState state) =>
+                const EssentialsScreen(),
+          ),
+          GoRoute(
+            path: '/wallet',
+            builder: (BuildContext context, GoRouterState state) =>
+                const WalletScreen(),
+          ),
+          GoRoute(
+            path: '/planner',
+            builder: (BuildContext context, GoRouterState state) =>
+                const TripPlannerScreen(),
+          ),
+          GoRoute(
+            path: '/route/multi',
+            builder: (BuildContext context, GoRouterState state) =>
+                const MultiStopScreen(),
+          ),
+          GoRoute(
+            path: '/trip/live',
+            builder: (BuildContext context, GoRouterState state) {
+              final Map<String, String> qp = state.uri.queryParameters;
+              return LiveTripScreen(
+                destinationLat: double.tryParse(qp['lat'] ?? ''),
+                destinationLng: double.tryParse(qp['lng'] ?? ''),
+                destinationName: qp['name'],
+              );
+            },
+          ),
         ],
       ),
       GoRoute(
         path: '/explore/place/:placeId',
         builder: (BuildContext context, GoRouterState state) =>
-            PlaceDetailScreen(placeId: state.pathParameters['placeId'] ?? ''),
+            PlaceDetailScreen(
+          placeId: state.pathParameters['placeId'] ?? '',
+          place: state.extra is Place ? state.extra as Place : null,
+        ),
       ),
       GoRoute(
         path: '/assistant',
@@ -161,6 +284,11 @@ class AppRouter {
             const WeatherScreen(),
       ),
       GoRoute(
+        path: '/guardian',
+        builder: (BuildContext context, GoRouterState state) =>
+            const PaymentGuardianScreen(),
+      ),
+      GoRoute(
         path: '/notifications',
         builder: (BuildContext context, GoRouterState state) =>
             const NotificationsScreen(),
@@ -179,6 +307,29 @@ class AppRouter {
         path: '/admin/zone/:id',
         builder: (BuildContext context, GoRouterState state) =>
             ZoneEditorScreen(zoneId: state.pathParameters['id'] ?? ''),
+      ),
+      GoRoute(
+        path: '/intelligence',
+        builder: (BuildContext context, GoRouterState state) =>
+            const TravelIntelligenceScreen(),
+      ),
+      GoRoute(
+        path: '/vault',
+        builder: (BuildContext context, GoRouterState state) =>
+            const VaultScreen(),
+      ),
+      GoRoute(
+        path: '/vault/edit',
+        builder: (BuildContext context, GoRouterState state) =>
+            VaultEditScreen(
+                documentId: state.extra is String
+                    ? state.extra as String
+                    : null),
+      ),
+      GoRoute(
+        path: '/vault/detail',
+        builder: (BuildContext context, GoRouterState state) =>
+            VaultDetailScreen(documentId: state.extra as String),
       ),
     ],
   );
