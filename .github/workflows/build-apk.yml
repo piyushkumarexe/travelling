@@ -98,7 +98,9 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter config --no-enable-native-assets || true
+          flutter pub get
 
       - name: Restore upload keystore (permanent signing key)
         env:
@@ -167,18 +169,12 @@ jobs:
       - name: Surface build errors as annotations
         if: failure()
         run: |
-          echo "=== Full gradle.log tail (500) ==="
-          tail -n 500 gradle.log || true
+          echo "=== Full gradle.log tail (200) ==="
+          tail -n 200 gradle.log || true
           echo "=== Grep What went wrong ==="
-          grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
+          grep -a -A 15 "What went wrong" gradle.log | head -n 60 || true
           echo "=== Grep e: FAILED error ==="
-          grep -a -E "e: |FAILED|error:|Exception|Caused by|arm64e|objective_c" gradle.log | tail -n 150 || true
-          echo "## Build Failure Details" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "=== Pubspec overrides ==="
-          cat pubspec.yaml | grep -A3 dependency_overrides || true
+          grep -a -E "e: |FAILED|error:|Exception|Caused by" gradle.log | tail -n 100 || true
           # Force annotations with tail content
           TAIL=$(tail -n 80 gradle.log | sed 's/%/%25/g; s/\r//g' | tr '\n' ';' | cut -c1-4000)
           echo "::error title=gradle-tail::$TAIL"
