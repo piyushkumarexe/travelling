@@ -178,26 +178,10 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    try {
-      final String location = GoRouterState.of(context).matchedLocation;
-      final int index = _indexOf(location);
-      final bool onTab = _tabs.contains(location);
-      AppContainer c;
-      try {
-        c = AppScope.of(context);
-      } catch (_) {
-        return PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (bool didPop, Object? result) {
-            if (didPop) return;
-            _handleSystemBack();
-          },
-          child: Scaffold(
-            body: widget.child,
-            floatingActionButton: const SosFab(),
-          ),
-        );
-      }
+    final String location = GoRouterState.of(context).matchedLocation;
+    final int index = _indexOf(location);
+    final bool onTab = _tabs.contains(location);
+    final AppContainer c = AppScope.of(context);
 
     return PopScope(
       canPop: false,
@@ -273,20 +257,6 @@ class _AppShellState extends State<AppShell> {
             : null,
       ),
     );
-    } catch (e) {
-      return Scaffold(
-        body: Stack(
-          children: [
-            widget.child,
-            const Positioned(
-              bottom: 0,
-              right: 0,
-              child: SosFab(),
-            ),
-          ],
-        ),
-      );
-    }
   }
 
   /// Resume pill shown on every screen except the live-trip screen itself.
