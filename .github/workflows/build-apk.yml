@@ -180,15 +180,17 @@ jobs:
           tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload gradle log to gist for debugging
+      - name: Create issue with failure log
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Creating gist with failure log..."
+          echo "Creating issue with failure log..."
           tail -n 500 gradle.log > /tmp/fail.log
-          gh gist create /tmp/fail.log --public --desc "Build failure log run ${{ github.run_id }}" || true
-          echo "=== TAIL ==="
+          BODY=$(cat /tmp/fail.log | head -c 60000 | sed 's/`/\\`/g')
+          gh issue create --title "Build failure run ${{ github.run_id }}" --body "\`\`\`
+$BODY
+\`\`\`" || true
           cat /tmp/fail.log
 
       - name: Upload gradle log on failure
