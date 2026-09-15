@@ -233,20 +233,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(pos.latitude, pos.longitude),
       );
-      // GOOGLE MAPS-LIKE NEARBY: strict 30km first, then 50km fallback, sorted nearest-first
-      // Fixes 75km/430km/4351km bug while still showing small places like New Public College 16km
+      // Nearby mode: prioritize places in local metro (within 35km), fallback to 50km
+      // Sort nearest-first by shortest distance to current location
       if (_scope == 'nearby' && pos != null && places.isNotEmpty) {
         final LatLng here = LatLng(pos.latitude, pos.longitude);
-        List<Place> within30 = places
-            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 30000)
+        List<Place> within35 = places
+            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
             .toList();
-        List<Place> filtered = within30;
-        if (filtered.isEmpty) {
-          filtered = places
-              .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
-              .toList();
+        List<Place> filtered = within35.isNotEmpty
+            ? within35
+            : places
+                .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
+                .toList();
+        if (filtered.isNotEmpty) {
+          places = filtered;
         }
-        places = filtered;
         places.sort((Place a, Place b) =>
             GeoUtils.distanceMeters(here, a.coords)
                 .compareTo(GeoUtils.distanceMeters(here, b.coords)));
@@ -562,18 +563,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
         radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
         types: types,
       );
-      // GOOGLE MAPS-LIKE NEARBY: 30km strict, 50km fallback, never 200km+ in Nearby
+      // Nearby mode: local metro (within 35km), fallback to 50km, sorted nearest-first
       if (_scope == 'nearby' && here != null) {
-        List<Place> within30 = places
-            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 30000)
+        List<Place> within35 = places
+            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
             .toList();
-        List<Place> filtered = within30;
-        if (filtered.isEmpty) {
-          filtered = places
-              .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
-              .toList();
+        List<Place> filtered = within35.isNotEmpty
+            ? within35
+            : places
+                .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
+                .toList();
+        if (filtered.isNotEmpty) {
+          places = filtered;
         }
-        places = filtered;
         places.sort((Place a, Place b) =>
             GeoUtils.distanceMeters(here, a.coords)
                 .compareTo(GeoUtils.distanceMeters(here, b.coords)));

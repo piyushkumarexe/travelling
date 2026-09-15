@@ -23,10 +23,9 @@ class SearchCache {
         ? 'global'
         : '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
     final String t = (types ?? const <String>[]).join('+');
-    // v2: invalidates entries written before local-first ranking/relevance
-    // filtering existed (stale unfiltered lists were being served to users
-    // who had searched with an older build).
-    return 'v2.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
+    // v3: invalidates previous 1-result caches and ensures multi-result,
+    // distance-ranked places are fetched fresh.
+    return 'v3.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
         '|$t|$loc|${radiusMeters.round()}';
   }
 

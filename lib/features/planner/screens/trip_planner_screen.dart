@@ -53,7 +53,7 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   bool _generating = false;
   String? _error;
 
-  bool _storeLoaded = false;
+  bool _storeLoaded = true;
 
   static const List<(String, String)> _budgets = <(String, String)>[
     ('budget', 'Budget'),
@@ -109,23 +109,26 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   }
 
   Future<void> _loadPrefsInner() async {
-    final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid != null) {
-      await _c.tripPlanStore.loadFor(uid);
-      _c.tripPlanStore.addListener(_onStore);
-    }
     try {
       final String? uid = _c.authRepository.currentUser?.uid;
       if (uid != null) {
-        final Profile? p = await _c.profileRepository.get(uid);
+        await _c.tripPlanStore.loadFor(uid).timeout(const Duration(seconds: 2));
+        _c.tripPlanStore.addListener(_onStore);
+      }
+      if (uid != null) {
+        final Profile? p = await _c.profileRepository
+            .get(uid)
+            .timeout(const Duration(seconds: 2));
         if (mounted && p != null) {
           setState(() {
             _interests.addAll(p.interests);
-            _budget = p.budget;
-            _style = p.travelStyle;
-            if (p.vehicle == 'bike' ||
-                p.vehicle == 'car' ||
-                p.vehicle == 'auto') {
+            if (_budgets.any(((String, String) b) => b.$1 == p.budget)) {
+              _budget = p.budget;
+            }
+            if (_styles.any(((String, String) s) => s.$1 == p.travelStyle)) {
+              _style = p.travelStyle;
+            }
+            if (_transports.any(((String, String) t) => t.$1 == p.vehicle)) {
               _transport = p.vehicle;
             }
           });
@@ -307,19 +310,17 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
       final ColorScheme scheme = Theme.of(context).colorScheme;
       return Scaffold(
         appBar: AppBar(title: const Text('Trip planner')),
-        body: !_storeLoaded
-            ? const LoadingView(message: 'Loading planner…')
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  _formCard(scheme),
-                  const SizedBox(height: 12),
-                  _previewCard(scheme),
-                  const SizedBox(height: 12),
-                  _savedPlansCard(scheme),
-                  const SizedBox(height: 24),
-                ],
-              ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            _formCard(scheme),
+            const SizedBox(height: 12),
+            _previewCard(scheme),
+            const SizedBox(height: 12),
+            _savedPlansCard(scheme),
+            const SizedBox(height: 24),
+          ],
+        ),
       );
     } catch (e) {
       return Scaffold(
@@ -468,38 +469,58 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _transport,
-            decoration: const InputDecoration(labelText: 'Transport'),
-            items: <DropdownMenuItem<String>>[
-              for (final (String id, String label) in _transports)
-                DropdownMenuItem<String>(value: id, child: Text(label)),
-            ],
-            onChanged: (String? v) => setState(() => _transport = v ?? _transport),
-          ),
+          Builder(builder: (BuildContext _) {
+            final String safeTransport =
+                _transports.any(((String, String) t) => t.$1 == _transport)
+                    ? _transport
+                    : 'car';
+            return DropdownButtonFormField<String>(
+              value: safeTransport,
+              decoration: const InputDecoration(labelText: 'Transport'),
+              items: <DropdownMenuItem<String>>[
+                for (final (String id, String label) in _transports)
+                  DropdownMenuItem<String>(value: id, child: Text(label)),
+              ],
+              onChanged: (String? v) =>
+                  setState(() => _transport = v ?? _transport),
+            );
+          }),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _budget,
-            decoration: const InputDecoration(labelText: 'Budget'),
-            items: <DropdownMenuItem<String>>[
-              for (final (String id, String label) in _budgets)
-                DropdownMenuItem<String>(value: id, child: Text(label)),
-            ],
-            onChanged: (String? v) => setState(() => _budget = v ?? _budget),
-          ),
+          Builder(builder: (BuildContext _) {
+            final String safeBudget =
+                _budgets.any(((String, String) b) => b.$1 == _budget)
+                    ? _budget
+                    : 'mid';
+            return DropdownButtonFormField<String>(
+              value: safeBudget,
+              decoration: const InputDecoration(labelText: 'Budget'),
+              items: <DropdownMenuItem<String>>[
+                for (final (String id, String label) in _budgets)
+                  DropdownMenuItem<String>(value: id, child: Text(label)),
+              ],
+              onChanged: (String? v) =>
+                  setState(() => _budget = v ?? _budget),
+            );
+          }),
           const SizedBox(height: 12),
           Text('Travel style',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 6),
-          SegmentedButton<String>(
-            segments: <ButtonSegment<String>>[
-              for (final (String id, String label) in _styles)
-                ButtonSegment<String>(value: id, label: Text(label)),
-            ],
-            selected: <String>{_style},
-            onSelectionChanged: (Set<String> sel) =>
-                setState(() => _style = sel.first),
-          ),
+          Builder(builder: (BuildContext _) {
+            final String safeStyle =
+                _styles.any(((String, String) s) => s.$1 == _style)
+                    ? _style
+                    : 'balanced';
+            return SegmentedButton<String>(
+              segments: <ButtonSegment<String>>[
+                for (final (String id, String label) in _styles)
+                  ButtonSegment<String>(value: id, label: Text(label)),
+              ],
+              selected: <String>{safeStyle},
+              onSelectionChanged: (Set<String> sel) =>
+                  setState(() => _style = sel.first),
+            );
+          }),
           const SizedBox(height: 12),
           Text('Interests',
               style: Theme.of(context).textTheme.bodySmall),

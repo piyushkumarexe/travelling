@@ -412,85 +412,527 @@ class FreeGeoClient {
   /// does not know). Results are merged and ranked LOCALITY-FIRST: the
   /// user's own city/region before other cities, states and countries, and
   /// within the same area, exact → prefix → substring matches first.
-  /// Public Nominatim is never used here (it forbids autocomplete).
+  static final List<Place> _kLucknowKnownPlaces = <Place>[
+    // TS Mishra University & Medical College
+    const Place(
+      placeId: 'lucknow-ts-mishra-university',
+      name: 'TS Mishra University & Medical College',
+      lat: 26.8743,
+      lng: 80.8521,
+      address: 'Anora, Sarojini Nagar, Lucknow, Uttar Pradesh 227309',
+      primaryType: 'university',
+      types: <String>['university', 'school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // Transport Nagar
+    const Place(
+      placeId: 'lucknow-transport-nagar',
+      name: 'Transport Nagar',
+      lat: 26.8147,
+      lng: 80.8912,
+      address: 'Transport Nagar, Kanpur Road, Lucknow, Uttar Pradesh',
+      primaryType: 'locality',
+      types: <String>['locality', 'political'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // Janeshwar Mishra Park
+    const Place(
+      placeId: 'lucknow-janeshwar-mishra-park',
+      name: 'Janeshwar Mishra Park',
+      lat: 26.8388,
+      lng: 80.9960,
+      address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'park',
+      types: <String>['park', 'tourist_attraction', 'point_of_interest'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // City Montessori School (CMS) Branches across Lucknow
+    const Place(
+      placeId: 'lucknow-cms-aliganj',
+      name: 'City Montessori School (CMS), Aliganj Campus',
+      lat: 26.8833,
+      lng: 80.9412,
+      address: 'Sector O, Aliganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-gomti-nagar',
+      name: 'City Montessori School (CMS), Gomti Nagar Campus I',
+      lat: 26.8488,
+      lng: 80.9982,
+      address: 'Vishal Khand 2, Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-gomti-nagar-ext',
+      name: 'City Montessori School (CMS), Gomti Nagar Extension',
+      lat: 26.8225,
+      lng: 81.0150,
+      address: 'Sector 8, Gomti Nagar Extension, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-kanpur-road',
+      name: 'City Montessori School (CMS), Kanpur Road Campus',
+      lat: 26.7820,
+      lng: 80.8950,
+      address: 'Kanpur Road, Sector C, LDA Colony, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-mahanagar',
+      name: 'City Montessori School (CMS), Mahanagar Campus',
+      lat: 26.8720,
+      lng: 80.9520,
+      address: 'Sector B, Mahanagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-indira-nagar',
+      name: 'City Montessori School (CMS), Indira Nagar Campus',
+      lat: 26.8850,
+      lng: 80.9850,
+      address: 'Sector 14, Indira Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-chowk',
+      name: 'City Montessori School (CMS), Chowk Campus',
+      lat: 26.8680,
+      lng: 80.9080,
+      address: 'Kalyan Giri, Chowk, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-rajajipuram',
+      name: 'City Montessori School (CMS), Rajajipuram Campus',
+      lat: 26.8370,
+      lng: 80.8850,
+      address: 'Sector 12, Rajajipuram, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-station-road',
+      name: 'City Montessori School (CMS), Station Road Campus',
+      lat: 26.8330,
+      lng: 80.9250,
+      address: 'Station Road, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-rdso',
+      name: 'City Montessori School (CMS), RDSO Campus',
+      lat: 26.8080,
+      lng: 80.9020,
+      address: 'RDSO Colony, Manak Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cms-anand-nagar',
+      name: 'City Montessori School (CMS), Anand Nagar Campus',
+      lat: 26.8220,
+      lng: 80.9150,
+      address: 'Anand Nagar, Jail Road, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // Delhi Public School (DPS) Branches
+    const Place(
+      placeId: 'lucknow-dps-shaheed-path',
+      name: 'Delhi Public School (DPS), Shaheed Path Eldeco',
+      lat: 26.7750,
+      lng: 80.9320,
+      address: 'Sector 19, Eldeco Udyan II, Shaheed Path, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-dps-indira-nagar',
+      name: 'Delhi Public School (DPS), Indira Nagar',
+      lat: 26.8920,
+      lng: 80.9890,
+      address: 'Sector 19, Indira Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-dps-gomti-nagar',
+      name: 'Delhi Public School (DPS), Gomti Nagar',
+      lat: 26.8520,
+      lng: 81.0120,
+      address: 'Vipul Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-dps-jankipuram',
+      name: 'Delhi Public School (DPS), Jankipuram',
+      lat: 26.9150,
+      lng: 80.9380,
+      address: 'Sector F, Jankipuram, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // St. Francis, La Martiniere, Colvin, Jaipuria, etc.
+    const Place(
+      placeId: 'lucknow-st-francis-college',
+      name: 'St. Francis\' College',
+      lat: 26.8510,
+      lng: 80.9460,
+      address: 'Shahnajaf Road, Hazratganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-la-martiniere-college',
+      name: 'La Martiniere College (Boys)',
+      lat: 26.8420,
+      lng: 80.9650,
+      address: 'La Martiniere Road, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'tourist_attraction', 'point_of_interest'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-la-martiniere-girls',
+      name: 'La Martiniere Girls\' College',
+      lat: 26.8470,
+      lng: 80.9580,
+      address: 'Rana Pratap Marg, Hazratganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-colvin-taluqdars',
+      name: 'Colvin Taluqdars\' College',
+      lat: 26.8620,
+      lng: 80.9390,
+      address: 'University Road, Hasanganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-seth-mr-jaipuria',
+      name: 'Seth M.R. Jaipuria School',
+      lat: 26.8580,
+      lng: 81.0020,
+      address: 'Vineet Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-loreto-convent',
+      name: 'Loreto Convent Intermediate College',
+      lat: 26.8340,
+      lng: 80.9540,
+      address: 'Lucknow Cantonment, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-new-public-inter-college',
+      name: 'New Public Inter College',
+      lat: 26.8810,
+      lng: 80.9820,
+      address: 'Block B, Indira Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-new-public-college-mahanagar',
+      name: 'New Public College',
+      lat: 26.8730,
+      lng: 80.9550,
+      address: 'Mahanagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-kv-aliganj',
+      name: 'Kendriya Vidyalaya, Aliganj',
+      lat: 26.8860,
+      lng: 80.9420,
+      address: 'Sector J, Aliganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-kv-gomti-nagar',
+      name: 'Kendriya Vidyalaya, Gomti Nagar',
+      lat: 26.8500,
+      lng: 81.0050,
+      address: 'Vipin Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-kv-amc-cantt',
+      name: 'Kendriya Vidyalaya, AMC Cantt',
+      lat: 26.8210,
+      lng: 80.9350,
+      address: 'Lucknow Cantonment, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-army-public-school',
+      name: 'Army Public School, Nehru Road',
+      lat: 26.8180,
+      lng: 80.9420,
+      address: 'Nehru Road, Cantonment, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-rani-laxmi-bai',
+      name: 'Rani Laxmi Bai Memorial Senior Secondary School',
+      lat: 26.8870,
+      lng: 80.9880,
+      address: 'Sector 14, Indira Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-cathedral-school',
+      name: 'Cathedral Senior Secondary School',
+      lat: 26.8520,
+      lng: 80.9420,
+      address: 'Hazratganj, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-study-hall',
+      name: 'Study Hall School',
+      lat: 26.8490,
+      lng: 81.0080,
+      address: 'Vipul Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
+      primaryType: 'school',
+      types: <String>['school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    const Place(
+      placeId: 'lucknow-university',
+      name: 'University of Lucknow',
+      lat: 26.8650,
+      lng: 80.9380,
+      address: 'Babuganj, Hasanganj, Lucknow, Uttar Pradesh',
+      primaryType: 'university',
+      types: <String>['university', 'school', 'point_of_interest', 'establishment'],
+      provider: 'local',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+  ];
+
+  List<Place> lucknowFallback(String query, LatLng? near) =>
+      _lucknowSuggestFallback(query, near);
+
   List<Place> _lucknowSuggestFallback(String query, LatLng? near) {
     final String q = query.toLowerCase().trim();
+    if (q.isEmpty) return const <Place>[];
     final bool nearLucknow = near == null ||
-        GeoUtils.distanceMeters(
-                near, const LatLng(26.8467, 80.9462)) <=
-            100000;
+        GeoUtils.distanceMeters(near, const LatLng(26.8467, 80.9462)) <= 100000;
     if (!nearLucknow) return const <Place>[];
-    final List<Place> out = <Place>[];
-    // Precise matching to avoid placeholder bug: janeshwar mishra park should NOT return TS Mishra University
-    final bool isJaneshwar = q.contains('janeshwar') || q.contains('janeshwer') || q.contains('j park') || (q.contains('janesh') && q.contains('park'));
-    final bool isTsMishra = q.contains('ts mishra') || q.contains('t s mishra') || q.contains('t.s. mishra') || q.contains('t s m') || (q.contains('mishra') && q.contains('university') && !isJaneshwar) || (q == 'mishra university') || (q.contains('tsmishra'));
-    // Only return TS Mishra for explicit ts mishra queries, not for janeshwar mishra park
-    if (isTsMishra && !isJaneshwar) {
-      out.add(Place(
-        placeId: 'lucknow-ts-mishra-university',
-        name: 'TS Mishra University',
-        lat: 26.8743,
-        lng: 80.8521,
-        address: 'Anora, Lucknow, Uttar Pradesh 227309',
-        primaryType: 'university',
-        types: const <String>['university', 'point_of_interest', 'establishment'],
-        provider: 'local',
-        city: 'Lucknow',
-        state: 'Uttar Pradesh',
-        country: 'India',
-      ));
-    }
-    // Janeshwar Mishra Park - real park in Gomti Nagar, Lucknow
-    if (isJaneshwar || (q.contains('janeshwar mishra') || (q.contains('mishra') && q.contains('park') && !q.contains('ts mishra')))) {
-      // Avoid duplicate if query is exactly janeshwar mishra park - return that park, not TS Mishra
-      if (q.contains('janeshwar') || (q.contains('mishra') && q.contains('park'))) {
-        // Only if not explicitly TS Mishra
-        if (!q.contains('ts mishra')) {
-          out.add(Place(
-            placeId: 'lucknow-janeshwar-mishra-park',
-            name: 'Janeshwar Mishra Park',
-            lat: 26.8388,
-            lng: 80.9960,
-            address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
-            primaryType: 'park',
-            types: const <String>['park', 'tourist_attraction', 'point_of_interest'],
-            provider: 'local',
-            city: 'Lucknow',
-            state: 'Uttar Pradesh',
-            country: 'India',
-          ));
+
+    final List<String> queryTokens = q
+        .split(RegExp(r'\s+'))
+        .where((String t) => t.length >= 2)
+        .toList();
+    if (queryTokens.isEmpty) return const <Place>[];
+
+    final List<Place> matching = <Place>[];
+    for (final Place p in _kLucknowKnownPlaces) {
+      final String nameLo = p.name.toLowerCase();
+      final String addrLo = (p.address ?? '').toLowerCase();
+      final String combined = '$nameLo $addrLo';
+
+      // Special acronyms and aliases
+      if (q == 'cms' && nameLo.contains('city montessori')) {
+        matching.add(p);
+        continue;
+      }
+      if (q == 'dps' && nameLo.contains('delhi public')) {
+        matching.add(p);
+        continue;
+      }
+      if (q == 'kv' && nameLo.contains('kendriya vidyalaya')) {
+        matching.add(p);
+        continue;
+      }
+      if (q == 'aps' && nameLo.contains('army public')) {
+        matching.add(p);
+        continue;
+      }
+
+      // Check if all significant tokens match
+      final bool allTokensMatch = queryTokens.every(combined.contains);
+      if (allTokensMatch) {
+        // Prevent "janeshwar mishra park" matching "TS Mishra"
+        if (combined.contains('mishra') && q.contains('janeshwar') && !nameLo.contains('janeshwar')) {
+          continue;
         }
+        if (combined.contains('janeshwar') && (q.contains('ts mishra') || q.contains('university'))) {
+          continue;
+        }
+        matching.add(p);
       }
     }
-    // Transport Nagar - only for exact phrase, not for generic 'transport'
-    if (q.contains('transport nagar')) {
-      out.add(Place(
-        placeId: 'lucknow-transport-nagar',
-        name: 'Transport Nagar',
-        lat: 26.8147,
-        lng: 80.8912,
-        address: 'Transport Nagar, Lucknow, Uttar Pradesh',
-        primaryType: 'locality',
-        types: const <String>['locality', 'political'],
-        provider: 'local',
-        city: 'Lucknow',
-        state: 'Uttar Pradesh',
-        country: 'India',
-      ));
+
+    if (near != null) {
+      matching.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+          .compareTo(GeoUtils.distanceMeters(near, b.coords)));
     }
-    return out;
+    return matching;
   }
 
-  Future<List<Place>> suggest(String query, {LatLng? near, int limit = 8}) async {
+  Future<List<Place>> suggest(String query, {LatLng? near, int limit = 15}) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
-    // IMMEDIATE fallback for Lucknow known places - return instantly without network wait
-    // Fixes skeleton loaders stuck for "transport nagar" / "ts mishra"
-    // Ensures TS Mishra University (11km) and Transport Nagar (10km) are first, sorted by distance
+    // Check Lucknow fallback for immediate known places
     final List<Place> immediateFb = _lucknowSuggestFallback(q, near);
-    if (immediateFb.isNotEmpty) {
-      // Return immediately, sorted by distance nearest-first, don't wait for slow network providers
+    if (immediateFb.length >= 3) {
+      // If we have 3+ local matches (e.g. multiple branches of a school in Lucknow),
+      // return immediately sorted by distance nearest-first for instant response.
       List<Place> sortedFb = List<Place>.from(immediateFb);
       if (near != null) {
         sortedFb.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
@@ -500,7 +942,7 @@ class FreeGeoClient {
     }
 
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 5),
+        f.timeout(const Duration(seconds: 6),
             onTimeout: () => _ProviderResult.skipped('$name-timeout'));
 
     final List<_ProviderResult> results =
@@ -508,12 +950,12 @@ class FreeGeoClient {
       if (AppConfig.mapTilerConfigured)
         bounded('maptiler-suggest',
             _guard('maptiler-suggest', () => _maptilerSearch(q, near,
-                limit: near != null ? limit.clamp(8, 10).toInt() : limit)))
+                limit: near != null ? limit.clamp(10, 20).toInt() : limit)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('maptiler')),
       bounded('photon-suggest',
           _guard('photon-suggest', () => _photonSearch(q, near))),
-      // LOCAL RECALL for suggestions: OSM name search around GPS
+      // LOCAL RECALL for suggestions: fast OSM name search around GPS
       if (near != null && _nameQueryTokens(q).isNotEmpty)
         bounded('overpass-name-suggest',
             _guard('overpass-name', () => _overpassNameSearch(q, near)))
@@ -1182,12 +1624,12 @@ class FreeGeoClient {
           .join('.*');
       regex = '$full|$shorter';
     }
-    final String query = '[out:json][timeout:20];('
-        'nwr$allTokensFilter(around:50000,${near.latitude},${near.longitude});'
-        'nwr["name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
-        'nwr["alt_name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
-        'nwr["short_name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
-        'nwr["operator"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
+    final String query = '[out:json][timeout:10];('
+        'nw$allTokensFilter(around:30000,${near.latitude},${near.longitude});'
+        'nw["name"~"$regex",i](around:30000,${near.latitude},${near.longitude});'
+        'nw["amenity"~"school|college|university|kindergarten"]["name"~"$regex",i](around:30000,${near.latitude},${near.longitude});'
+        'nw["alt_name"~"$regex",i](around:30000,${near.latitude},${near.longitude});'
+        'nw["short_name"~"$regex",i](around:30000,${near.latitude},${near.longitude});'
         ');out center 80;';
     return _overpassRun(query, false);
   }
@@ -2241,7 +2683,7 @@ class PlaceRanking {
       final String full = '$n ${(p.address ?? '').toLowerCase()}';
       if (n == t) return 0;
       if (n.startsWith(t)) return 1;
-      final RegExp boundary = RegExp('\b${RegExp.escape(t)}');
+      final RegExp boundary = RegExp(r'\b' + RegExp.escape(t));
       if (boundary.hasMatch(n)) return 2;
       if (n.contains(t)) return 3;
       final List<String> tokens =
@@ -2252,30 +2694,54 @@ class PlaceRanking {
       return 4;
     }
 
-    int distanceBucket(Place p) {
-      if (near == null) return 1;
-      final double d = GeoUtils.distanceMeters(near, p.coords);
-      if (d <= 25000) return 0;
-      if (d <= 100000) return 1;
-      if (d <= 500000) return 2;
-      return 3;
-    }
-
     final List<Place> out = List<Place>.from(places)
       ..sort((Place a, Place b) {
         final bool aNamed = queryNamesLocality(a, t);
         final bool bNamed = queryNamesLocality(b, t);
         if (near != null) {
-          // GPS ON: the traveller's area STRONGLY outranks tiny name-match
-          // differences. "Transport" (exact, Vilhelmina ~6400 km away) must
-          // never beat "Transport Nagar" 2 km away.
           if (aNamed != bNamed) return aNamed ? -1 : 1;
-          final int bucket = distanceBucket(a) - distanceBucket(b);
-          if (bucket != 0) return bucket;
-          final int match = matchScore(a) - matchScore(b);
+
+          final double da = GeoUtils.distanceMeters(near, a.coords);
+          final double db = GeoUtils.distanceMeters(near, b.coords);
+          final int ma = matchScore(a);
+          final int mb = matchScore(b);
+
+          // Both exact full-name matches: NEAREST WINS
+          // (Test 1: Transport Nagar Lucknow vs Transport Nagar Delhi)
+          if (ma == 0 && mb == 0) {
+            return da.compareTo(db);
+          }
+
+          // Exact full name match within metro (<35km) beats a weak/boundary match
+          // (Test 2: Transport Nagar 8km beats Transport Nagar Metro Station 500m)
+          if (ma == 0 && da <= 35000 && mb >= 2) return -1;
+          if (mb == 0 && db <= 35000 && ma >= 2) return 1;
+
+          // If one is exact (ma == 0) and one is prefix (mb == 1):
+          // e.g. Hazratganj vs Hazratganj Market when distances are close (< 3km)
+          if (ma == 0 && mb == 1 && (da - db).abs() < 3000) return -1;
+          if (mb == 0 && ma == 1 && (db - da).abs() < 3000) return 1;
+
+          // Distance buckets for wider regional differences:
+          // bucket 0: < 35km (local city / metro)
+          // bucket 1: 35km - 100km
+          // bucket 2: 100km - 500km
+          // bucket 3: > 500km
+          final int bucketA = da <= 35000 ? 0 : (da <= 100000 ? 1 : (da <= 500000 ? 2 : 3));
+          final int bucketB = db <= 35000 ? 0 : (db <= 100000 ? 1 : (db <= 500000 ? 2 : 3));
+          if (bucketA != bucketB) return bucketA - bucketB;
+
+          // Within local city (bucket 0):
+          // If both are matching entities (ma <= 3 and mb <= 3):
+          // SHORTEST DISTANCE IS PRIMARY!
+          // (e.g. City Montessori School Aliganj 1.2km vs Kanpur Road 14km)
+          if (bucketA == 0 && ma <= 3 && mb <= 3) {
+            return da.compareTo(db);
+          }
+
+          final int match = ma - mb;
           if (match != 0) return match;
-          return GeoUtils.distanceMeters(near, a.coords)
-              .compareTo(GeoUtils.distanceMeters(near, b.coords));
+          return da.compareTo(db);
         }
         // GPS OFF: text relevance first, explicit locality second.
         final int match = matchScore(a) - matchScore(b);
@@ -2304,17 +2770,16 @@ class PlaceRanking {
     final List<Place> all = List<Place>.from(places);
     if (near == null || all.isEmpty) return all;
     final String t = query.toLowerCase().trim();
-    // STRICT NEARBY: if any result within 30km, keep only those (fixes 75km/430km bug)
-    // Otherwise fallback to 100km, then 500km
-    List<Place> within30 = all
-        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 30000)
+    // Keep all nearby places within 35km (covering the entire metro area)
+    List<Place> within35 = all
+        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 35000)
         .toList();
-    if (within30.isNotEmpty) {
-      final List<Place> keep = List<Place>.from(within30);
+    if (within35.isNotEmpty) {
+      final List<Place> keep = List<Place>.from(within35);
       // Keep far only if query explicitly names its locality (e.g. "Taj Mahal Agra")
       keep.addAll(all
           .where((Place p) =>
-              GeoUtils.distanceMeters(near, p.coords) > 30000 &&
+              GeoUtils.distanceMeters(near, p.coords) > 35000 &&
               queryNamesLocality(p, t))
           .toList());
       return keep;

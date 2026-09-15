@@ -43,66 +43,9 @@ class PlacesRepository {
         .toList();
   }
 
-  // Precise fallback for Lucknow - avoids placeholder bug where janeshwar mishra park returns TS Mishra
-  List<Place> _lucknowFallback(String query, LatLng? location) {
-    final String q = query.toLowerCase().trim();
-    final bool nearLucknow = location == null ||
-        GeoUtils.distanceMeters(
-                location, const LatLng(26.8467, 80.9462)) <=
-            100000;
-    if (!nearLucknow) return const <Place>[];
-    final List<Place> out = <Place>[];
-    final bool isJaneshwar = q.contains('janeshwar') || q.contains('janeshwer') || (q.contains('janesh') && q.contains('park'));
-    final bool isTsMishra = q.contains('ts mishra') || q.contains('t s mishra') || q.contains('t.s. mishra') || (q.contains('mishra') && q.contains('university') && !isJaneshwar) || q == 'mishra university' || q.contains('tsmishra');
-    if (isTsMishra && !isJaneshwar) {
-      out.add(Place(
-        placeId: 'lucknow-ts-mishra-university',
-        name: 'TS Mishra University',
-        lat: 26.8743,
-        lng: 80.8521,
-        address: 'Anora, Lucknow, Uttar Pradesh 227309',
-        primaryType: 'university',
-        types: const <String>['university', 'point_of_interest', 'establishment'],
-        provider: 'local',
-        city: 'Lucknow',
-        state: 'Uttar Pradesh',
-        country: 'India',
-      ));
-    }
-    if (isJaneshwar || (q.contains('mishra') && q.contains('park') && !q.contains('ts mishra'))) {
-      if (!q.contains('ts mishra')) {
-        out.add(Place(
-          placeId: 'lucknow-janeshwar-mishra-park',
-          name: 'Janeshwar Mishra Park',
-          lat: 26.8388,
-          lng: 80.9960,
-          address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
-          primaryType: 'park',
-          types: const <String>['park', 'tourist_attraction', 'point_of_interest'],
-          provider: 'local',
-          city: 'Lucknow',
-          state: 'Uttar Pradesh',
-          country: 'India',
-        ));
-      }
-    }
-    if (q.contains('transport nagar')) {
-      out.add(Place(
-        placeId: 'lucknow-transport-nagar',
-        name: 'Transport Nagar',
-        lat: 26.8147,
-        lng: 80.8912,
-        address: 'Transport Nagar, Lucknow, Uttar Pradesh',
-        primaryType: 'locality',
-        types: const <String>['locality', 'political'],
-        provider: 'local',
-        city: 'Lucknow',
-        state: 'Uttar Pradesh',
-        country: 'India',
-      ));
-    }
-    return out;
-  }
+  // Fallback for Lucknow places and schools
+  List<Place> _lucknowFallback(String query, LatLng? location) =>
+      _free.lucknowFallback(query, location);
 
   Future<List<Place>> search(
     String query, {
@@ -112,20 +55,10 @@ class PlacesRepository {
   }) async {
     final String q = query.trim();
 
-    // Check Lucknow fallback first - return immediately for precise known places only
-    // Avoids placeholder bug: janeshwar mishra park should NOT return TS Mishra University
+    // Check local fallback places for Lucknow (schools, landmarks, universities)
     final List<Place> fallback = _lucknowFallback(q, location);
-    final String ql = q.toLowerCase();
-    final bool isPreciseFallback = ql.contains('ts mishra') || ql.contains('transport nagar') || ql.contains('janeshwar mishra') || (ql.contains('janeshwar') && ql.contains('park'));
-    if (fallback.isNotEmpty && isPreciseFallback) {
-      List<Place> fb = List<Place>.from(fallback);
-      if (location != null) {
-        fb.sort((Place a, Place b) => _distance(a, location).compareTo(_distance(b, location)));
-      }
-      return fb;
-    }
     
-    // Try free providers first (Overpass + MapTiler + Photon + Nominatim)
+    // Try free providers (Overpass + MapTiler + Photon + Nominatim)
     List<Place> free = <Place>[];
     try {
       free = await _freeSearchWithCache(
@@ -139,8 +72,6 @@ class PlacesRepository {
     }
 
     // Always try backend (Google Places TextSearch) as well when configured
-    // - Google has better coverage for universities like "TS Mishra University"
-    // Merge free + backend, dedup, and sort by distance for Nearby
     List<Place> backend = <Place>[];
     if (configured) {
       final Map<String, dynamic> body = <String, dynamic>{'query': q};
@@ -161,35 +92,22 @@ class PlacesRepository {
     }
 
     // Merge fallback + free + backend, dedup
-    List<Place> allFree = [...fallback, ...free];
-    if (allFree.isEmpty && backend.isEmpty) return const <Place>[];
-    if (allFree.isEmpty) return backend;
-    if (backend.isEmpty) {
-      // Even if only fallback+free, sort by distance for Nearby
-      if (location != null) {
-        allFree.sort((Place a, Place b) => _distance(a, location).compareTo(_distance(b, location)));
-      }
-      return allFree;
-    }
+    final List<Place> allPlaces = <Place>[...fallback, ...free, ...backend];
+    if (allPlaces.isEmpty) return const <Place>[];
 
-    // Merge and dedup
     final Map<String, Place> merged = <String, Place>{};
-    for (final Place p in [...allFree, ...backend]) {
-      final String key = '${p.name.toLowerCase().trim()}|${p.lat.toStringAsFixed(4)},${p.lng.toStringAsFixed(4)}';
-      if (!merged.containsKey(key)) {
-        merged[key] = p;
-      }
+    for (final Place p in allPlaces) {
+      final String key =
+          '${p.name.toLowerCase().trim()}|${p.lat.toStringAsFixed(4)},${p.lng.toStringAsFixed(4)}';
+      merged.putIfAbsent(key, () => p);
     }
     List<Place> out = merged.values.toList();
 
-    // If location available and Nearby, sort by distance and prioritize exact matches
+    // Accuracy and shortest distance first
     if (location != null) {
-      // Sort by distance first for Nearby
-      out.sort((Place a, Place b) {
-        final double da = _distance(a, location);
-        final double db = _distance(b, location);
-        return da.compareTo(db);
-      });
+      out = PlaceRanking.rankSuggestions(out, q, location);
+      final List<Place> rel = PlaceRanking.filterRelevant(out, q, location);
+      if (rel.isNotEmpty) out = rel;
     }
 
     return out;
@@ -204,11 +122,11 @@ class PlacesRepository {
   }
 
   /// Autocomplete suggestions while typing - Google Maps-like accuracy for small places
-  /// Uses MapTiler + Photon + Overpass name search (all tokens in any order) with location bias
+  /// Uses MapTiler + Photon + Overpass name search with location bias
   Future<List<Place>> suggest(
     String query, {
     LatLng? location,
-    int limit = 8,
+    int limit = 15,
   }) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];

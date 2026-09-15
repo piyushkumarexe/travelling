@@ -156,6 +156,27 @@ void main() {
       );
       expect(ranked.first.name, 'Gomti Nagar');
     });
+
+    test('multiple school branches: nearest branch is first, multiple results returned', () {
+      // User is at Lucknow center (26.8467, 80.9462)
+      // Aliganj is ~4km away, Gomti Nagar is ~5.2km away, Kanpur Road is ~8.8km away
+      final Place cmsAliganj = _p('City Montessori School, Aliganj', 26.8833, 80.9412, city: 'Lucknow');
+      final Place cmsGomtiNagar = _p('City Montessori School, Gomti Nagar', 26.8488, 80.9982, city: 'Lucknow');
+      final Place cmsKanpurRoad = _p('City Montessori School, Kanpur Road', 26.7820, 80.8950, city: 'Lucknow');
+
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+        <Place>[cmsKanpurRoad, cmsGomtiNagar, cmsAliganj],
+        'city montessori school',
+        lucknow,
+      );
+
+      // Closest branch must be first
+      expect(ranked.first.name, contains('Aliganj'));
+      // All branches must be preserved (not truncated to 1)
+      expect(ranked.length, 3);
+      // Farthest branch must be last
+      expect(ranked.last.name, contains('Kanpur Road'));
+    });
   });
 
   group('PlaceRanking — local-first relevance (user-reported bug)', () {

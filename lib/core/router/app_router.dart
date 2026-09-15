@@ -198,11 +198,6 @@ class AppRouter {
                 const WalletScreen(),
           ),
           GoRoute(
-            path: '/planner',
-            builder: (BuildContext context, GoRouterState state) =>
-                const TripPlannerScreen(),
-          ),
-          GoRoute(
             path: '/route/multi',
             builder: (BuildContext context, GoRouterState state) =>
                 const MultiStopScreen(),
@@ -312,6 +307,11 @@ class AppRouter {
         path: '/intelligence',
         builder: (BuildContext context, GoRouterState state) =>
             const TravelIntelligenceScreen(),
+      ),
+      GoRoute(
+        path: '/planner',
+        builder: (BuildContext context, GoRouterState state) =>
+            const TripPlannerScreen(),
       ),
       GoRoute(
         path: '/vault',

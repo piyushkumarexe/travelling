@@ -52,10 +52,11 @@ dependencies:
   flutter_tts: ^4.2.5
 
 dependency_overrides:
-  # Fix: objective_c 9.6.1 fails with arm64e member not found on Flutter stable 3.47.4
-  # Pin to 7.0.0 which doesn't use native assets hook that breaks
-  objective_c: 5.0.0
-  ffi: 2.1.4
+  # Fix: objective_c 9.6.1 published today fails with "Error: Member not found: 'arm64e'"
+  # on Flutter stable (Dart SDK lacks Architecture.arm64e enum member).
+  # Pin to 9.6.0 which is fully compatible with path_provider_foundation 2.6.0
+  # and avoids the arm64e build hook failure.
+  objective_c: 9.6.0
 
 dev_dependencies:
   flutter_test:
