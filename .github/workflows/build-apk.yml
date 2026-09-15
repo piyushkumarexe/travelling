@@ -181,6 +181,13 @@ jobs:
           grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
           echo "=== Grep FAILED/error ==="
           grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
+          # Keep the actionable Gradle tail visible even when GitHub's raw log
+          # viewer is unavailable to the caller.
+          while IFS= read -r line; do
+            line=${line//\%/\%25}
+            line=${line//$'\r'/\%0D}
+            echo "::error title=Gradle failure::$line"
+          done < <(tail -n 120 gradle.log)
           echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
