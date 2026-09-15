@@ -18,9 +18,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v4
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -93,9 +90,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
