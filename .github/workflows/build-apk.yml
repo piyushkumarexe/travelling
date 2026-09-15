@@ -182,12 +182,10 @@ jobs:
           echo "=== Grep FAILED/error ==="
           grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
           # Keep the actionable Gradle tail visible even when GitHub's raw log
-          # viewer is unavailable to the caller.
-          while IFS= read -r line; do
-            line=${line//\%/\%25}
-            line=${line//$'\r'/\%0D}
-            echo "::error title=Gradle failure::$line"
-          done < <(tail -n 120 gradle.log)
+          # viewer is unavailable to the caller. Use one annotation so the
+          # runner does not discard it after its per-step annotation limit.
+          GRADLE_TAIL=$(tail -n 120 gradle.log | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}' | head -c 6000)
+          echo "::error title=Gradle failure::$GRADLE_TAIL"
           echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
