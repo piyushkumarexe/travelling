@@ -158,6 +158,8 @@ jobs:
           if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
             DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
           fi
+          # Fix objective_c native assets failure (arm64e member not found) - disable native assets
+          flutter config --no-enable-native-assets || true
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
           set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
