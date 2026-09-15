@@ -51,6 +51,12 @@ dependencies:
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
 
+dependency_overrides:
+  # Fix: objective_c 9.6.1 fails with arm64e member not found on Flutter stable 3.47.4
+  # Pin to 7.0.0 which doesn't use native assets hook that breaks
+  objective_c: 7.0.0
+  ffi: 2.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
