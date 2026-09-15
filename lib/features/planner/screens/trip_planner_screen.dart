@@ -4,7 +4,6 @@ import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/state_views.dart';
 import '../../../data/local/trip_plan_store.dart';
 import '../../../data/models/itinerary.dart';
 import '../../../data/models/places.dart';
@@ -52,8 +51,6 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   List<ItineraryDay> _plan = <ItineraryDay>[];
   bool _generating = false;
   String? _error;
-
-  bool _storeLoaded = true;
 
   static const List<(String, String)> _budgets = <(String, String)>[
     ('budget', 'Budget'),

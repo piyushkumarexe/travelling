@@ -113,14 +113,6 @@ class PlacesRepository {
     return out;
   }
 
-  double _distance(Place p, LatLng from) {
-    try {
-      return GeoUtils.distanceMeters(from, p.coords);
-    } catch (_) {
-      return 0;
-    }
-  }
-
   /// Autocomplete suggestions while typing - Google Maps-like accuracy for small places
   /// Uses MapTiler + Photon + Overpass name search with location bias
   Future<List<Place>> suggest(

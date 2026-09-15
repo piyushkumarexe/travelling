@@ -414,7 +414,7 @@ class FreeGeoClient {
   /// within the same area, exact → prefix → substring matches first.
   static final List<Place> _kLucknowKnownPlaces = <Place>[
     // TS Mishra University & Medical College
-    const Place(
+    Place(
       placeId: 'lucknow-ts-mishra-university',
       name: 'TS Mishra University & Medical College',
       lat: 26.8743,
@@ -428,7 +428,7 @@ class FreeGeoClient {
       country: 'India',
     ),
     // Transport Nagar
-    const Place(
+    Place(
       placeId: 'lucknow-transport-nagar',
       name: 'Transport Nagar',
       lat: 26.8147,
@@ -442,7 +442,7 @@ class FreeGeoClient {
       country: 'India',
     ),
     // Janeshwar Mishra Park
-    const Place(
+    Place(
       placeId: 'lucknow-janeshwar-mishra-park',
       name: 'Janeshwar Mishra Park',
       lat: 26.8388,
@@ -456,7 +456,7 @@ class FreeGeoClient {
       country: 'India',
     ),
     // City Montessori School (CMS) Branches across Lucknow
-    const Place(
+    Place(
       placeId: 'lucknow-cms-aliganj',
       name: 'City Montessori School (CMS), Aliganj Campus',
       lat: 26.8833,
@@ -469,7 +469,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-gomti-nagar',
       name: 'City Montessori School (CMS), Gomti Nagar Campus I',
       lat: 26.8488,
@@ -482,7 +482,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-gomti-nagar-ext',
       name: 'City Montessori School (CMS), Gomti Nagar Extension',
       lat: 26.8225,
@@ -495,7 +495,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-kanpur-road',
       name: 'City Montessori School (CMS), Kanpur Road Campus',
       lat: 26.7820,
@@ -508,7 +508,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-mahanagar',
       name: 'City Montessori School (CMS), Mahanagar Campus',
       lat: 26.8720,
@@ -521,7 +521,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-indira-nagar',
       name: 'City Montessori School (CMS), Indira Nagar Campus',
       lat: 26.8850,
@@ -534,7 +534,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-chowk',
       name: 'City Montessori School (CMS), Chowk Campus',
       lat: 26.8680,
@@ -547,7 +547,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-rajajipuram',
       name: 'City Montessori School (CMS), Rajajipuram Campus',
       lat: 26.8370,
@@ -560,7 +560,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-station-road',
       name: 'City Montessori School (CMS), Station Road Campus',
       lat: 26.8330,
@@ -573,7 +573,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-rdso',
       name: 'City Montessori School (CMS), RDSO Campus',
       lat: 26.8080,
@@ -586,7 +586,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cms-anand-nagar',
       name: 'City Montessori School (CMS), Anand Nagar Campus',
       lat: 26.8220,
@@ -600,7 +600,7 @@ class FreeGeoClient {
       country: 'India',
     ),
     // Delhi Public School (DPS) Branches
-    const Place(
+    Place(
       placeId: 'lucknow-dps-shaheed-path',
       name: 'Delhi Public School (DPS), Shaheed Path Eldeco',
       lat: 26.7750,
@@ -613,7 +613,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-dps-indira-nagar',
       name: 'Delhi Public School (DPS), Indira Nagar',
       lat: 26.8920,
@@ -626,7 +626,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-dps-gomti-nagar',
       name: 'Delhi Public School (DPS), Gomti Nagar',
       lat: 26.8520,
@@ -639,7 +639,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-dps-jankipuram',
       name: 'Delhi Public School (DPS), Jankipuram',
       lat: 26.9150,
@@ -653,7 +653,7 @@ class FreeGeoClient {
       country: 'India',
     ),
     // St. Francis, La Martiniere, Colvin, Jaipuria, etc.
-    const Place(
+    Place(
       placeId: 'lucknow-st-francis-college',
       name: 'St. Francis\' College',
       lat: 26.8510,
@@ -666,7 +666,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-la-martiniere-college',
       name: 'La Martiniere College (Boys)',
       lat: 26.8420,
@@ -679,7 +679,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-la-martiniere-girls',
       name: 'La Martiniere Girls\' College',
       lat: 26.8470,
@@ -692,7 +692,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-colvin-taluqdars',
       name: 'Colvin Taluqdars\' College',
       lat: 26.8620,
@@ -705,7 +705,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-seth-mr-jaipuria',
       name: 'Seth M.R. Jaipuria School',
       lat: 26.8580,
@@ -718,7 +718,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-loreto-convent',
       name: 'Loreto Convent Intermediate College',
       lat: 26.8340,
@@ -731,7 +731,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-new-public-inter-college',
       name: 'New Public Inter College',
       lat: 26.8810,
@@ -744,7 +744,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-new-public-college-mahanagar',
       name: 'New Public College',
       lat: 26.8730,
@@ -757,7 +757,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-kv-aliganj',
       name: 'Kendriya Vidyalaya, Aliganj',
       lat: 26.8860,
@@ -770,7 +770,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-kv-gomti-nagar',
       name: 'Kendriya Vidyalaya, Gomti Nagar',
       lat: 26.8500,
@@ -783,7 +783,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-kv-amc-cantt',
       name: 'Kendriya Vidyalaya, AMC Cantt',
       lat: 26.8210,
@@ -796,7 +796,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-army-public-school',
       name: 'Army Public School, Nehru Road',
       lat: 26.8180,
@@ -809,7 +809,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-rani-laxmi-bai',
       name: 'Rani Laxmi Bai Memorial Senior Secondary School',
       lat: 26.8870,
@@ -822,7 +822,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-cathedral-school',
       name: 'Cathedral Senior Secondary School',
       lat: 26.8520,
@@ -835,7 +835,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-study-hall',
       name: 'Study Hall School',
       lat: 26.8490,
@@ -848,7 +848,7 @@ class FreeGeoClient {
       state: 'Uttar Pradesh',
       country: 'India',
     ),
-    const Place(
+    Place(
       placeId: 'lucknow-university',
       name: 'University of Lucknow',
       lat: 26.8650,
