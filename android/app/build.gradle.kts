@@ -18,13 +18,12 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 android {
     namespace = "app.roamio.tourism"
-    // mobile_scanner's current AndroidX camera artifacts require API 36.
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // flutter_local_notifications and other plugins use Java 8+ library
-        // APIs while the app still supports Android API 23.
+        // Required by flutter_local_notifications, google_maps, geolocator, etc.
+        // which use java.time and other Java 8+ APIs on minSdk < 26.
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
