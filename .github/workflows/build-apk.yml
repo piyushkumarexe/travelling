@@ -92,9 +92,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
-
+      # ubuntu-latest already provides ANDROID_HOME and the SDK/build-tools
+      # required by Flutter; setup-android is intentionally omitted because
+      # that action can fail before the APK job reaches Gradle.
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
