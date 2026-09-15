@@ -47,9 +47,11 @@ class _AppShellState extends State<AppShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final AppContainer c = AppScope.of(context);
-    _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
-    _syncGeofence(c);
+    try {
+      final AppContainer c = AppScope.of(context);
+      _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
+      _syncGeofence(c);
+    } catch (_) {}
   }
 
   void _syncGeofence(AppContainer c) {
@@ -176,10 +178,26 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final String location = GoRouterState.of(context).matchedLocation;
-    final int index = _indexOf(location);
-    final bool onTab = _tabs.contains(location);
-    final AppContainer c = AppScope.of(context);
+    try {
+      final String location = GoRouterState.of(context).matchedLocation;
+      final int index = _indexOf(location);
+      final bool onTab = _tabs.contains(location);
+      AppContainer c;
+      try {
+        c = AppScope.of(context);
+      } catch (_) {
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? result) {
+            if (didPop) return;
+            _handleSystemBack();
+          },
+          child: Scaffold(
+            body: widget.child,
+            floatingActionButton: const SosFab(),
+          ),
+        );
+      }
 
     return PopScope(
       canPop: false,
@@ -255,6 +273,20 @@ class _AppShellState extends State<AppShell> {
             : null,
       ),
     );
+    } catch (e) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            widget.child,
+            const Positioned(
+              bottom: 0,
+              right: 0,
+              child: SosFab(),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   /// Resume pill shown on every screen except the live-trip screen itself.

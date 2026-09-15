@@ -233,19 +233,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(pos.latitude, pos.longitude),
       );
-      // STRICT NEARBY FILTER: when in Nearby mode, drop far-away noise
-      // (the bug reported: 75km, 430km, 4351km results for "ts mishra University")
-      // Keep ONLY places within 30km when location is known and scope is nearby.
-      // If nothing within 30km, return empty so UI shows "no matches" instead of 300km+ noise.
+      // GOOGLE MAPS-LIKE NEARBY: strict 30km first, then 50km fallback, sorted nearest-first
+      // Fixes 75km/430km/4351km bug while still showing small places like New Public College 16km
       if (_scope == 'nearby' && pos != null && places.isNotEmpty) {
         final LatLng here = LatLng(pos.latitude, pos.longitude);
-        List<Place> nearby = places
-            .where((Place p) =>
-                GeoUtils.distanceMeters(here, p.coords) <= 30000)
+        List<Place> within30 = places
+            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 30000)
             .toList();
-        // Always filter to 30km for Nearby - never show 227km/430km/4351km when Nearby is selected
-        places = nearby;
-        // Always sort by distance for Nearby (nearest first - fixes transport nagar 227km first bug)
+        List<Place> filtered = within30;
+        if (filtered.isEmpty) {
+          filtered = places
+              .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
+              .toList();
+        }
+        places = filtered;
         places.sort((Place a, Place b) =>
             GeoUtils.distanceMeters(here, a.coords)
                 .compareTo(GeoUtils.distanceMeters(here, b.coords)));
@@ -561,16 +562,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
         radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
         types: types,
       );
-      // STRICT NEARBY: filter out >30km when in Nearby scope (fixes 75km, 430km, 227km bugs)
-      // For Nearby, ONLY show within 30km, sorted nearest-first. If nothing within 30km, show empty.
+      // GOOGLE MAPS-LIKE NEARBY: 30km strict, 50km fallback, never 200km+ in Nearby
       if (_scope == 'nearby' && here != null) {
-        List<Place> filtered = places
-            .where((Place p) =>
-                GeoUtils.distanceMeters(here, p.coords) <= 30000)
+        List<Place> within30 = places
+            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 30000)
             .toList();
-        // Always filter to 30km for Nearby - never show 227km/430km when Nearby selected
+        List<Place> filtered = within30;
+        if (filtered.isEmpty) {
+          filtered = places
+              .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
+              .toList();
+        }
         places = filtered;
-        // Sort by distance always for Nearby (fixes transport nagar sorting)
         places.sort((Place a, Place b) =>
             GeoUtils.distanceMeters(here, a.coords)
                 .compareTo(GeoUtils.distanceMeters(here, b.coords)));

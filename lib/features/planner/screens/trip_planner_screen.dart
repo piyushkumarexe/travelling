@@ -22,7 +22,17 @@ class TripPlannerScreen extends StatefulWidget {
 }
 
 class _TripPlannerScreenState extends State<TripPlannerScreen> {
-  AppContainer get _c => AppScope.of(context);
+  AppContainer? _cachedContainer;
+  AppContainer get _c {
+    try {
+      final AppContainer c = AppScope.of(context);
+      _cachedContainer = c;
+      return c;
+    } catch (_) {
+      if (_cachedContainer != null) return _cachedContainer!;
+      throw Exception('AppScope not available');
+    }
+  }
 
   final TextEditingController _destination = TextEditingController();
 
@@ -341,7 +351,8 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   }
 
   Widget _formCard(ColorScheme scheme) {
-    return AppCard(
+    try {
+      return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -535,6 +546,14 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
         ],
       ),
     );
+    } catch (e) {
+      return AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Form failed to load: $e', style: const TextStyle(color: Colors.red)),
+        ),
+      );
+    }
   }
 
   Widget _stepper(
@@ -596,7 +615,8 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   }
 
   Widget _savedPlansCard(ColorScheme scheme) {
-    final TripPlanStore store = _c.tripPlanStore;
+    try {
+      final TripPlanStore store = _c.tripPlanStore;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -618,6 +638,14 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
           for (final TripPlan p in store.plans.reversed) _savedPlanTile(p),
       ],
     );
+    } catch (e) {
+      return AppCard(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Saved trips failed: $e', style: const TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
   }
 
   Widget _savedPlanTile(TripPlan p) {

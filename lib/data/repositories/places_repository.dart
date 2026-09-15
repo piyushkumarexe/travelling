@@ -203,14 +203,32 @@ class PlacesRepository {
     }
   }
 
-  /// Autocomplete suggestions while typing. Uses MapTiler Geocoding (which
-  /// permits autocomplete) — never public Nominatim, which forbids it.
+  /// Autocomplete suggestions while typing - Google Maps-like accuracy for small places
+  /// Uses MapTiler + Photon + Overpass name search (all tokens in any order) with location bias
   Future<List<Place>> suggest(
     String query, {
     LatLng? location,
     int limit = 8,
-  }) =>
-      _free.suggest(query, near: location, limit: limit);
+  }) async {
+    final String q = query.trim();
+    if (q.isEmpty) return const <Place>[];
+    final String cacheKey = SearchCache.key(q, null, location?.latitude, location?.longitude, 0);
+    final List<Place>? cached = await SearchCache.read(cacheKey);
+    if (cached != null && cached.isNotEmpty) {
+      return cached.take(limit).toList();
+    }
+    try {
+      final List<Place> result = await _free.suggest(query, near: location, limit: limit);
+      if (result.isNotEmpty) {
+        unawaited(SearchCache.write(cacheKey, result));
+      }
+      return result;
+    } catch (_) {
+      final List<Place>? stale = await SearchCache.readStale(cacheKey);
+      if (stale != null && stale.isNotEmpty) return stale.take(limit).toList();
+      return const <Place>[];
+    }
+  }
 
   /// Free-provider search with a short on-device cache so repeat searches in
   /// the same area are instant (no repeated network round-trips).
