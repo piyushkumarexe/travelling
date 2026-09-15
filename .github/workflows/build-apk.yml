@@ -187,6 +187,25 @@ jobs:
             echo "::error title=gradle-e::$MSG"
           done
 
+      - name: Post failure log to step summary and PR comment
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "## Build failure tail" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 300 gradle.log >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Try to post comment to PR
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            echo "Posting comment to PR ${{ github.event.pull_request.number }}"
+            gh pr comment ${{ github.event.pull_request.number }} --body "Build failed, tail:
+
+\`\`\`
+$(tail -n 100 gradle.log)
+\`\`\`" || true
+          fi
+
       - name: Upload gradle log on failure
         if: failure()
         uses: actions/upload-artifact@v4
