@@ -89,7 +89,9 @@ jobs:
           java-version: '21'
 
       - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        # Continue on failure - flutter-action already provides SDK
+        continue-on-error: true
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
