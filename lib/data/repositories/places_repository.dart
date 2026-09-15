@@ -8,7 +8,6 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/free_geo_client.dart';
 import '../../core/network/osrm_client.dart';
-import '../../core/utils/geo.dart';
 import '../local/nearby_store.dart';
 import '../local/search_cache.dart';
 import '../models/places.dart';

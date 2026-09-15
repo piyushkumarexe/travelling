@@ -100,8 +100,6 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
       await _loadPrefsInner();
     } catch (_) {
       // Never leave the planner stuck on the loader because prefs failed.
-    } finally {
-      if (mounted) setState(() => _storeLoaded = true);
     }
   }
 
