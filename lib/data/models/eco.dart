@@ -1,5 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Parses a date from Firestore (Timestamp) or the local store (ISO string).
+DateTime? _toDate(Object? v) {
+  if (v is Timestamp) return v.toDate();
+  if (v is DateTime) return v;
+  if (v is String) return DateTime.tryParse(v);
+  return null;
+}
+
 /// Eco score + logged eco-friendly travel activities.
 
 class EcoScore {
@@ -37,7 +45,7 @@ class EcoScore {
           ? (d['badges'] as List).whereType<String>().toList()
           : <String>[],
       sessions: (d['sessions'] as num?)?.toInt() ?? 0,
-      updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
+      updatedAt: _toDate(d['updatedAt']),
     );
   }
 
@@ -47,7 +55,9 @@ class EcoScore {
         'byMode': byMode,
         'badges': badges,
         'sessions': sessions,
-        'updatedAt': updatedAt?.toUtc() ?? DateTime.now().toUtc(),
+        // ISO string is JSON-safe and understood by both Firestore and the
+        // on-device store (see _toDate).
+        'updatedAt': (updatedAt ?? DateTime.now()).toUtc().toIso8601String(),
       };
 }
 
@@ -79,6 +89,16 @@ class EcoActivity {
         distanceMeters: (m['distanceMeters'] as num?)?.toDouble() ?? 0,
         durationSeconds: (m['durationSeconds'] as num?)?.toDouble() ?? 0,
         note: m['note'] as String?,
-        createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt: _toDate(m['createdAt']) ?? DateTime.now(),
       );
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'id': id,
+        'uid': uid,
+        'mode': mode,
+        'distanceMeters': distanceMeters,
+        'durationSeconds': durationSeconds,
+        'note': note,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+      };
 }

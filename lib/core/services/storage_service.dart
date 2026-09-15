@@ -1,5 +1,6 @@
 import 'dart:io' show File;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -108,6 +109,26 @@ class StorageService {
     return ref.getDownloadURL();
   }
 
+  /// Receipt photos for Travel Expense Guard: receipts/{uid}/{expenseId}.jpg.
+  /// image_picker already resized/compressed at pick time; ownership is
+  /// enforced by the storage rules on this exact path.
+  Future<String> uploadReceipt(XFile file, String uid, String expenseId) async {
+    await _validateImage(file);
+    final Reference ref = _storage
+        .ref()
+        .child('receipts')
+        .child(uid)
+        .child('$expenseId.jpg');
+    await ref.putFile(
+        File(file.path), SettableMetadata(contentType: _contentType(file)));
+    return ref.getDownloadURL();
+  }
+
+  /// Camera capture pre-compressed for a readable, small receipt photo.
+  Future<XFile?> pickReceipt({ImageSource source = ImageSource.camera}) =>
+      _picker.pickImage(
+          source: source, maxWidth: 1600, imageQuality: 80);
+
   Future<XFile?> pickImage() =>
       _picker.pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
 
@@ -116,4 +137,72 @@ class StorageService {
 
   Future<XFile?> pickAvatar() =>
       _picker.pickImage(source: ImageSource.gallery, maxWidth: 600, imageQuality: 85);
+
+  // ---------------- Travel Document & Booking Vault ----------------
+
+  /// Maximum size for a vault document file (PDF or image).
+  static const int maxVaultDocumentBytes = 10 * 1024 * 1024; // 10 MB
+
+  /// Gallery/camera pick pre-compressed by image_picker (resized to a
+  /// readable 1600px / ~80 quality) — keeps documents legible and small.
+  Future<XFile?> pickVaultImage({bool fromCamera = false}) =>
+      _picker.pickImage(
+          source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+          maxWidth: 1600,
+          imageQuality: 80);
+
+  /// PDF pick via the system document picker (no storage permission needed
+  /// on modern Android). Returns null when the user cancels.
+  Future<XFile?> pickVaultPdf() async {
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['pdf'],
+      withData: false,
+    );
+    final String? path = result?.files.single.path;
+    if (path == null) return null;
+    return XFile(path, mimeType: 'application/pdf');
+  }
+
+  /// Starts a resumable upload of a vault document file to the strict
+  /// owner path `users/{uid}/travelDocuments/{documentId}/file` (mirrored
+  /// by storage.rules). Returns the Storage [Task] so callers can show
+  /// progress, cancel or retry — the upload never blocks the app.
+  Future<Task> startVaultUpload(
+      XFile file, String uid, String documentId) async {
+    final String ext = _ext(file);
+    final bool isPdf = ext == 'pdf';
+    if (!isPdf && !_imageExts.contains(ext)) {
+      throw StorageValidationException(
+          'Unsupported file format. Use PDF, JPG or PNG.');
+    }
+    if (await file.length() > maxVaultDocumentBytes) {
+      throw StorageValidationException(
+          'File is too large. Maximum size is 10 MB.');
+    }
+    final Reference ref = _storage
+        .ref()
+        .child('users')
+        .child(uid)
+        .child('travelDocuments')
+        .child(documentId)
+        .child('file');
+    return ref.putFile(
+      File(file.path),
+      SettableMetadata(
+        contentType: isPdf ? 'application/pdf' : _contentType(file),
+      ),
+    );
+  }
+
+  /// Deletes a vault file by its Storage path. A missing object is treated
+  /// as already deleted; any other error is rethrown so the caller can
+  /// surface a real failure instead of leaving an orphan silently.
+  Future<void> deleteVaultFile(String storagePath) async {
+    try {
+      await _storage.ref(storagePath).delete();
+    } on FirebaseException catch (e) {
+      if (e.code != 'object-not-found') rethrow;
+    }
+  }
 }
