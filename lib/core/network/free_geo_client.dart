@@ -245,7 +245,7 @@ class FreeGeoClient {
     // stuck indefinitely on "ts mishra university"). Slow-but-complete beats
     // never-returning: on timeout the provider simply counts as skipped.
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 12),
+        f.timeout(const Duration(seconds: 8),
             onTimeout: () => _ProviderResult.skipped('$name-timeout'));
 
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
@@ -500,7 +500,7 @@ class FreeGeoClient {
     }
 
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 8),
+        f.timeout(const Duration(seconds: 5),
             onTimeout: () => _ProviderResult.skipped('$name-timeout'));
 
     final List<_ProviderResult> results =
@@ -1021,7 +1021,7 @@ class FreeGeoClient {
   Future<_ProviderResult> _photonSearch(String q, LatLng? near) async {
     final Map<String, dynamic> qp = <String, dynamic>{
       'q': q,
-      'limit': 15,
+      'limit': 20,
       'lang': 'en',
     };
     if (near != null) {
@@ -1162,10 +1162,17 @@ class FreeGeoClient {
     if (tokens.isEmpty) {
       return _ProviderResult.skipped('overpass-name');
     }
-    // Two ordered variants: the full query AND the query without its last
-    // token — so "ts mishra university lucknow" still matches the OSM name
-    // "TS Mishra University" (the trailing locality is context, not part of
-    // the name).
+    // Google-Maps-like accuracy for small places: require ALL significant tokens
+    // in the name in ANY order (not just ordered regex), so "new public college"
+    // matches "New Public Inter College" even with extra words in between.
+    // Also search alt_name, short_name, operator, brand for better recall.
+    // Radius increased to 50km for metro coverage (Lucknow metro is ~40km).
+    final StringBuffer filter = StringBuffer();
+    for (final String t in tokens) {
+      final String esc = RegExp.escape(t);
+      filter.write('["name"~"$esc",i]');
+    }
+    final String allTokensFilter = filter.toString();
     final String full = tokens.map(RegExp.escape).join('.*');
     String regex = full;
     if (tokens.length >= 2) {
@@ -1175,10 +1182,13 @@ class FreeGeoClient {
           .join('.*');
       regex = '$full|$shorter';
     }
-    final String query = '[out:json][timeout:15];('
-        'nwr["name"~"$regex",i]'
-        '(around:25000,${near.latitude},${near.longitude});'
-        ');out center 40;';
+    final String query = '[out:json][timeout:20];('
+        'nwr$allTokensFilter(around:50000,${near.latitude},${near.longitude});'
+        'nwr["name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
+        'nwr["alt_name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
+        'nwr["short_name"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
+        'nwr["operator"~"$regex",i](around:50000,${near.latitude},${near.longitude});'
+        ');out center 80;';
     return _overpassRun(query, false);
   }
 
