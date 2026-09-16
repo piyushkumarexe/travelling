@@ -398,6 +398,126 @@ class _NavMap3DState extends State<NavMap3D> {
       } catch (_) {
         // Buildings are decorative — ignore.
       }
+
+      // MapTiler's dedicated Buildings tileset carries building-part geometry
+      // and real facade/roof metadata. It is an overlay rather than a hard
+      // replacement: if the account or network cannot serve it, the Planet v3
+      // layer above still gives the user a complete 3D map.
+      final String? detailedTilesJson =
+          AppConfig.detailedBuildingsTilesJsonUrl;
+      if (detailedTilesJson != null) {
+        try {
+          await c.addSource(
+            'nav_building_details_src',
+            ml.VectorSourceProperties(url: detailedTilesJson),
+          );
+          final List<dynamic> detailHeight = <dynamic>[
+            'coalesce',
+            <dynamic>['get', 'height'],
+            <dynamic>[
+              '*',
+              <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
+              3.2,
+            ],
+            8.0,
+          ];
+          final List<dynamic> detailScaledHeight = <dynamic>[
+            'interpolate',
+            <dynamic>['linear'],
+            <dynamic>['zoom'],
+            14.0,
+            0.0,
+            15.5,
+            detailHeight,
+          ];
+          final List<dynamic> detailBase = <dynamic>[
+            'coalesce',
+            <dynamic>['get', 'height_min'],
+            0.0,
+          ];
+          final List<dynamic> detailFacadeColor = <dynamic>[
+            'coalesce',
+            <dynamic>['get', 'facade_color'],
+            classFacadeColor,
+          ];
+          final List<dynamic> detailRoofColor = <dynamic>[
+            'coalesce',
+            <dynamic>['get', 'roof_color'],
+            classRoofColor,
+          ];
+          final List<dynamic> detailRoofThickness = <dynamic>[
+            'match',
+            <dynamic>['get', 'roof_shape'],
+            'gabled',
+            0.55,
+            'hipped',
+            0.45,
+            'pyramidal',
+            0.45,
+            'shed',
+            0.35,
+            0.28,
+          ];
+          final List<dynamic> detailFilter = <dynamic>[
+            'all',
+            <dynamic>['!=', <dynamic>['get', 'underground'], true],
+          ];
+
+          await c.addFillExtrusionLayer(
+            'nav_building_details_src',
+            'nav_building_details_3d',
+            ml.FillExtrusionLayerProperties(
+              fillExtrusionColor: detailFacadeColor,
+              fillExtrusionHeight: detailScaledHeight,
+              fillExtrusionBase: detailBase,
+              fillExtrusionOpacity: 1.0,
+              fillExtrusionVerticalGradient: true,
+            ),
+            belowLayerId: 'nav_route_casing',
+            sourceLayer: 'building',
+            minzoom: 14,
+            filter: detailFilter,
+            enableInteraction: false,
+          );
+          await c.addFillExtrusionLayer(
+            'nav_building_details_src',
+            'nav_building_details_roofs',
+            ml.FillExtrusionLayerProperties(
+              fillExtrusionColor: detailRoofColor,
+              fillExtrusionHeight: detailScaledHeight,
+              fillExtrusionBase: <dynamic>[
+                'max',
+                0.0,
+                <dynamic>['-', detailScaledHeight, detailRoofThickness],
+              ],
+              fillExtrusionOpacity: 1.0,
+              fillExtrusionVerticalGradient: false,
+            ),
+            belowLayerId: 'nav_route_casing',
+            sourceLayer: 'building',
+            minzoom: 14,
+            filter: detailFilter,
+            enableInteraction: false,
+          );
+          await c.addLineLayer(
+            'nav_building_details_src',
+            'nav_building_details_outline',
+            ml.LineLayerProperties(
+              lineColor: '#56616B',
+              lineWidth: 0.7,
+              lineOpacity: 0.68,
+              lineJoin: 'round',
+            ),
+            belowLayerId: 'nav_route_casing',
+            sourceLayer: 'building',
+            minzoom: 15,
+            filter: detailFilter,
+            enableInteraction: false,
+          );
+        } catch (_) {
+          // The detailed tileset is an enhancement, never a map prerequisite.
+        }
+      }
     }
   }
 

@@ -193,6 +193,15 @@ class AppConfig {
       ? 'https://api.maptiler.com/tiles/v3/tiles.json?key=$mapTilerApiKey'
       : null;
 
+  /// Optional high-detail building overlay. MapTiler's dedicated Buildings
+  /// tileset is compatible with Planet v4 and provides building-part
+  /// footprints plus facade_color, roof_color, roof_shape, height, and
+  /// height_min. The 3D map keeps Planet v3 above as a graceful fallback when
+  /// an account does not have access to this newer tileset.
+  static String? get detailedBuildingsTilesJsonUrl => mapTilerConfigured
+      ? 'https://api.maptiler.com/tiles/buildings/tiles.json?key=$mapTilerApiKey'
+      : null;
+
   /// Keyless OpenStreetMap tile source (real streets/labels, no API key).
   /// Used as the primary source in keyless mode and as the fallback when a
   /// MapTiler key is compiled in.
