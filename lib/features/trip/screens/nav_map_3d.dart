@@ -55,7 +55,10 @@ class _NavMap3DState extends State<NavMap3D> {
   List<ll.LatLng> _lastRoute = const <ll.LatLng>[];
   ll.LatLng? _lastDest;
 
-  static const double _tilt = 47.5;
+  // A steeper perspective exposes the façades instead of showing mostly
+  // flat grey footprints. This is close to the perspective used by turn-by-
+  // turn navigation apps while still leaving enough road visible ahead.
+  static const double _tilt = 58.0;
 
   String? get _styleUrl =>
       AppConfig.styleJsonUrl(widget.satellite ? 'hybrid' : 'streets-v2');
@@ -197,9 +200,11 @@ class _NavMap3DState extends State<NavMap3D> {
         circleStrokeColor: '#FFFFFF',
       ),
     );
-    // 3D buildings (optional): a vector-tile hiccup must never kill the
-    // route/pin layers — failures here are swallowed and the rest of the
-    // 3D view keeps working.
+    // 3D buildings (optional): use the real building metadata from
+    // MapTiler Planet v3 instead of painting every footprint the same grey.
+    // The `colour` field carries OSM facade colours; render_height and
+    // render_min_height carry the actual footprint heights. A vector-tile
+    // hiccup must never kill the route/pin layers.
     final String? tilesJson = AppConfig.vectorTilesJsonUrl;
     if (tilesJson != null) {
       try {
@@ -207,16 +212,127 @@ class _NavMap3DState extends State<NavMap3D> {
           'nav_buildings_src',
           ml.VectorSourceProperties(url: tilesJson),
         );
+
+        final List<dynamic> heightExpression = <dynamic>[
+          'coalesce',
+          <dynamic>['get', 'render_height'],
+          <dynamic>['get', 'height'],
+          <dynamic>[
+            '*',
+            <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
+            3.2,
+          ],
+          8.0,
+        ];
+        final List<dynamic> baseExpression = <dynamic>[
+          'coalesce',
+          <dynamic>['get', 'render_min_height'],
+          <dynamic>['get', 'height_min'],
+          0.0,
+        ];
+        // Fade buildings in as the camera reaches a useful 3D zoom. This
+        // avoids the flat pop-in effect when the user zooms toward a place.
+        final List<dynamic> scaledHeight = <dynamic>[
+          'interpolate',
+          <dynamic>['linear'],
+          <dynamic>['zoom'],
+          14.0,
+          0.0,
+          15.5,
+          heightExpression,
+        ];
+        final List<dynamic> facadeColor = <dynamic>[
+          'coalesce',
+          // MapTiler Buildings v4 uses facade_color; Planet v3 uses colour.
+          <dynamic>['get', 'facade_color'],
+          <dynamic>['get', 'colour'],
+          <dynamic>[
+            'match',
+            <dynamic>['get', 'class'],
+            'residential',
+            '#D7C3A8',
+            'commercial',
+            '#C6B39D',
+            'industrial',
+            '#AEB9C4',
+            'education',
+            '#D6B68B',
+            'civic',
+            '#B9C9D8',
+            'religious',
+            '#C8AA8D',
+            '#C4CBD2',
+          ],
+          '#C4CBD2',
+        ];
+        final List<dynamic> roofColor = <dynamic>[
+          'coalesce',
+          <dynamic>['get', 'roof_color'],
+          <dynamic>['get', 'roof_colour'],
+          '#F0E9DE',
+        ];
+        final List<dynamic> buildingFilter = <dynamic>[
+          'all',
+          <dynamic>['!=', <dynamic>['get', 'hide_3d'], true],
+          <dynamic>['!=', <dynamic>['get', 'underground'], true],
+        ];
+
         await c.addFillExtrusionLayer(
           'nav_buildings_src',
           'nav_buildings_3d',
           ml.FillExtrusionLayerProperties(
-            fillExtrusionColor: '#9CA3AF',
-            fillExtrusionHeight: <dynamic>['coalesce', <dynamic>['get', 'render_height'], 8.0],
-            fillExtrusionBase: <dynamic>['coalesce', <dynamic>['get', 'render_min_height'], 0.0],
-            fillExtrusionOpacity: 0.75,
+            fillExtrusionColor: facadeColor,
+            fillExtrusionHeight: scaledHeight,
+            fillExtrusionBase: baseExpression,
+            fillExtrusionOpacity: 0.98,
+            fillExtrusionVerticalGradient: true,
           ),
+          belowLayerId: 'nav_route_casing',
           sourceLayer: 'building',
+          minzoom: 14,
+          filter: buildingFilter,
+          enableInteraction: false,
+        );
+
+        // A thin roof cap gives each building a readable top surface and
+        // makes adjacent footprints look like buildings, not grey blocks.
+        await c.addFillExtrusionLayer(
+          'nav_buildings_src',
+          'nav_buildings_roofs',
+          ml.FillExtrusionLayerProperties(
+            fillExtrusionColor: roofColor,
+            fillExtrusionHeight: scaledHeight,
+            fillExtrusionBase: <dynamic>[
+              'max',
+              0.0,
+              <dynamic>['-', scaledHeight, 0.35],
+            ],
+            fillExtrusionOpacity: 0.96,
+            fillExtrusionVerticalGradient: false,
+          ),
+          belowLayerId: 'nav_route_casing',
+          sourceLayer: 'building',
+          minzoom: 14,
+          filter: buildingFilter,
+          enableInteraction: false,
+        );
+
+        // Fine outlines separate neighbouring buildings and preserve the
+        // footprint detail when imagery is low contrast.
+        await c.addLineLayer(
+          'nav_buildings_src',
+          'nav_buildings_outline',
+          ml.LineLayerProperties(
+            lineColor: '#7B8794',
+            lineWidth: 0.65,
+            lineOpacity: 0.55,
+            lineJoin: 'round',
+          ),
+          belowLayerId: 'nav_route_casing',
+          sourceLayer: 'building',
+          minzoom: 15,
+          filter: buildingFilter,
+          enableInteraction: false,
         );
       } catch (_) {
         // Buildings are decorative — ignore.
