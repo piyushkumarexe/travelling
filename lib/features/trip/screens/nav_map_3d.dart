@@ -58,7 +58,7 @@ class _NavMap3DState extends State<NavMap3D> {
   // A steeper perspective exposes the façades instead of showing mostly
   // flat grey footprints. This is close to the perspective used by turn-by-
   // turn navigation apps while still leaving enough road visible ahead.
-  static const double _tilt = 58.0;
+  static const double _tilt = 62.0;
 
   String? get _styleUrl =>
       AppConfig.styleJsonUrl(widget.satellite ? 'hybrid' : 'streets-v2');
@@ -241,35 +241,96 @@ class _NavMap3DState extends State<NavMap3D> {
           15.5,
           heightExpression,
         ];
-        final List<dynamic> facadeColor = <dynamic>[
+        // A class palette is deliberately the fallback before the raw OSM
+        // `colour` field. In Planet tiles that field is frequently white or
+        // absent, which made the previous pass look like one large group of
+        // identical cream boxes. Keep explicit facade metadata when it is
+        // useful, but do not let a generic white value erase the palette.
+        final List<dynamic> classFacadeColor = <dynamic>[
+          'match',
+          <dynamic>['get', 'class'],
+          'residential',
+          '#C7B39B',
+          'commercial',
+          '#AAB8C5',
+          'industrial',
+          '#8F9BA6',
+          'education',
+          '#D0B083',
+          'civic',
+          '#B7C5D1',
+          'religious',
+          '#B78F6C',
+          '#B3BBC2',
+        ];
+        final List<dynamic> facadeMetadata = <dynamic>[
           'coalesce',
           // MapTiler Buildings v4 uses facade_color; Planet v3 uses colour.
           <dynamic>['get', 'facade_color'],
           <dynamic>['get', 'colour'],
-          <dynamic>[
-            'match',
-            <dynamic>['get', 'class'],
-            'residential',
-            '#D7C3A8',
-            'commercial',
-            '#C6B39D',
-            'industrial',
-            '#AEB9C4',
-            'education',
-            '#D6B68B',
-            'civic',
-            '#B9C9D8',
-            'religious',
-            '#C8AA8D',
-            '#C4CBD2',
-          ],
-          '#C4CBD2',
         ];
-        final List<dynamic> roofColor = <dynamic>[
+        final List<dynamic> facadeColor = <dynamic>[
+          'case',
+          <dynamic>[
+            'any',
+            // Treat the common white sentinel as missing metadata. This
+            // keeps real non-white facade colors available when supplied by
+            // a richer Buildings tileset later.
+            <dynamic>['==', facadeMetadata, '#FFFFFF'],
+            <dynamic>['==', facadeMetadata, '#ffffff'],
+            <dynamic>['==', facadeMetadata, '#FFF'],
+            <dynamic>['==', facadeMetadata, '#fff'],
+          ],
+          classFacadeColor,
+          <dynamic>['coalesce', facadeMetadata, classFacadeColor],
+        ];
+        final List<dynamic> classRoofColor = <dynamic>[
+          'match',
+          <dynamic>['get', 'roof_shape'],
+          'gabled',
+          '#765E52',
+          'hipped',
+          '#6F625A',
+          'pyramidal',
+          '#745A49',
+          'shed',
+          '#667482',
+          'flat',
+          '#707B85',
+          '#7B858E',
+        ];
+        final List<dynamic> roofMetadata = <dynamic>[
           'coalesce',
           <dynamic>['get', 'roof_color'],
           <dynamic>['get', 'roof_colour'],
-          '#F0E9DE',
+        ];
+        final List<dynamic> roofColor = <dynamic>[
+          'case',
+          <dynamic>[
+            'any',
+            <dynamic>['==', roofMetadata, '#FFFFFF'],
+            <dynamic>['==', roofMetadata, '#ffffff'],
+            <dynamic>['==', roofMetadata, '#FFF'],
+            <dynamic>['==', roofMetadata, '#fff'],
+          ],
+          classRoofColor,
+          <dynamic>['coalesce', roofMetadata, classRoofColor],
+        ];
+        // The cap is still a flat MapLibre extrusion, but a slightly deeper
+        // material band makes roof_shape distinctions legible without
+        // pretending this vector source contains sloped 3D meshes.
+        final List<dynamic> roofThickness = <dynamic>[
+          'match',
+          <dynamic>['get', 'roof_shape'],
+          'gabled',
+          0.55,
+          'hipped',
+          0.45,
+          'pyramidal',
+          0.45,
+          'shed',
+          0.35,
+          0.28,
         ];
         final List<dynamic> buildingFilter = <dynamic>[
           'all',
@@ -305,7 +366,7 @@ class _NavMap3DState extends State<NavMap3D> {
             fillExtrusionBase: <dynamic>[
               'max',
               0.0,
-              <dynamic>['-', scaledHeight, 0.35],
+              <dynamic>['-', scaledHeight, roofThickness],
             ],
             fillExtrusionOpacity: 0.96,
             fillExtrusionVerticalGradient: false,
