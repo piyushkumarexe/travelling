@@ -435,15 +435,47 @@ class _NavMap3DState extends State<NavMap3D> {
             <dynamic>['get', 'height_min'],
             0.0,
           ];
+          final List<dynamic> detailClassFacadeColor = <dynamic>[
+            'match',
+            <dynamic>['get', 'class'],
+            'residential',
+            '#C7B39B',
+            'commercial',
+            '#AAB8C5',
+            'industrial',
+            '#8F9BA6',
+            'education',
+            '#D0B083',
+            'civic',
+            '#B7C5D1',
+            'religious',
+            '#B78F6C',
+            '#B3BBC2',
+          ];
+          final List<dynamic> detailClassRoofColor = <dynamic>[
+            'match',
+            <dynamic>['get', 'roof_shape'],
+            'gabled',
+            '#765E52',
+            'hipped',
+            '#6F625A',
+            'pyramidal',
+            '#745A49',
+            'shed',
+            '#667482',
+            'flat',
+            '#707B85',
+            '#7B858E',
+          ];
           final List<dynamic> detailFacadeColor = <dynamic>[
             'coalesce',
             <dynamic>['get', 'facade_color'],
-            classFacadeColor,
+            detailClassFacadeColor,
           ];
           final List<dynamic> detailRoofColor = <dynamic>[
             'coalesce',
             <dynamic>['get', 'roof_color'],
-            classRoofColor,
+            detailClassRoofColor,
           ];
           final List<dynamic> detailRoofThickness = <dynamic>[
             'match',
