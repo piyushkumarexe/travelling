@@ -7,8 +7,10 @@
 // screen keeps the working 2D map (never a blank screen).
 
 import 'dart:async' show Completer, Timer, unawaited;
+import 'dart:typed_data' show ByteData;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart' show Position;
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:maplibre_gl/maplibre_gl.dart' as ml;
@@ -205,6 +207,23 @@ class _NavMap3DState extends State<NavMap3D> {
     // The `colour` field carries OSM facade colours; render_height and
     // render_min_height carry the actual footprint heights. A vector-tile
     // hiccup must never kill the route/pin layers.
+    // A real façade pattern makes the vertical faces read as windows and
+    // floors instead of a single grey slab. Roof layers are drawn over it, so
+    // the pattern is confined to the walls. If an asset/style implementation
+    // cannot register images, the colored extrusion remains the fallback.
+    String? facadePatternImage;
+    try {
+      final ByteData patternBytes = await rootBundle.load(
+        'assets/images/building_facade_pattern.png',
+      );
+      await c.addImage(
+        'nav_building_facade_pattern',
+        patternBytes.buffer.asUint8List(),
+      );
+      facadePatternImage = 'nav_building_facade_pattern';
+    } catch (_) {
+      // The texture is decorative — never block the navigation map.
+    }
     final String? tilesJson = AppConfig.vectorTilesJsonUrl;
     if (tilesJson != null) {
       try {
@@ -214,15 +233,19 @@ class _NavMap3DState extends State<NavMap3D> {
         );
 
         final List<dynamic> heightExpression = <dynamic>[
-          'coalesce',
-          <dynamic>['get', 'render_height'],
-          <dynamic>['get', 'height'],
+          'max',
+          4.5,
           <dynamic>[
-            '*',
-            <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
-            3.2,
+            'coalesce',
+            <dynamic>['get', 'render_height'],
+            <dynamic>['get', 'height'],
+            <dynamic>[
+              '*',
+              <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
+              3.2,
+            ],
+            8.0,
           ],
-          8.0,
         ];
         final List<dynamic> baseExpression = <dynamic>[
           'coalesce',
@@ -241,11 +264,11 @@ class _NavMap3DState extends State<NavMap3D> {
           15.5,
           heightExpression,
         ];
-        // A class palette is deliberately the fallback before the raw OSM
-        // `colour` field. In Planet tiles that field is frequently white or
-        // absent, which made the previous pass look like one large group of
-        // identical cream boxes. Keep explicit facade metadata when it is
-        // useful, but do not let a generic white value erase the palette.
+        // Use stable, simple style expressions for the fallback Planet v3
+        // layer. The dedicated Buildings overlay below uses its richer
+        // facade_color and roof_color fields directly. Keeping this fallback
+        // simple is important: one unsupported expression must not remove all
+        // of the building layers on older native MapLibre builds.
         final List<dynamic> classFacadeColor = <dynamic>[
           'match',
           <dynamic>['get', 'class'],
@@ -263,26 +286,10 @@ class _NavMap3DState extends State<NavMap3D> {
           '#B78F6C',
           '#B3BBC2',
         ];
-        final List<dynamic> facadeMetadata = <dynamic>[
-          'coalesce',
-          // MapTiler Buildings v4 uses facade_color; Planet v3 uses colour.
-          <dynamic>['get', 'facade_color'],
-          <dynamic>['get', 'colour'],
-        ];
         final List<dynamic> facadeColor = <dynamic>[
-          'case',
-          <dynamic>[
-            'any',
-            // Treat the common white sentinel as missing metadata. This
-            // keeps real non-white facade colors available when supplied by
-            // a richer Buildings tileset later.
-            <dynamic>['==', facadeMetadata, '#FFFFFF'],
-            <dynamic>['==', facadeMetadata, '#ffffff'],
-            <dynamic>['==', facadeMetadata, '#FFF'],
-            <dynamic>['==', facadeMetadata, '#fff'],
-          ],
+          'coalesce',
+          <dynamic>['get', 'facade_color'],
           classFacadeColor,
-          <dynamic>['coalesce', facadeMetadata, classFacadeColor],
         ];
         final List<dynamic> classRoofColor = <dynamic>[
           'match',
@@ -299,22 +306,10 @@ class _NavMap3DState extends State<NavMap3D> {
           '#707B85',
           '#7B858E',
         ];
-        final List<dynamic> roofMetadata = <dynamic>[
+        final List<dynamic> roofColor = <dynamic>[
           'coalesce',
           <dynamic>['get', 'roof_color'],
-          <dynamic>['get', 'roof_colour'],
-        ];
-        final List<dynamic> roofColor = <dynamic>[
-          'case',
-          <dynamic>[
-            'any',
-            <dynamic>['==', roofMetadata, '#FFFFFF'],
-            <dynamic>['==', roofMetadata, '#ffffff'],
-            <dynamic>['==', roofMetadata, '#FFF'],
-            <dynamic>['==', roofMetadata, '#fff'],
-          ],
           classRoofColor,
-          <dynamic>['coalesce', roofMetadata, classRoofColor],
         ];
         // The cap is still a flat MapLibre extrusion, but a slightly deeper
         // material band makes roof_shape distinctions legible without
@@ -343,6 +338,7 @@ class _NavMap3DState extends State<NavMap3D> {
           'nav_buildings_3d',
           ml.FillExtrusionLayerProperties(
             fillExtrusionColor: facadeColor,
+            fillExtrusionPattern: facadePatternImage,
             fillExtrusionHeight: scaledHeight,
             fillExtrusionBase: baseExpression,
             fillExtrusionOpacity: 0.98,
@@ -412,14 +408,18 @@ class _NavMap3DState extends State<NavMap3D> {
             ml.VectorSourceProperties(url: detailedTilesJson),
           );
           final List<dynamic> detailHeight = <dynamic>[
-            'coalesce',
-            <dynamic>['get', 'height'],
+            'max',
+            4.5,
             <dynamic>[
-              '*',
-              <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
-              3.2,
+              'coalesce',
+              <dynamic>['get', 'height'],
+              <dynamic>[
+                '*',
+                <dynamic>['coalesce', <dynamic>['get', 'levels'], 2],
+                3.2,
+              ],
+              8.0,
             ],
-            8.0,
           ];
           final List<dynamic> detailScaledHeight = <dynamic>[
             'interpolate',
@@ -500,6 +500,7 @@ class _NavMap3DState extends State<NavMap3D> {
             'nav_building_details_3d',
             ml.FillExtrusionLayerProperties(
               fillExtrusionColor: detailFacadeColor,
+              fillExtrusionPattern: facadePatternImage,
               fillExtrusionHeight: detailScaledHeight,
               fillExtrusionBase: detailBase,
               fillExtrusionOpacity: 1.0,
