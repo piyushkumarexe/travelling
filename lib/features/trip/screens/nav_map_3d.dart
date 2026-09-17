@@ -264,52 +264,39 @@ class _NavMap3DState extends State<NavMap3D> {
           15.5,
           heightExpression,
         ];
-        // Use stable, simple style expressions for the fallback Planet v3
-        // layer. The dedicated Buildings overlay below uses its richer
-        // facade_color and roof_color fields directly. Keeping this fallback
-        // simple is important: one unsupported expression must not remove all
-        // of the building layers on older native MapLibre builds.
-        final List<dynamic> classFacadeColor = <dynamic>[
-          'match',
-          <dynamic>['get', 'class'],
-          'residential',
-          '#C7B39B',
-          'commercial',
-          '#AAB8C5',
-          'industrial',
-          '#8F9BA6',
-          'education',
-          '#D0B083',
-          'civic',
-          '#B7C5D1',
-          'religious',
-          '#B78F6C',
-          '#B3BBC2',
-        ];
+        // Planet v3 does not consistently provide a building class. Use
+        // height-driven materials instead of falling back to one grey color
+        // when that optional property is absent. The dedicated Buildings
+        // overlay below uses its facade_color and roof_color fields directly.
         final List<dynamic> facadeColor = <dynamic>[
-          'coalesce',
-          <dynamic>['get', 'facade_color'],
-          classFacadeColor,
-        ];
-        final List<dynamic> classRoofColor = <dynamic>[
-          'match',
-          <dynamic>['get', 'roof_shape'],
-          'gabled',
-          '#765E52',
-          'hipped',
-          '#6F625A',
-          'pyramidal',
-          '#745A49',
-          'shed',
-          '#667482',
-          'flat',
-          '#707B85',
-          '#7B858E',
+          'interpolate',
+          <dynamic>['linear'],
+          heightExpression,
+          4.5,
+          '#D7A27C',
+          8.0,
+          '#C48561',
+          16.0,
+          '#A96F55',
+          30.0,
+          '#80695D',
+          60.0,
+          '#657586',
+          120.0,
+          '#4F6374',
         ];
         final List<dynamic> roofColor = <dynamic>[
-          'coalesce',
-          <dynamic>['get', 'roof_color'],
-          classRoofColor,
+          'interpolate',
+          <dynamic>['linear'],
+          heightExpression,
+          4.5,
+          '#8F5C45',
+          12.0,
+          '#765347',
+          30.0,
+          '#596875',
+          120.0,
+          '#354453',
         ];
         // The cap is still a flat MapLibre extrusion, but a slightly deeper
         // material band makes roof_shape distinctions legible without
@@ -338,7 +325,6 @@ class _NavMap3DState extends State<NavMap3D> {
           'nav_buildings_3d',
           ml.FillExtrusionLayerProperties(
             fillExtrusionColor: facadeColor,
-            fillExtrusionPattern: facadePatternImage,
             fillExtrusionHeight: scaledHeight,
             fillExtrusionBase: baseExpression,
             fillExtrusionOpacity: 0.98,
@@ -350,6 +336,33 @@ class _NavMap3DState extends State<NavMap3D> {
           filter: buildingFilter,
           enableInteraction: false,
         );
+
+        // Keep the colored extrusion as the guaranteed fallback. The window
+        // texture is a separate layer so an older native renderer that cannot
+        // use fill-extrusion-pattern still leaves visible buildings behind.
+        if (facadePatternImage != null) {
+          try {
+            await c.addFillExtrusionLayer(
+              'nav_buildings_src',
+              'nav_buildings_facade_detail',
+              ml.FillExtrusionLayerProperties(
+                fillExtrusionColor: facadeColor,
+                fillExtrusionPattern: facadePatternImage,
+                fillExtrusionHeight: scaledHeight,
+                fillExtrusionBase: baseExpression,
+                fillExtrusionOpacity: 0.98,
+                fillExtrusionVerticalGradient: true,
+              ),
+              belowLayerId: 'nav_route_casing',
+              sourceLayer: 'building',
+              minzoom: 15,
+              filter: buildingFilter,
+              enableInteraction: false,
+            );
+          } catch (_) {
+            // Texture unsupported — the colored wall layer remains.
+          }
+        }
 
         // A thin roof cap gives each building a readable top surface and
         // makes adjacent footprints look like buildings, not grey blocks.
@@ -500,7 +513,6 @@ class _NavMap3DState extends State<NavMap3D> {
             'nav_building_details_3d',
             ml.FillExtrusionLayerProperties(
               fillExtrusionColor: detailFacadeColor,
-              fillExtrusionPattern: facadePatternImage,
               fillExtrusionHeight: detailScaledHeight,
               fillExtrusionBase: detailBase,
               fillExtrusionOpacity: 1.0,
@@ -512,6 +524,29 @@ class _NavMap3DState extends State<NavMap3D> {
             filter: detailFilter,
             enableInteraction: false,
           );
+          if (facadePatternImage != null) {
+            try {
+              await c.addFillExtrusionLayer(
+                'nav_building_details_src',
+                'nav_building_details_facade_detail',
+                ml.FillExtrusionLayerProperties(
+                  fillExtrusionColor: detailFacadeColor,
+                  fillExtrusionPattern: facadePatternImage,
+                  fillExtrusionHeight: detailScaledHeight,
+                  fillExtrusionBase: detailBase,
+                  fillExtrusionOpacity: 1.0,
+                  fillExtrusionVerticalGradient: true,
+                ),
+                belowLayerId: 'nav_route_casing',
+                sourceLayer: 'building',
+                minzoom: 15,
+                filter: detailFilter,
+                enableInteraction: false,
+              );
+            } catch (_) {
+              // Texture unsupported — the colored wall layer remains.
+            }
+          }
           await c.addFillExtrusionLayer(
             'nav_building_details_src',
             'nav_building_details_roofs',
