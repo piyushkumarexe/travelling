@@ -258,3 +258,31 @@ jobs:
           # GitHub archive so the two archives remain independently valid.
           compression-level: 0
           retention-days: 14
+
+      # Phones frequently fail to extract the nested artifact ZIP ("Could
+      # not extract file / 1 file was not copied correctly"). Publishing the
+      # raw APK on a rolling prerelease tag gives testers a DIRECT download
+      # link — no ZIP, no extraction, just install.
+      - name: Publish APK to GitHub Release (direct phone download)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="apk-latest"
+          NOTES="Latest build: run #${RUN_NUMBER} (${RUN_SHA})
+          Direct APK download — no ZIP extraction needed. Install this file directly.
+          Includes: nearby detection fixes, search accuracy, live nearby data, real place photos, instant taps (no GPS wait on option click)."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/yatrawise-release.apk --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/yatrawise-release.apk \
+              --title "Latest Tourism APK" \
+              --notes "$NOTES" \
+              --prerelease \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "Direct download:"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/yatrawise-release.apk"
