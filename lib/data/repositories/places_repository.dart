@@ -112,8 +112,14 @@ class PlacesRepository {
     return out;
   }
 
-  /// Autocomplete suggestions while typing - Google Maps-like accuracy for small places
-  /// Uses MapTiler + Photon + Overpass name search with location bias
+  /// Autocomplete suggestions while typing.
+  ///
+  /// The free providers are useful as a fallback, but they do not have the
+  /// same local-place coverage as Google Maps. When the authenticated backend
+  /// is available, run its Google Places Text Search in parallel with the free
+  /// search and merge both result sets. This is what makes a query such as
+  /// "new public college" return all nearby branches instead of only the two
+  /// hand-known fallback records.
   Future<List<Place>> suggest(
     String query, {
     LatLng? location,
@@ -121,22 +127,108 @@ class PlacesRepository {
   }) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
-    final String cacheKey = SearchCache.key(q, null, location?.latitude, location?.longitude, 0);
+    final String cacheKey = SearchCache.key(
+      q,
+      null,
+      location?.latitude,
+      location?.longitude,
+      0,
+    );
     final List<Place>? cached = await SearchCache.read(cacheKey);
     if (cached != null && cached.isNotEmpty) {
-      return cached.take(limit).toList();
+      // Re-rank a cached response against the current GPS fix. The cache key
+      // is intentionally area-bucketed, so the user's position may have
+      // moved a little since the response was written.
+      final List<Place> cachedRanked =
+          PlaceRanking.rankSuggestions(cached, q, location);
+      final List<Place> cachedRelevant =
+          PlaceRanking.filterRelevant(cachedRanked, q, location);
+      return (cachedRelevant.isNotEmpty ? cachedRelevant : cachedRanked)
+          .take(limit)
+          .toList();
     }
-    try {
-      final List<Place> result = await _free.suggest(query, near: location, limit: limit);
-      if (result.isNotEmpty) {
-        unawaited(SearchCache.write(cacheKey, result));
+
+    Future<List<Place>> safe(Future<List<Place>> request) async {
+      try {
+        return await request;
+      } catch (_) {
+        return const <Place>[];
       }
-      return result;
-    } catch (_) {
+    }
+
+    final List<Future<List<Place>>> requests = <Future<List<Place>>>[
+      safe(_free.suggest(query, near: location, limit: limit)),
+      // Avoid spending a backend/Places request on one- or two-letter input;
+      // the free providers still provide lightweight early suggestions.
+      if (configured && q.length >= 3)
+        safe(_backendSuggest(q, location).timeout(const Duration(seconds: 7))),
+    ];
+    final List<List<Place>> batches = await Future.wait(requests);
+    final List<Place> all = <Place>[
+      for (final List<Place> batch in batches) ...batch,
+    ];
+
+    // FreeGeoClient already contributes the local Lucknow recall list. Keep
+    // this explicit fallback too, in case the free request timed out while
+    // the backend was unavailable.
+    if (all.isEmpty) {
+      all.addAll(_lucknowFallback(q, location));
+    }
+    if (all.isEmpty) {
       final List<Place>? stale = await SearchCache.readStale(cacheKey);
       if (stale != null && stale.isNotEmpty) return stale.take(limit).toList();
       return const <Place>[];
     }
+
+    final Map<String, Place> unique = <String, Place>{};
+    for (final Place place in all) {
+      final String key =
+          '${place.name.toLowerCase().trim()}|${place.lat.toStringAsFixed(4)},${place.lng.toStringAsFixed(4)}';
+      final Place? old = unique[key];
+      if (old == null || _isRicherSuggestion(place, old)) {
+        unique[key] = place;
+      }
+    }
+
+    final List<Place> ranked = PlaceRanking.rankSuggestions(
+      unique.values.toList(),
+      q,
+      location,
+    );
+    final List<Place> relevant =
+        PlaceRanking.filterRelevant(ranked, q, location);
+    final List<Place> result = (relevant.isNotEmpty ? relevant : ranked)
+        .take(limit)
+        .toList();
+    if (result.isNotEmpty) {
+      unawaited(SearchCache.write(cacheKey, result));
+    }
+    return result;
+  }
+
+  Future<List<Place>> _backendSuggest(String query, LatLng? location) async {
+    final Map<String, dynamic> body = <String, dynamic>{'query': query};
+    if (location != null) {
+      body['location'] = <String, double>{
+        'lat': location.latitude,
+        'lng': location.longitude,
+      };
+      // Google Text Search accepts up to 50 km and uses this as a locality
+      // bias. The client-side relevance filter still keeps the user's own
+      // metro area above distant same-name places.
+      body['radiusMeters'] = 50000.0;
+    }
+    final Map<String, dynamic> data = await _api.post('/placesSearch', body);
+    return _decode(data);
+  }
+
+  static bool _isRicherSuggestion(Place a, Place b) {
+    int score(Place p) =>
+        (p.address != null && p.address!.isNotEmpty ? 1 : 0) +
+        (p.rating != null ? 1 : 0) +
+        (p.photoUrls.isNotEmpty ? 1 : 0) +
+        (p.primaryType != null ? 1 : 0);
+    return score(a) > score(b);
   }
 
   /// Free-provider search with a short on-device cache so repeat searches in

@@ -23,9 +23,9 @@ class SearchCache {
         ? 'global'
         : '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
     final String t = (types ?? const <String>[]).join('+');
-    // v3: invalidates previous 1-result caches and ensures multi-result,
-    // distance-ranked places are fetched fresh.
-    return 'v3.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
+    // v4: invalidates older free-provider-only suggestion caches now that
+    // authenticated Google Places results are merged into autocomplete.
+    return 'v4.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
         '|$t|$loc|${radiusMeters.round()}';
   }
 

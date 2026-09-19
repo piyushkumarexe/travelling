@@ -145,6 +145,23 @@ void main() {
       expect(p.contextLine, contains('Lucknow'));
     });
 
+    test('cached place serialization preserves locality disambiguation', () {
+      final Place original = _p(
+        'New Public College',
+        26.80,
+        80.90,
+        address: 'Amar Shaheed Path',
+        city: 'Lucknow',
+        state: 'Uttar Pradesh',
+        country: 'India',
+      );
+      final Place restored = Place.fromJson(original.toJson());
+      expect(restored.city, 'Lucknow');
+      expect(restored.state, 'Uttar Pradesh');
+      expect(restored.contextLine, contains('Amar Shaheed Path'));
+      expect(restored.contextLine, contains('Lucknow'));
+    });
+
     test('works without a location fix (match quality only)', () {
       final List<Place> ranked = PlaceRanking.rankSuggestions(
         <Place>[

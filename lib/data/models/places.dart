@@ -138,6 +138,12 @@ class Place {
         'provider': provider,
         'distanceMeters': distanceMeters,
         'metadata': metadata,
+        // Preserve locality context in the on-device cache as well as in
+        // network responses; same-named branches must remain disambiguated
+        // after an offline/cache hit.
+        'city': city,
+        'state': state,
+        'country': country,
       };
 
   bool get isTourist => types.contains('tourist_attraction');
