@@ -125,6 +125,13 @@ class FreeGeoClient {
     'fuel': <(String, String)>[('amenity', 'fuel')],
     'petrol': <(String, String)>[('amenity', 'fuel')],
     'bank': <(String, String)>[('amenity', 'bank')],
+    // Education (reported: searching "school" was treated as a NAME query —
+    // providers returned a house literally called "School" in Busan and a
+    // Missouri hamlet, and the Lucknow recall showed DPS branches to a
+    // Mirzapur user). Category mapping makes "school" a nearby-POI sweep.
+    'school': <(String, String)>[('amenity', 'school')],
+    'college': <(String, String)>[('amenity', 'college')],
+    'university': <(String, String)>[('amenity', 'university')],
     'bus': <(String, String)>[
       ('amenity', 'bus_station'),
       ('railway', 'station'),
@@ -268,6 +275,30 @@ class FreeGeoClient {
             _guard('overpass-name', () => _overpassNameSearch(q, near)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('overpass')),
+      // Category keyword ("school", "hospital near me"): the Photon /api
+      // name search is junk for these (a house named "School" in Busan) —
+      // run the /reverse category sweep in parallel instead so real nearby
+      // POIs of that category arrive even while Overpass mirrors are busy.
+      if (filters != null && near != null)
+        bounded(
+            'photon-category',
+            _guard('photon-category', () async {
+              final List<Place> places = await photonNearby(
+                near,
+                radiusMeters:
+                    radiusMeters < 25000 ? 25000 : radiusMeters,
+                categories: _photonCategoriesForFilters(filters),
+              );
+              return _ProviderResult(
+                  provider: 'photon-category',
+                  places: places,
+                  responded: true,
+                  error: null,
+                  raw: places.length);
+            }))
+      else
+        Future<_ProviderResult>.value(
+            _ProviderResult.skipped('photon-category')),
       if (attraction && near != null)
         bounded('wikipedia',
             _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters)))
@@ -935,7 +966,11 @@ class FreeGeoClient {
   List<Place> _lucknowSuggestFallback(String query, LatLng? near) {
     final String q = query.toLowerCase().trim();
     if (q.isEmpty) return const <Place>[];
-    final bool nearLucknow = near == null ||
+    // Curated Lucknow recall is ONLY for users actually around Lucknow.
+    // With no location it must never surface — a Mirzapur user searching
+    // "school" was shown "Delhi Public School (DPS)" Lucknow entries and
+    // read them as wrong-city (New Delhi) results.
+    final bool nearLucknow = near != null &&
         GeoUtils.distanceMeters(near, const LatLng(26.8467, 80.9462)) <= 100000;
     if (!nearLucknow) return const <Place>[];
 
@@ -994,6 +1029,21 @@ class FreeGeoClient {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
+    // Category keywords ("school", "atm near me") are only meaningful WITH a
+    // location. Without one, every provider degenerates into a worldwide
+    // name search (verified live: "school" returns a house named "School"
+    // in Busan and a hamlet in Missouri) and the Lucknow recall used to
+    // surface DPS branches to users hundreds of km away. Ask for location
+    // instead of showing junk.
+    final List<(String, String)>? catFilters = _filtersFor(q, null);
+    if (catFilters != null && near == null) {
+      throw ApiException(
+        ApiErrorKind.location,
+        'Turn on location (GPS) to find "${q.trim()}" near you.',
+        retryable: false,
+      );
+    }
+
     // Curated local recall is merged only after live providers have had a
     // chance to answer. The old immediate return made a hand-maintained
     // coordinate permanently beat a fresher OSM/MapTiler/Google record.
@@ -1017,6 +1067,29 @@ class FreeGeoClient {
             _guard('overpass-name', () => _overpassNameSearch(q, near)))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('overpass-name')),
+      // CATEGORY RECALL: for category keywords ("school", "hospital") the
+      // name-search endpoints are useless — run the Photon /reverse
+      // category sweep instead (real nearby POIs of that category, works
+      // even while every Overpass mirror is busy).
+      if (catFilters != null && near != null)
+        bounded(
+            'photon-category',
+            _guard('photon-category', () async {
+              final List<Place> places = await photonNearby(
+                near,
+                radiusMeters: 25000,
+                categories: _photonCategoriesForFilters(catFilters),
+              );
+              return _ProviderResult(
+                  provider: 'photon-category',
+                  places: places,
+                  responded: true,
+                  error: null,
+                  raw: places.length);
+            }))
+      else
+        Future<_ProviderResult>.value(
+            _ProviderResult.skipped('photon-category')),
     ]);
 
     List<Place> merged = _mergeAndDedup(results);
@@ -1206,6 +1279,26 @@ class FreeGeoClient {
       if (q.contains(e.key)) return e.value;
     }
     return null;
+  }
+
+  /// Maps Overpass (key, values) filters onto the Photon /reverse category
+  /// vocabulary, so a category text query ("school") can reuse the keyless
+  /// Photon category sweep instead of the name-only /api endpoint.
+  Set<String> _photonCategoriesForFilters(List<(String, String)> filters) {
+    final Set<String> out = <String>{};
+    for (final MapEntry<String, List<(String, String?)>> e
+        in _photonCategoryTags.entries) {
+      for (final (String key, String? value) in e.value) {
+        for (final (String fKey, String fValues) in filters) {
+          if (fKey != key) continue;
+          // Key-only tag (e.g. historic=* / shop=*) matches any value filter.
+          if (value == null || fValues.split('|').contains(value)) {
+            out.add(e.key);
+          }
+        }
+      }
+    }
+    return out;
   }
 
   /// Broad "attractions" filter: tourism attractions + historic sites +
@@ -2341,6 +2434,11 @@ class FreeGeoClient {
     ],
     'shopping': <(String, String?)>[('shop', null)],
     'fire_station': <(String, String?)>[('amenity', 'fire_station')],
+    'school': <(String, String?)>[('amenity', 'school')],
+    'college': <(String, String?)>[
+      ('amenity', 'college'),
+      ('amenity', 'university'),
+    ],
   };
 
   /// Keyless nearby search over Photon's OSM index (`/reverse` + `osm_tag`
