@@ -1,6 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// A place returned by the YatraWise backend (Google Places proxy).
+/// A place returned by the Tourism backend (Google Places proxy).
 
 class Place {
   Place({
@@ -18,6 +18,13 @@ class Place {
     this.website,
     this.priceLevel,
     this.openNow,
+    this.category,
+    this.provider,
+    this.distanceMeters,
+    this.metadata = const <String, dynamic>{},
+    this.city,
+    this.state,
+    this.country,
   });
 
   final String placeId;
@@ -34,6 +41,50 @@ class Place {
   final String? website;
   final int? priceLevel;
   final bool? openNow;
+
+  /// Canonical OSM-derived category (hotel, hospital, museum, transit, …).
+  /// Null when the place came from a text/geocoding search that has no
+  /// category mapping. Never fabricated.
+  final String? category;
+
+  /// Which provider produced this record (overpass, maptiler, nominatim,
+  /// wikipedia, …). Useful for diagnostics and deduplication.
+  final String? provider;
+
+  /// Haversine distance from the search/fetch origin, when known. Computed,
+  /// never invented; may be null when the origin was not known.
+  final double? distanceMeters;
+
+  /// Provider-specific extras (OSM tags, etc.). Never fabricated.
+  final Map<String, dynamic> metadata;
+
+  /// Structured locality context, when the provider supplies it (MapTiler
+  /// context / Photon properties / Nominatim address). Null = unknown —
+  /// never fabricated. Used for locality-aware ranking and for showing
+  /// "Name — Area, City" context when same-named places exist in several
+  /// cities.
+  final String? city;
+  final String? state;
+  final String? country;
+
+  /// " — Area, City, State" context suffix (without the name), for
+  /// disambiguating same-named places. Empty when nothing is known.
+  String get contextLine {
+    final List<String> parts = <String>[
+      if (address != null && address!.isNotEmpty && address != name)
+        address!,
+      if (city != null && city!.isNotEmpty &&
+          (address == null || !(address!.contains(city!)))) city!,
+      if (state != null && state!.isNotEmpty) state!,
+      if (country != null && country!.isNotEmpty && (state == null)) country!,
+    ];
+    final List<String> seen = <String>[];
+    for (final String part in parts) {
+      final String t = part.trim();
+      if (t.isNotEmpty && !seen.contains(t)) seen.add(t);
+    }
+    return seen.isEmpty ? '' : ' — ${seen.join(', ')}';
+  }
 
   factory Place.fromJson(Map<String, dynamic> m) => Place(
         placeId: (m['placeId'] as String?) ?? '',
@@ -54,9 +105,77 @@ class Place {
         website: m['website'] as String?,
         priceLevel: (m['priceLevel'] as num?)?.toInt(),
         openNow: m['openNow'] as bool?,
+        category: m['category'] as String?,
+        provider: m['provider'] as String?,
+        distanceMeters: (m['distanceMeters'] as num?)?.toDouble(),
+        metadata: (m['metadata'] is Map)
+            ? (m['metadata'] as Map).map((Object? k, Object? v) =>
+                MapEntry(k.toString(), v))
+            : <String, dynamic>{},
+        city: m['city'] as String?,
+        state: m['state'] as String?,
+        country: m['country'] as String?,
       );
 
   LatLng get coords => LatLng(lat, lng);
+
+  /// Keeps provider data intact while allowing repositories to attach
+  /// computed context (for example the requested category and GPS distance)
+  /// without rebuilding a place by hand.
+  Place copyWith({
+    String? category,
+    double? distanceMeters,
+  }) =>
+      Place(
+        placeId: placeId,
+        name: name,
+        lat: lat,
+        lng: lng,
+        address: address,
+        rating: rating,
+        userRatingCount: userRatingCount,
+        primaryType: primaryType,
+        types: types,
+        photoUrls: photoUrls,
+        phone: phone,
+        website: website,
+        priceLevel: priceLevel,
+        openNow: openNow,
+        category: category ?? this.category,
+        provider: provider,
+        distanceMeters: distanceMeters ?? this.distanceMeters,
+        metadata: metadata,
+        city: city,
+        state: state,
+        country: country,
+      );
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'placeId': placeId,
+        'name': name,
+        'lat': lat,
+        'lng': lng,
+        'address': address,
+        'rating': rating,
+        'userRatingCount': userRatingCount,
+        'primaryType': primaryType,
+        'types': types,
+        'photoUrls': photoUrls,
+        'phone': phone,
+        'website': website,
+        'priceLevel': priceLevel,
+        'openNow': openNow,
+        'category': category,
+        'provider': provider,
+        'distanceMeters': distanceMeters,
+        'metadata': metadata,
+        // Preserve locality context in the on-device cache as well as in
+        // network responses; same-named branches must remain disambiguated
+        // after an offline/cache hit.
+        'city': city,
+        'state': state,
+        'country': country,
+      };
 
   bool get isTourist => types.contains('tourist_attraction');
   bool get isFood =>
@@ -84,10 +203,10 @@ class RouteInfo {
   final double durationSeconds;
   final List<LatLng> polyline;
 
-  /// google (Directions API) | fallback (straight line estimate)
+  /// google (Directions API) | osrm (OSRM router) | fallback (straight line)
   final String provider;
 
-  bool get isApproximate => provider != 'google';
+  bool get isApproximate => provider == 'fallback';
 
   factory RouteInfo.fromJson(Map<String, dynamic> m) {
     final List<dynamic> raw = (m['polyline'] is List) ? m['polyline'] as List : <dynamic>[];
