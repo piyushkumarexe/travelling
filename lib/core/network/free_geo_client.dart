@@ -53,6 +53,13 @@ class FreeGeoClient {
   /// Overpass's fair-use envelope; results are re-sorted nearest-first.
   static const double kNearbyRadiusMeters = 25000;
 
+  /// Radius for the DEFAULT grouped "Nearby" view. The old 25 km grouped
+  /// sweep was so heavy that public Overpass mirrors regularly answered it
+  /// with 429/timeouts — which is exactly why "Nearby" showed nothing while
+  /// the map itself worked. 8 km is a true nearby view (~a city sector),
+  /// roughly 10× lighter to query, and the Photon fallback covers the rest.
+  static const double kGroupedNearbyRadiusMeters = 8000;
+
   /// Nominatim rate-limit guard: public Nominatim allows at most 1 req/sec.
   /// Shared per process so debounced typing can never exceed it.
   static DateTime? _lastNominatimAt;
@@ -1013,10 +1020,14 @@ class FreeGeoClient {
     ]);
 
     List<Place> merged = _mergeAndDedup(results);
-    // Add Lucknow fallback for suggestions too
-    final List<Place> fb = _lucknowSuggestFallback(q, near);
-    if (fb.isNotEmpty) {
-      merged = [...fb, ...merged];
+    // Add the hand-verified Lucknow recall ONLY when the live providers
+    // found nothing — mixing it into every response pollutes accurate live
+    // results with directory records (reported: wrong/extra places shown).
+    if (merged.isEmpty) {
+      final List<Place> fb = _lucknowSuggestFallback(q, near);
+      if (fb.isNotEmpty) {
+        merged = fb;
+      }
     }
     if (merged.isEmpty) {
       // Nothing from the geocoders — keyword fallback (category queries like
@@ -1417,6 +1428,43 @@ class FreeGeoClient {
     }
   }
 
+  /// Real photo for an OSM `wikidata=Q…` reference: the Wikidata entity's
+  /// own image (P18) served straight from Wikimedia Commons. Because the QID
+  /// was linked to THIS exact POI by an OSM mapper, the photo is guaranteed
+  /// to belong to this place — no name-guessing, no wrong photos.
+  Future<String?> wikidataImage(String qid) async {
+    final String id = qid.trim();
+    if (!RegExp(r'^Q\d+$').hasMatch(id)) return null;
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://www.wikidata.org/w/api.php',
+        queryParameters: <String, dynamic>{
+          'action': 'wbgetclaims',
+          'entity': id,
+          'property': 'P18',
+          'format': 'json',
+        },
+      );
+      final Object? data = resp.data;
+      if (data is! Map) return null;
+      final Object? claims = data['claims'];
+      if (claims is! Map) return null;
+      final Object? p18 = claims['P18'];
+      if (p18 is! List || p18.isEmpty || p18.first is! Map) return null;
+      final Object? mainsnak = (p18.first as Map)['mainsnak'];
+      if (mainsnak is! Map) return null;
+      final Object? datavalue = mainsnak['datavalue'];
+      if (datavalue is! Map) return null;
+      final Object? value = datavalue['value'];
+      if (value is! String || value.trim().isEmpty) return null;
+      // Commons file name → direct file URL via Special:FilePath.
+      return 'https://commons.wikimedia.org/wiki/Special:FilePath/'
+          '${Uri.encodeComponent(value.trim())}?width=800';
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Finds a Wikipedia thumbnail only when the result is an exact title
   /// match and its article coordinates are close to [near]. Returning no image
   /// is safer than showing a photograph of a different place with a similar
@@ -1629,7 +1677,9 @@ class FreeGeoClient {
       'format': 'jsonv2',
       'limit': 25,
       'addressdetails': 0,
-      'countrycodes': 'in',
+      // No countrycodes restriction: this is a travel app — searching
+      // "Eiffel Tower" or "Burj Khalifa" from India must find the real
+      // place. Client-side ranking already prefers the user's own area.
     };
     if (near != null) {
       // Latitude-aware box (~0.5°) only biases ranking; results are still
@@ -2071,27 +2121,28 @@ class FreeGeoClient {
     'attraction': <String>['tourist_attraction'],
     'shopping': <String>['store', 'shopping'],
     'transit': <String>['transit_station'],
+    'fire_station': <String>['fire_station'],
   };
 
-  /// The nearby area is fetched as TWO lighter parallel Overpass queries
-  /// instead of one huge all-category query. The public Overpass servers
-  /// frequently drop one big query as "too busy"; two smaller requests are
-  /// each much more likely to succeed, and a single failure still returns
-  /// the other half's real results (failures are isolated, never faked).
-  static const List<String> _essentialNearbyCats = <String>[
-    'hospital', 'police', 'pharmacy', 'atm', 'fuel', 'transit',
-  ];
-  static const List<String> _touristNearbyCats = <String>[
-    'restaurant', 'cafe', 'fast_food', 'hotel', 'park', 'museum', 'attraction',
-  ];
+  /// The nearby area is fetched as THREE lighter parallel Overpass queries
+  /// instead of one huge all-category query (see [nearbyAround]). The public
+  /// Overpass servers frequently drop one big query as "too busy"; smaller
+  /// requests are each much more likely to succeed, and a single failure
+  /// still returns the other parts' real results (failures are isolated,
+  /// never faked).
 
   /// Combined nearby dataset (essential + tourist categories) parsed,
   /// deduplicated, filtered to the exact radius and sorted nearest first.
   /// Callers cache the result and then filter it locally by category, so
   /// switching categories never triggers another network request.
+  ///
+  /// Three LIGHT parallel Overpass queries (instead of the old two huge
+  /// ones) keep each request inside the public mirrors' comfort zone, and
+  /// when every Overpass query fails the keyless Photon reverse search
+  /// takes over — so "Nearby" works even while Overpass is rate-limiting.
   Future<List<Place>> nearbyAround(
     LatLng near, {
-    double radiusMeters = kNearbyRadiusMeters,
+    double radiusMeters = kGroupedNearbyRadiusMeters,
     bool includeShopping = false,
   }) async {
     NearbyDebug.instance.reset(
@@ -2099,15 +2150,22 @@ class FreeGeoClient {
       location:
           '${near.latitude.toStringAsFixed(5)},${near.longitude.toStringAsFixed(5)}',
     );
-    final List<String> tourist = <String>[
-      ..._touristNearbyCats,
+    final List<String> essentials = <String>[
+      'hospital', 'police', 'pharmacy', 'atm', 'fuel',
+    ];
+    final List<String> foodTransit = <String>[
+      'restaurant', 'cafe', 'fast_food', 'transit',
+    ];
+    final List<String> staySee = <String>[
+      'hotel', 'park', 'museum', 'attraction',
       if (includeShopping) 'shopping',
     ];
 
     final List<(List<Place>?, Object?)> parts =
         await Future.wait<(List<Place>?, Object?)>(<Future<(List<Place>?, Object?)>>[
-      _nearbyCategoriesSafe(near, radiusMeters, _essentialNearbyCats),
-      _nearbyCategoriesSafe(near, radiusMeters, tourist),
+      _nearbyCategoriesSafe(near, radiusMeters, essentials),
+      _nearbyCategoriesSafe(near, radiusMeters, foodTransit),
+      _nearbyCategoriesSafe(near, radiusMeters, staySee),
     ]);
 
     Object? firstError;
@@ -2129,13 +2187,42 @@ class FreeGeoClient {
       }
     }
 
-    if (ok == 0) {
-      // Both queries failed — surface the real, typed error (never a fake
-      // empty list masquerading as "no places").
-      NearbyDebug.instance.phase = 'failed';
-      if (firstError != null) throw firstError;
-      throw const ApiException(
-          ApiErrorKind.network, 'Overpass is unreachable right now.');
+    if (ok == 0 || dedup.isEmpty) {
+      // Every Overpass query failed (or collectively returned nothing) —
+      // try the keyless Photon reverse search before giving up. Photon is
+      // an independent OSM index without Overpass's tight rate limits, so
+      // this is what keeps Nearby alive during an Overpass brownout (the
+      // reported "nearby never loads" bug).
+      try {
+        final List<Place> photonPlaces = await photonNearby(
+          near,
+          radiusMeters: radiusMeters,
+        ).timeout(const Duration(seconds: 10));
+        if (photonPlaces.isNotEmpty) {
+          NearbyDebug.instance.okQueries = ok + 1;
+          NearbyDebug.instance.failQueries = failed;
+          NearbyDebug.instance.parsedCount = photonPlaces.length;
+          NearbyDebug.instance.error =
+              'overpass unavailable — photon fallback (${photonPlaces.length})';
+          debugPrint('[places] nearbyAround photon-fallback '
+              'final=${photonPlaces.length}');
+          return photonPlaces;
+        }
+      } catch (_) {
+        // Photon fallback also failed — surface the original outcome below.
+      }
+      if (ok == 0) {
+        // Both query families failed — surface the real, typed error (never
+        // a fake empty list masquerading as "no places").
+        NearbyDebug.instance.phase = 'failed';
+        if (firstError != null) throw firstError;
+        throw const ApiException(
+            ApiErrorKind.network, 'Overpass is unreachable right now.');
+      }
+      // Overpass responded but genuinely found nothing; Photon found
+      // nothing either — an honest empty dataset.
+      NearbyDebug.instance.parsedCount = 0;
+      return const <Place>[];
     }
 
     final List<Place> out = dedup.values.toList()
@@ -2181,6 +2268,233 @@ class FreeGeoClient {
         categories: const <String>['shopping'],
       );
 
+  // ---------------------------------------------------------------------
+  // Photon reverse nearby search (keyless Overpass fallback)
+  // ---------------------------------------------------------------------
+
+  /// Photon `/reverse` tag filters per DATASET category (the same category
+  /// vocabulary as [_nearbyCategoryTags]). Photon only indexes Nominatim's
+  /// principal tags, so the lists are kept to the well-known ones.
+  static const Map<String, List<(String, String?)>> _photonCategoryTags =
+      <String, List<(String, String?)>>{
+    'hospital': <(String, String?)>[
+      ('amenity', 'hospital'),
+      ('amenity', 'clinic'),
+    ],
+    'police': <(String, String?)>[('amenity', 'police')],
+    'pharmacy': <(String, String?)>[('amenity', 'pharmacy')],
+    'atm': <(String, String?)>[('amenity', 'atm')],
+    'fuel': <(String, String?)>[('amenity', 'fuel')],
+    'restaurant': <(String, String?)>[('amenity', 'restaurant')],
+    'cafe': <(String, String?)>[('amenity', 'cafe')],
+    'fast_food': <(String, String?)>[('amenity', 'fast_food')],
+    'transit': <(String, String?)>[
+      ('railway', 'station'),
+      ('railway', 'halt'),
+      ('amenity', 'bus_station'),
+      ('amenity', 'ferry_terminal'),
+      ('highway', 'bus_stop'),
+    ],
+    'hotel': <(String, String?)>[
+      ('tourism', 'hotel'),
+      ('tourism', 'hostel'),
+      ('tourism', 'guest_house'),
+      ('tourism', 'motel'),
+    ],
+    'park': <(String, String?)>[('leisure', 'park')],
+    'museum': <(String, String?)>[('tourism', 'museum')],
+    'attraction': <(String, String?)>[
+      ('tourism', 'attraction'),
+      ('tourism', 'gallery'),
+      ('tourism', 'viewpoint'),
+      ('tourism', 'zoo'),
+      ('tourism', 'theme_park'),
+      ('tourism', 'aquarium'),
+      ('historic', null),
+      ('amenity', 'place_of_worship'),
+    ],
+    'shopping': <(String, String?)>[('shop', null)],
+    'fire_station': <(String, String?)>[('amenity', 'fire_station')],
+  };
+
+  /// Keyless nearby search over Photon's OSM index (`/reverse` + `osm_tag`
+  /// filters). This is the safety net when every public Overpass mirror is
+  /// rate-limiting: Photon is an independent, autocomplete-grade index with
+  /// no comparable limits, so the Nearby view keeps returning REAL places
+  /// instead of an error. [categories] uses the dataset vocabulary of
+  /// [_nearbyCategoryTags] (restaurant, cafe, hotel, attraction, …);
+  /// null = all categories.
+  Future<List<Place>> photonNearby(
+    LatLng near, {
+    double radiusMeters = kGroupedNearbyRadiusMeters,
+    Set<String>? categories,
+  }) async {
+    final double radius =
+        radiusMeters <= 0 ? kGroupedNearbyRadiusMeters : radiusMeters;
+    final List<String> wanted = <String>[
+      for (final String category in _photonCategoryTags.keys)
+        if (categories == null || categories.contains(category)) category,
+    ];
+    if (wanted.isEmpty) return const <Place>[];
+
+    // One lightweight request per dataset category — Photon is built for
+    // autocomplete-grade traffic, so a handful of parallel reverse lookups
+    // is well within its envelope (unlike Overpass's 2-slot limit).
+    final List<List<Place>?> results = await Future.wait(<Future<List<Place>?>>[
+      for (final String category in wanted)
+        _photonReverseSafe(near, <String>[category], radius),
+    ]);
+    final Map<String, Place> dedup = <String, Place>{};
+    for (final List<Place>? batch in results) {
+      if (batch == null) continue;
+      for (final Place p in batch) {
+        final String key = _dedupKey(p);
+        final Place? existing = dedup[key];
+        if (existing == null || _isRicher(p, existing)) dedup[key] = p;
+      }
+    }
+    final List<Place> out = dedup.values.toList()
+      ..sort((Place a, Place b) =>
+          (a.distanceMeters ?? 0).compareTo(b.distanceMeters ?? 0));
+    debugPrint('[places] photonNearby radius=${radius.round()}m '
+        'final=${out.length}');
+    return out;
+  }
+
+  Future<List<Place>?> _photonReverseSafe(
+    LatLng near,
+    List<String> categories,
+    double radiusMeters,
+  ) async {
+    try {
+      return await _photonReverse(near, categories, radiusMeters)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// One Photon reverse request for the given dataset categories. Photon
+  /// classifies each feature with `osm_key`/`osm_value`, which are matched
+  /// back against the requested categories' own tag predicates so the
+  /// resulting places carry the same category/types vocabulary as the
+  /// Overpass dataset.
+  Future<List<Place>> _photonReverse(
+    LatLng near,
+    List<String> categories,
+    double radiusMeters,
+  ) async {
+    final List<String> tagParams = <String>[];
+    for (final String category in categories) {
+      final List<(String, String?)>? tags = _photonCategoryTags[category];
+      if (tags == null) continue;
+      for (final (String key, String? value) in tags) {
+        tagParams.add(value == null ? key : '$key:$value');
+      }
+    }
+    if (tagParams.isEmpty) return const <Place>[];
+    final Response<dynamic> resp = await _dio.get<dynamic>(
+      'https://photon.komoot.io/reverse',
+      queryParameters: <String, dynamic>{
+        'lat': near.latitude,
+        'lon': near.longitude,
+        // Photon's reverse radius is in KILOMETRES (0–5000).
+        'radius': (radiusMeters / 1000).clamp(1, 5000).toStringAsFixed(2),
+        'limit': 50,
+        'lang': 'en',
+        // A list value makes Dio repeat the query parameter — Photon
+        // accepts multiple osm_tag filters in one request.
+        'osm_tag': tagParams,
+      },
+    );
+    final List<dynamic> feats = _features(resp.data);
+    final Map<String, Place> dedup = <String, Place>{};
+    for (final dynamic f in feats) {
+      if (f is! Map) continue;
+      final Map<dynamic, dynamic> geo =
+          (f['geometry'] as Map?) ?? const <dynamic, dynamic>{};
+      final List<dynamic>? coords = geo['coordinates'] as List<dynamic>?;
+      if (coords == null || coords.length < 2) continue;
+      final double? lon = (coords[0] as num?)?.toDouble();
+      final double? lat = (coords[1] as num?)?.toDouble();
+      if (lat == null || lon == null) continue;
+      final Map<dynamic, dynamic> props =
+          (f['properties'] as Map?) ?? const <dynamic, dynamic>{};
+      final String name = ((props['name'] as String?) ?? '').trim();
+      if (name.isEmpty) continue;
+      final String osmKey = (props['osm_key'] as String?) ?? '';
+      final String osmValue = (props['osm_value'] as String?) ?? '';
+      // Classify the feature against the tag predicates THIS request asked
+      // for — the response is already category-filtered server-side, this
+      // only maps each feature back to its dataset category (and covers
+      // categories like fire_station that the Overpass dataset map does
+      // not model).
+      final List<String> cats = <String>[];
+      for (final String category in categories) {
+        for (final (String key, String? value)
+            in _photonCategoryTags[category] ??
+                const <(String, String?)>[]) {
+          if (osmKey == key && (value == null || osmValue == value)) {
+            cats.add(category);
+            break;
+          }
+        }
+      }
+      // 'food' roll-up so UI filters keyed on the semantic 'food' id match.
+      if (cats.any((String c) =>
+          c == 'restaurant' || c == 'cafe' || c == 'fast_food')) {
+        cats.insert(0, 'food');
+      }
+      if (cats.isEmpty) continue;
+      final double dist =
+          GeoUtils.distanceMetersLL(near.latitude, near.longitude, lat, lon);
+      if (dist > radiusMeters) continue;
+
+      final String pCity = ((props['city'] as String?) ??
+              (props['county'] as String?) ??
+              (props['district'] as String?) ??
+              '')
+          .trim();
+      final String pState = ((props['state'] as String?) ?? '').trim();
+      final String pCountry = ((props['country'] as String?) ?? '').trim();
+      final String street = ((props['street'] as String?) ?? '').trim();
+      final String housenumber =
+          ((props['housenumber'] as String?) ?? '').trim();
+      final String address = <String>[
+        [housenumber, street].where((String s) => s.isNotEmpty).join(' '),
+        if (pCity.isNotEmpty) pCity,
+      ].where((String s) => s.isNotEmpty).join(', ');
+
+      final Set<String> types = <String>{'point_of_interest'};
+      for (final String c in cats) {
+        types.addAll(_categorySemanticTypes[c] ?? const <String>[]);
+      }
+      final String primary = cats.contains('food') || cats.length <= 1
+          ? cats.first
+          : cats.firstWhere((String c) => c != 'food');
+      final Place p = Place(
+        placeId:
+            'photon-${props['osm_type'] ?? 'N'}-${props['osm_id'] ?? '$lat,$lon'}',
+        name: name,
+        lat: lat,
+        lng: lon,
+        address: address.isEmpty ? null : address,
+        primaryType: primary,
+        category: primary,
+        provider: 'photon',
+        distanceMeters: dist,
+        types: types.toList(),
+        city: pCity.isEmpty ? null : pCity,
+        state: pState.isEmpty ? null : pState,
+        country: pCountry.isEmpty ? null : pCountry,
+      );
+      final String key = _dedupKey(p);
+      final Place? existing = dedup[key];
+      if (existing == null || _isRicher(p, existing)) dedup[key] = p;
+    }
+    return dedup.values.toList();
+  }
+
   Future<List<Place>> _nearbyCategories(
     LatLng near, {
     required double radiusMeters,
@@ -2202,14 +2516,16 @@ class FreeGeoClient {
     // (hospital/clinic/police…) filled the cap. `qt 5000` keeps the whole
     // 10 km dataset for dense cities and drops only the far quadtiles in
     // pathological megacity cases; the client re-sorts by distance anyway.
+    // `nwr` (node+way+relation in one selector) halves the statement count
+    // versus separate node/way clauses — the smaller the query, the less
+    // likely a busy public mirror answers it with 429.
     final StringBuffer b = StringBuffer('[out:json][timeout:15];(');
     for (final MapEntry<String, List<(String, String?)>> entry
         in _nearbyCategoryTags.entries) {
       if (categories != null && !categories.contains(entry.key)) continue;
       for (final (String key, String? value) in entry.value) {
         final String sel = value == null ? '["$key"]' : '["$key"="$value"]';
-        b.write('node$sel(around:${radius.round()},${near.latitude},${near.longitude});');
-        b.write('way$sel(around:${radius.round()},${near.latitude},${near.longitude});');
+        b.write('nwr$sel(around:${radius.round()},${near.latitude},${near.longitude});');
       }
     }
     b.write(');out center qt 5000;');
@@ -2315,6 +2631,10 @@ class FreeGeoClient {
     }
     final String commons = _tagOf(tags, 'wikimedia_commons').trim();
     if (commons.isNotEmpty) m['wikimedia_commons'] = commons;
+    // The wikidata QID links this exact POI to its encyclopedia entity —
+    // the most accurate free image source (the entity's own picture).
+    final String wikidata = _tagOf(tags, 'wikidata').trim();
+    if (wikidata.isNotEmpty) m['wikidata'] = wikidata;
     return m;
   }
 
@@ -2746,6 +3066,32 @@ class _ProviderResult {
 class PlaceRanking {
   PlaceRanking._();
 
+  /// Lowercase + strip punctuation/extra spaces, so "Taj Mahal" ==
+  /// "taj mahal" == "Taj  Mahal,".
+  static String normalizeName(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+
+  /// True when the place's name IS the query (after normalization) — the
+  /// user typed this exact place, not something with a similar name.
+  static bool isExactNameMatch(Place p, String query) =>
+      normalizeName(p.name) == normalizeName(query);
+
+  /// True when the query is a specific multi-word place name and this place
+  /// matches it exactly or by full prefix ("taj mahal" → "Taj Mahal" or
+  /// "Taj Mahal Garden"). Such matches must never be dropped just because a
+  /// nearer place merely CONTAINS the words (the reported "wrong place
+  /// shown" bug).
+  static bool isStrongNameMatch(Place p, String query) {
+    final String n = normalizeName(p.name);
+    final String t = normalizeName(query);
+    if (n.isEmpty || t.isEmpty) return false;
+    if (n == t) return true;
+    final int tokens = t.split(RegExp(r'\s+')).length;
+    return tokens >= 2 && n.startsWith('$t ');
+  }
+
   /// True when the query EXPLICITLY names a place's locality (e.g.
   /// "Taj Mahal Agra" — 'agra' appears among the candidate's city / state /
   /// country / address). Such a result must outrank same-named places from
@@ -2835,6 +3181,19 @@ class PlaceRanking {
           if (ma == 0 && mb == 1 && (da - db).abs() < 3000) return -1;
           if (mb == 0 && ma == 1 && (db - da).abs() < 3000) return 1;
 
+          // SPECIFIC QUERY ACCURACY (user-reported bug): when the query is a
+          // multi-word place name ("taj mahal", "india gate") and one result
+          // IS that exact place while the other only embeds the words
+          // ("Taj Mahal Restaurant" around the corner), the exact place must
+          // rank first — even if it is far away. Google shows the real
+          // monument, not the nearest café with a similar name.
+          final bool specificQuery =
+              t.split(RegExp(r'\s+')).where((String w) => w.isNotEmpty).length >= 2;
+          if (specificQuery) {
+            if (ma == 0 && mb >= 1) return -1;
+            if (mb == 0 && ma >= 1) return 1;
+          }
+
           // Distance buckets for wider regional differences:
           // bucket 0: < 35km (local city / metro)
           // bucket 1: 35km - 100km
@@ -2872,6 +3231,9 @@ class PlaceRanking {
   ///  - No origin (GPS unavailable AND no camera target): results are kept
   ///    unchanged — text ranking only, context shown per row.
   ///  - Results the query explicitly names (city/locality match) always stay.
+  ///  - A multi-word query that EXACTLY names a far place ("taj mahal" →
+  ///    the monument in Agra, searched from Lucknow) keeps that place too —
+  ///    the user asked for THAT place, not for a nearby namesake.
   ///  - If ANY result lies within 500 km: keep those (plus query-named far
   ///    ones, e.g. "Taj Mahal Agra") and DROP the foreign noise.
   ///  - If nothing is within 500 km: keep only deliberate specific searches
@@ -2883,17 +3245,26 @@ class PlaceRanking {
     final List<Place> all = List<Place>.from(places);
     if (near == null || all.isEmpty) return all;
     final String t = query.toLowerCase().trim();
+    final List<String> tokens = t
+        .split(RegExp(r'\s+'))
+        .where((String w) => w.isNotEmpty)
+        .toList();
+    // Far results worth keeping: the query names their locality, or the
+    // query is a specific multi-word name and this place IS that name.
+    bool keepFar(Place p) =>
+        queryNamesLocality(p, t) ||
+        (tokens.length >= 2 && isExactNameMatch(p, t));
     // Keep all nearby places within 35km (covering the entire metro area)
     List<Place> within35 = all
         .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 35000)
         .toList();
     if (within35.isNotEmpty) {
       final List<Place> keep = List<Place>.from(within35);
-      // Keep far only if query explicitly names its locality (e.g. "Taj Mahal Agra")
+      // Keep far only if query explicitly names its locality (e.g. "Taj Mahal
+      // Agra") or exactly names the place itself (e.g. "taj mahal").
       keep.addAll(all
           .where((Place p) =>
-              GeoUtils.distanceMeters(near, p.coords) > 35000 &&
-              queryNamesLocality(p, t))
+              GeoUtils.distanceMeters(near, p.coords) > 35000 && keepFar(p))
           .toList());
       return keep;
     }
@@ -2904,8 +3275,7 @@ class PlaceRanking {
       final List<Place> keep = List<Place>.from(within100);
       keep.addAll(all
           .where((Place p) =>
-              GeoUtils.distanceMeters(near, p.coords) > 100000 &&
-              queryNamesLocality(p, t))
+              GeoUtils.distanceMeters(near, p.coords) > 100000 && keepFar(p))
           .toList());
       return keep;
     }
@@ -2918,13 +3288,9 @@ class PlaceRanking {
     }
     if (close.isNotEmpty) {
       final List<Place> keep = List<Place>.from(close);
-      keep.addAll(far.where((Place p) => queryNamesLocality(p, t)));
+      keep.addAll(far.where(keepFar));
       return keep;
     }
-    final List<String> tokens = t
-        .split(RegExp(r'\s+'))
-        .where((String w) => w.isNotEmpty)
-        .toList();
     if (tokens.length >= 2) {
       final List<Place> exact = far
           .where((Place p) => p.name.toLowerCase().trim() == t)

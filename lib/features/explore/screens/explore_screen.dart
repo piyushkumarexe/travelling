@@ -174,20 +174,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<Position?> _freshExplorePosition() async {
+    Position? fresh;
     try {
-      final Position? fresh = await _c.locationService
+      fresh = await _c.locationService
           .refreshPosition(timeout: const Duration(seconds: 12));
-      if (!mounted || fresh == null) return null;
-      setState(() {
-        _position = fresh;
-        _liveLocationReady = true;
-        _locationDone = true;
-        _locationDenied = false;
-      });
-      return fresh;
     } catch (_) {
-      return null;
+      fresh = null;
     }
+    // Cold GPS (indoors, bad view of the sky) can take longer than the
+    // timeout while the map's blue dot still shows a perfectly good fused
+    // position. Degrade gracefully: use the most recent known fix instead
+    // of failing "Nearby" entirely — the reported bug was exactly this
+    // ("the map knows my location, but Nearby never finds anything").
+    fresh ??= await _c.locationService.bestRecentFix();
+    if (!mounted || fresh == null) return null;
+    setState(() {
+      _position = fresh;
+      _liveLocationReady = true;
+      _locationDone = true;
+      _locationDenied = false;
+    });
+    return fresh;
   }
 
   Future<void> _refreshExplorePosition() async {
@@ -315,21 +322,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(pos.latitude, pos.longitude),
       );
-      // Nearby mode: keep local metro recall, but do not throw away the
-      // repository's text relevance by sorting distance-only. Exact place
-      // names must remain above nearby extended names; distance breaks ties.
+      // Nearby mode: keep local metro recall first, but NEVER drop a place
+      // the query names exactly ("taj mahal" → the monument in Agra, even
+      // when searched from Lucknow). Weak nearby namesakes stay below it.
       if (_scope == 'nearby' && pos != null && places.isNotEmpty) {
         final LatLng here = LatLng(pos.latitude, pos.longitude);
-        final List<Place> within35 = places
-            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
-            .toList();
-        final List<Place> filtered = within35.isNotEmpty
-            ? within35
-            : places
-                .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
-                .toList();
-        if (filtered.isNotEmpty) places = filtered;
-        places = PlaceRanking.rankSuggestions(places, q, here);
+        places = _keepLocalPlusStrongMatches(places, q, here);
       }
       if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
@@ -696,16 +694,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // Nearby mode: keep the local metro boundary, then preserve exact and
       // prefix text matches above merely-nearby names. Distance is a tie-break.
       if (_scope == 'nearby' && here != null) {
-        final List<Place> within35 = places
-            .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
-            .toList();
-        final List<Place> filtered = within35.isNotEmpty
-            ? within35
-            : places
-                .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
-                .toList();
-        if (filtered.isNotEmpty) places = filtered;
-        places = PlaceRanking.rankSuggestions(places, q, here);
+        places = _keepLocalPlusStrongMatches(places, q, here);
       }
       if (hasCategoryFilters && _scope != 'nearby') {
         for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
@@ -750,6 +739,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
       place.coords,
     );
     return GeoUtils.formatDistance(d);
+  }
+
+  /// Nearby-scope view of a search result list: the local metro area first,
+  /// plus every place the query names exactly or by full prefix even when it
+  /// is far away. The old radius-only filter used to silently delete the
+  /// actual place the user searched for whenever a same-named shop existed
+  /// nearby — the single biggest accuracy complaint.
+  List<Place> _keepLocalPlusStrongMatches(
+    List<Place> places,
+    String query,
+    LatLng here,
+  ) {
+    final List<Place> within35 = places
+        .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
+        .toList();
+    final List<Place> local = within35.isNotEmpty
+        ? within35
+        : places
+            .where((Place p) =>
+                GeoUtils.distanceMeters(here, p.coords) <= 50000)
+            .toList();
+    final Set<Place> localSet = Set<Place>.identity()..addAll(local);
+    final List<Place> strongFar = places
+        .where((Place p) =>
+            !localSet.contains(p) && PlaceRanking.isStrongNameMatch(p, query))
+        .toList();
+    final List<Place> kept = <Place>[...local, ...strongFar];
+    if (kept.isEmpty) return places;
+    return PlaceRanking.rankSuggestions(kept, query, here);
   }
 
   @override

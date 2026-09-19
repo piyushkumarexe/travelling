@@ -263,4 +263,78 @@ void main() {
       expect(kept.length, 2);
     });
   });
+
+  group('PlaceRanking — specific-place accuracy (user-reported bug)', () {
+    // The biggest complaint: searching for a known place returned a nearby
+    // shop with a similar name instead of the actual place.
+    final Place tajMahalAgra = _p('Taj Mahal', 27.1751, 78.0421,
+        address: 'Dharmapuri, Forest Colony, Agra',
+        city: 'Agra', state: 'Uttar Pradesh', country: 'India');
+    final Place tajMahalRestaurant = _p('Taj Mahal Restaurant', 26.8500,
+        80.9470,
+        address: 'Hazratganj, Lucknow', city: 'Lucknow', country: 'India');
+
+    test('"taj mahal" from Lucknow ranks the REAL monument first', () {
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+        <Place>[tajMahalRestaurant, tajMahalAgra],
+        'taj mahal',
+        lucknow,
+      );
+      expect(ranked.first.city, 'Agra');
+      expect(ranked.first.name, 'Taj Mahal');
+    });
+
+    test('"taj mahal" from Lucknow keeps the monument in the relevant set',
+        () {
+      final List<Place> kept = PlaceRanking.filterRelevant(
+        <Place>[tajMahalRestaurant, tajMahalAgra],
+        'taj mahal',
+        lucknow,
+      );
+      expect(kept.any((Place p) => p.city == 'Agra'), isTrue);
+      expect(kept.any((Place p) => p.city == 'Lucknow'), isTrue);
+    });
+
+    test('single-token generic query: exact far name still loses to local',
+        () {
+      // "transport" must not put Vilhelmina's exact "Transport" above the
+      // local Transport Nagar — only SPECIFIC multi-word queries get the
+      // far-exact promotion.
+      final Place exactFar = _p('Transport', 63.8541, 12.3973,
+          address: 'Vilhelmina', country: 'Sweden');
+      final Place boundaryNear = _p('Transport Nagar', 26.8000, 80.9000,
+          address: 'Lucknow', city: 'Lucknow', country: 'India');
+      final List<Place> ranked = PlaceRanking.rankSuggestions(
+        <Place>[exactFar, boundaryNear],
+        'transport',
+        lucknow,
+      );
+      expect(ranked.first.city, 'Lucknow');
+    });
+
+    test('exact name matching ignores case and punctuation', () {
+      expect(
+        PlaceRanking.isExactNameMatch(tajMahalAgra, '  Taj  Mahal! '),
+        isTrue,
+      );
+      expect(
+        PlaceRanking.isExactNameMatch(tajMahalRestaurant, 'taj mahal'),
+        isFalse,
+      );
+    });
+
+    test('strong match keeps full-prefix places, not random ones', () {
+      final Place garden = _p('Taj Mahal Garden', 27.1751, 78.0421);
+      final Place cafe = _p('Cafe Taj', 26.8500, 80.9470);
+      expect(PlaceRanking.isStrongNameMatch(garden, 'taj mahal'), isTrue);
+      expect(PlaceRanking.isStrongNameMatch(cafe, 'taj mahal'), isFalse);
+      // Single-token queries are only "strong" on an exact name.
+      expect(PlaceRanking.isStrongNameMatch(garden, 'taj'), isFalse);
+      expect(PlaceRanking.isStrongNameMatch(tajMahalAgra, 'taj'), isFalse);
+      expect(
+        PlaceRanking.isStrongNameMatch(_p('Taj', 26.85, 80.94), 'taj'),
+        isTrue,
+      );
+    });
+  });
 }

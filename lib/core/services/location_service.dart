@@ -99,16 +99,39 @@ class LocationService {
   /// A recent cached fix is intentionally not returned here: this method is
   /// the explicit accuracy path used when nearby results must follow the
   /// current device position.
+  ///
+  /// The [timeout] is a HARD cap on the whole attempt: the old
+  /// implementation accepted the parameter but never enforced it, so a cold
+  /// start indoors could block Nearby for 30+ seconds while the map's blue
+  /// dot sat there perfectly rendered. Callers that need a guaranteed-fast
+  /// answer combine this with [bestRecentFix].
   Future<Position?> refreshPosition({
     Duration timeout = const Duration(seconds: 8),
   }) {
     final Future<Position?>? pending = _freshInFlight;
     if (pending != null) return pending;
-    final Future<Position?> request = _obtainFresh(timeout: timeout);
+    final Future<Position?> request = _obtainFresh(timeout: timeout)
+        .timeout(timeout, onTimeout: () => null);
     _freshInFlight = request;
     return request.whenComplete(() {
       if (identical(_freshInFlight, request)) _freshInFlight = null;
     });
+  }
+
+  /// The best recent fix without waiting for GPS: the in-memory/last-known
+  /// position when it is younger than [maxAge]. This is the graceful
+  /// degradation path for "Nearby": the Google map already shows the user's
+  /// live blue dot (Play-services fused location), so refusing to run a
+  /// nearby search just because a COLD fix takes longer than the timeout
+  /// made "Nearby" look broken while the map demonstrably knew the position.
+  Future<Position?> bestRecentFix({
+    Duration maxAge = const Duration(minutes: 15),
+  }) async {
+    final Position? pos = await lastKnown();
+    if (pos == null) return null;
+    final DateTime t = pos.timestamp;
+    if (DateTime.now().difference(t).abs() > maxAge) return null;
+    return pos;
   }
 
   Future<Position?> _obtainFresh({Duration timeout = const Duration(seconds: 8)}) async {
@@ -123,10 +146,30 @@ class LocationService {
           p == LocationPermission.deniedForever) {
         return null;
       }
-      // Two quick tiers instead of a long ladder: the common case gets a fix
-      // in seconds, and the OS location-manager fallback covers devices whose
-      // fused provider is unreliable — without ever stalling the UI for ~1 min
-      // on a cold start (the old 4-tier ladder did).
+      // Three quick tiers instead of a long ladder:
+      //   1. the position STREAM's first emission — on most devices the
+      //      fused provider already knows roughly where we are and emits
+      //      within a second or two (this is what the blue dot on the map
+      //      uses), far faster than a blocking high-accuracy fix;
+      //   2. a blocking best-accuracy fix;
+      //   3. the OS location-manager fallback for devices whose fused
+      //      provider is unreliable.
+      // None of these ever stalls the UI for minutes on a cold start.
+      try {
+        final Position streamed = await Geolocator.getPositionStream(
+          locationSettings: LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 0,
+          ),
+        )
+            .first
+            .timeout(const Duration(seconds: 5));
+        _cached = streamed;
+        await _writeCache(streamed);
+        return streamed;
+      } catch (_) {
+        // Fall through to the blocking tiers.
+      }
       for (final (LocationAccuracy accuracy, int seconds, bool forceManager)
           in const <(LocationAccuracy, int, bool)>[
         (LocationAccuracy.best, 10, false),

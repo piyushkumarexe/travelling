@@ -124,8 +124,18 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     // Free images are accepted only when attached to this exact OSM/Wikipedia
     // record. Never use a generic image search: a similarly named college,
     // hotel, or landmark must not receive somebody else's photograph.
+    // 1) Image tags the OSM mapper attached to this exact POI.
     String? image = _trustedTaggedImage(p);
     String? extract;
+    // 2) The place's own Wikidata entity (osm wikidata=Q…) — the entity's
+    //    P18 picture belongs to this exact place by construction.
+    if (image == null) {
+      final Object? qid = p.metadata['wikidata'];
+      if (qid is String && qid.trim().isNotEmpty) {
+        image = await _c.placesRepository.wikidataImage(qid);
+      }
+    }
+    // 3) A Wikipedia article linked from the place's own website tag.
     final String? title = _wikiTitleFromUrl(p.website);
     if (image == null && title != null) {
       final (String?, String?) s =
@@ -133,6 +143,9 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       image = s.$1;
       extract = s.$2;
     }
+    // 4) Last resort: a Wikipedia article whose TITLE IS the place name and
+    //    whose coordinates sit within 10 km of this place. No match → the
+    //    honest placeholder icon, never a random photo.
     if (image == null && p.name.trim().isNotEmpty) {
       image = await _c.placesRepository.wikipediaThumbnailBySearch(
         p.name,

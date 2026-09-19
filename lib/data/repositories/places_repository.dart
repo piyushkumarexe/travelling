@@ -72,10 +72,10 @@ class PlacesRepository {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
-    // Keep the verified local fallback, but never let it block the live
-    // providers. Both provider families run together so a working Google
-    // proxy can win even when Overpass is slow.
-    final List<Place> fallback = _lucknowFallback(q, location);
+    // Keep the verified local fallback for the (rare) case where every live
+    // provider fails, but never mix it into live results — directory records
+    // used to pollute accurate provider matches (reported: wrong places
+    // shown above the real one).
     Future<List<Place>> safe(Future<List<Place>> request) async {
       try {
         return await request;
@@ -110,11 +110,19 @@ class PlacesRepository {
         })(),
     ];
     final List<List<Place>> batches = await Future.wait(requests);
-    final List<Place> allPlaces = <Place>[...fallback];
+    final List<Place> allPlaces = <Place>[];
     for (final List<Place> batch in batches) {
       allPlaces.addAll(batch);
     }
-    if (allPlaces.isEmpty) return const <Place>[];
+    if (allPlaces.isEmpty) {
+      // Every live provider failed — only now serve the verified local
+      // fallback (it is marked `curated` so the UI can label it honestly).
+      final List<Place> fallback = _lucknowFallback(q, location);
+      if (fallback.isEmpty) return const <Place>[];
+      final List<Place> rankedFallback =
+          PlaceRanking.rankSuggestions(fallback, q, location);
+      return rankedFallback;
+    }
 
     final Map<String, Place> merged = <String, Place>{};
     for (final Place p in allPlaces) {
@@ -124,6 +132,44 @@ class PlacesRepository {
       if (old == null || _isRicherSuggestion(p, old)) merged[key] = p;
     }
     List<Place> out = merged.values.toList();
+    if (out.isEmpty &&
+        types != null &&
+        types.isNotEmpty &&
+        location != null) {
+      // Category sweep (map chips: hospitals, parks, police…) came back
+      // empty from Overpass and the backend proxy — fall back to the
+      // keyless Photon reverse search so a busy Overpass mirror can never
+      // blank out a category.
+      final Set<String> datasetCats = <String>{};
+      for (final String t in types) {
+        datasetCats.addAll(_datasetCategoriesFor(t) ?? const <String>{});
+      }
+      if (datasetCats.isNotEmpty) {
+        try {
+          final double radius =
+              radiusMeters ?? FreeGeoClient.kNearbyRadiusMeters;
+          final List<Place> photonPlaces = await _free
+              .photonNearby(
+                location,
+                radiusMeters: radius,
+                categories: datasetCats,
+              )
+              .timeout(const Duration(seconds: 10));
+          for (final Place raw in photonPlaces) {
+            final double distance =
+                GeoUtils.distanceMeters(location, raw.coords);
+            if (distance > radius) continue;
+            final Place place = raw.copyWith(
+              category: types.first,
+              distanceMeters: raw.distanceMeters ?? distance,
+            );
+            out.add(place);
+          }
+        } catch (_) {
+          // Photon also unavailable — an honest empty result.
+        }
+      }
+    }
     if (location != null && types != null && radiusMeters != null) {
       out = out
           .where((Place p) =>
@@ -390,7 +436,7 @@ class PlacesRepository {
   /// On network/rate-limit failures a stale cached dataset is returned
   /// (flagged) instead of an error.
   Future<NearbyResult> nearbyAround(LatLng location,
-      {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
+      {double radiusMeters = FreeGeoClient.kGroupedNearbyRadiusMeters,
       bool force = false}) {
     return _nearby.load(
       location,
@@ -493,12 +539,6 @@ class PlacesRepository {
       freeRequest(),
       backendRequest(),
     ]);
-    if (freeFailed && (backendFailed || !configured)) {
-      throw const ApiException(
-        ApiErrorKind.network,
-        'Nearby place providers are unavailable right now. Please retry.',
-      );
-    }
     final Map<String, Place> merged = <String, Place>{};
     for (final List<Place> batch in batches) {
       for (final Place raw in batch) {
@@ -519,6 +559,39 @@ class PlacesRepository {
         }
       }
     }
+    if (merged.isEmpty) {
+      // Overpass (and the backend proxy, when configured) came back empty —
+      // fall back to the keyless Photon reverse search for this category so
+      // a busy Overpass mirror can never blank out a category chip.
+      try {
+        final List<Place> photonPlaces = await _free
+            .photonNearby(
+              location,
+              radiusMeters: radiusMeters,
+              categories: _datasetCategoriesFor(category),
+            )
+            .timeout(const Duration(seconds: 10));
+        for (final Place raw in photonPlaces) {
+          final double distance = GeoUtils.distanceMeters(location, raw.coords);
+          if (distance > radiusMeters) continue;
+          final Place place = raw.copyWith(
+            category: category,
+            distanceMeters: raw.distanceMeters ?? distance,
+          );
+          final String key =
+              '${place.name.toLowerCase().trim()}|${place.lat.toStringAsFixed(4)},${place.lng.toStringAsFixed(4)}';
+          merged[key] = place;
+        }
+      } catch (_) {
+        // Photon also unavailable — fall through to the honest error below.
+      }
+    }
+    if (merged.isEmpty && freeFailed && (backendFailed || !configured)) {
+      throw const ApiException(
+        ApiErrorKind.network,
+        'Nearby place providers are unavailable right now. Please retry.',
+      );
+    }
     final List<Place> out = merged.values.toList()
       ..sort((Place a, Place b) =>
           (a.distanceMeters ?? GeoUtils.distanceMeters(location, a.coords))
@@ -526,6 +599,33 @@ class PlacesRepository {
                   GeoUtils.distanceMeters(location, b.coords)));
     return out;
   }
+
+  /// Semantic UI category / type id → FreeGeoClient dataset categories for
+  /// the Photon reverse fallback.
+  static Set<String>? _datasetCategoriesFor(String category) =>
+      <String, Set<String>>{
+        'food': const <String>{'restaurant', 'cafe', 'fast_food'},
+        'restaurant': const <String>{'restaurant'},
+        'cafe': const <String>{'cafe'},
+        'fast_food': const <String>{'fast_food'},
+        'tourist_attraction': const <String>{'attraction'},
+        'tourist_places': const <String>{'attraction'},
+        'landmark': const <String>{'attraction'},
+        'shopping': const <String>{'shopping'},
+        'hotel': const <String>{'hotel'},
+        'museum': const <String>{'museum'},
+        'park': const <String>{'park'},
+        'hospital': const <String>{'hospital'},
+        'police': const <String>{'police'},
+        'police_station': const <String>{'police'},
+        'fire_station': const <String>{'fire_station'},
+        'pharmacy': const <String>{'pharmacy'},
+        'atm': const <String>{'atm'},
+        'fuel': const <String>{'fuel'},
+        'gas_station': const <String>{'fuel'},
+        'transit': const <String>{'transit'},
+        'transit_station': const <String>{'transit'},
+      }[category];
 
   static String _categoryQuery(String category) => switch (category) {
         'tourist_attraction' => 'tourist attractions',
@@ -687,6 +787,11 @@ class PlacesRepository {
     LatLng? near,
   }) =>
       _free.wikipediaThumbnailBySearch(query, near: near);
+
+  /// Real photo for an OSM `wikidata=Q…` reference: the entity's own P18
+  /// image from Wikimedia Commons. Belongs to this exact place by
+  /// construction — the safest free image source there is.
+  Future<String?> wikidataImage(String qid) => _free.wikidataImage(qid);
 
   /// Opens real turn-by-turn navigation on the device: native Google Maps
   /// navigation first, then the Maps deep link, then a geo: URI.

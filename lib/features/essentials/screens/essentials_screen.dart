@@ -210,20 +210,24 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
   }
 
   Future<Position?> _freshPositionForSearch() async {
+    Position? fresh;
     try {
-      final Position? fresh = await _c.locationService
-          .refreshPosition(timeout: const Duration(seconds: 6))
-          .timeout(const Duration(seconds: 10));
-      if (fresh != null && mounted) {
-        setState(() {
-          _position = fresh;
-          _locationDone = true;
-        });
-      }
-      return fresh;
+      fresh = await _c.locationService
+          .refreshPosition(timeout: const Duration(seconds: 10))
+          .timeout(const Duration(seconds: 12));
     } catch (_) {
-      return null;
+      fresh = null;
     }
+    // Cold GPS fallback: a recent known fix keeps Essentials usable (the
+    // map already shows the live position in the same conditions).
+    fresh ??= await _c.locationService.bestRecentFix();
+    if (fresh != null && mounted) {
+      setState(() {
+        _position = fresh;
+        _locationDone = true;
+      });
+    }
+    return fresh;
   }
 
   String _providerCategory(_Category c) => switch (c.label) {

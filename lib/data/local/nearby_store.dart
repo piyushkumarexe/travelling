@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/geo.dart';
 import '../models/places.dart';
 
 /// Result of a nearby-dataset load. [fromCache] tells the UI the data was not
@@ -54,6 +55,14 @@ class _Bucket {
 /// bucket share ONE request instead of firing duplicates.
 class NearbyStore {
   static const Duration ttl = Duration(minutes: 15);
+
+  /// Persisted (disk) datasets older than this are IGNORED on read. Nearby
+  /// data must follow the user's current position — serving a days-old
+  /// dataset (the old behaviour: the saved timestamp was never checked)
+  /// made "Nearby" show places around wherever the user used to be, which
+  /// looked exactly like "saved places instead of live nearby".
+  static const Duration maxDiskAge = Duration(hours: 6);
+
   static const int _maxPersisted = 200;
   static const String _prefix = 'nearby_dataset_';
 
@@ -91,7 +100,10 @@ class NearbyStore {
       // switching categories reuses the already-downloaded dataset.
       debugPrint('[places] nearbyStore HIT $key (${mem.places.length} places, '
           '${DateTime.now().difference(mem.fetchedAt).inSeconds}s old)');
-      return NearbyResult(places: mem.places, fromCache: true, key: key);
+      return NearbyResult(
+          places: _redistanced(mem.places, location),
+          fromCache: true,
+          key: key);
     }
 
     // Stale-while-revalidate: show the last dataset IMMEDIATELY (even if
@@ -101,17 +113,23 @@ class NearbyStore {
       if (mem != null && mem.places.isNotEmpty) {
         debugPrint('[places] nearbyStore STALE-SWR $key '
             '(${mem.places.length} places, serving instantly + refreshing)');
-        _backgroundRefresh(key, fetch);
+        _backgroundRefresh(key, location, fetch);
         return NearbyResult(
-            places: mem.places, fromCache: true, stale: true, key: key);
+            places: _redistanced(mem.places, location),
+            fromCache: true,
+            stale: true,
+            key: key);
       }
       final List<Place>? persisted = await _read(key);
       if (persisted != null && persisted.isNotEmpty) {
         debugPrint('[places] nearbyStore DISK-SWR $key '
             '(${persisted.length} places, serving instantly + refreshing)');
-        _backgroundRefresh(key, fetch);
+        _backgroundRefresh(key, location, fetch);
         return NearbyResult(
-            places: persisted, fromCache: true, stale: true, key: key);
+            places: _redistanced(persisted, location),
+            fromCache: true,
+            stale: true,
+            key: key);
       }
     }
 
@@ -131,6 +149,7 @@ class NearbyStore {
     final Future<NearbyResult> run = _run(
       key,
       fetch,
+      location: location,
       version: version,
       allowStaleOnError: !force,
     );
@@ -147,13 +166,18 @@ class NearbyStore {
   /// broadcast on [updates]. One automatic retry: Overpass mirrors rate-limit
   /// bursts, so a single failure used to leave "saved places" stuck for the
   /// whole session.
-  void _backgroundRefresh(String key, Future<List<Place>> Function() fetch) {
+  void _backgroundRefresh(
+    String key,
+    LatLng location,
+    Future<List<Place>> Function() fetch,
+  ) {
     final Future<NearbyResult>? pending = _inFlight[key];
     if (pending != null) return; // already refreshing
     final int version = _nextRequestVersion(key);
     final Future<NearbyResult> run = _run(
       key,
       fetch,
+      location: location,
       version: version,
     );
     _inFlight[key] = run;
@@ -167,6 +191,7 @@ class NearbyStore {
           final Future<NearbyResult> retry = _run(
             key,
             fetch,
+            location: location,
             version: version,
           );
           _inFlight[key] = retry;
@@ -183,6 +208,7 @@ class NearbyStore {
   Future<NearbyResult> _run(
     String key,
     Future<List<Place>> Function() fetch, {
+    required LatLng location,
     required int version,
     bool allowStaleOnError = true,
   }) async {
@@ -219,16 +245,34 @@ class NearbyStore {
         final _Bucket? mem = _mem[key];
         if (mem != null && mem.places.isNotEmpty) {
           return NearbyResult(
-              places: mem.places, fromCache: true, stale: true, key: key);
+              places: _redistanced(mem.places, location),
+              fromCache: true,
+              stale: true,
+              key: key);
         }
         final List<Place>? persisted = await _read(key);
         if (persisted != null && persisted.isNotEmpty) {
           return NearbyResult(
-              places: persisted, fromCache: true, stale: true, key: key);
+              places: _redistanced(persisted, location),
+              fromCache: true,
+              stale: true,
+              key: key);
         }
       }
       rethrow;
     }
+  }
+
+  /// Recomputes every place's [Place.distanceMeters] from the CURRENT
+  /// requested location. Cached datasets were written relative to the bucket
+  /// origin — without this, a user who moved within the ~1.1 km bucket saw
+  /// distances (and nearest-first ordering) computed from their old spot.
+  static List<Place> _redistanced(List<Place> places, LatLng location) {
+    return <Place>[
+      for (final Place p in places)
+        p.copyWith(distanceMeters: GeoUtils.distanceMeters(location, p.coords)),
+    ]..sort((Place a, Place b) => (a.distanceMeters ?? double.infinity)
+        .compareTo(b.distanceMeters ?? double.infinity));
   }
 
   Future<void> _persist(String key, List<Place> places) async {
@@ -256,6 +300,15 @@ class NearbyStore {
       final Map<String, dynamic> m =
           (jsonDecode(raw) as Map).map((Object? k, Object? v) =>
               MapEntry(k.toString(), v));
+      // Freshness gate: nearby data must follow the CURRENT position. A
+      // persisted dataset older than [maxDiskAge] describes a different
+      // world (shops close, places move) — better to show a loading state
+      // than "saved places" from days ago.
+      final Object? t = m['t'];
+      if (t is! num) return null;
+      final DateTime savedAt =
+          DateTime.fromMillisecondsSinceEpoch(t.toInt());
+      if (DateTime.now().difference(savedAt) > maxDiskAge) return null;
       final Object? list = m['p'];
       if (list is! List) return null;
       return list
