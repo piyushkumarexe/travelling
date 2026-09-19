@@ -970,9 +970,11 @@ class FreeGeoClient {
     // With no location it must never surface — a Mirzapur user searching
     // "school" was shown "Delhi Public School (DPS)" Lucknow entries and
     // read them as wrong-city (New Delhi) results.
-    final bool nearLucknow = near != null &&
-        GeoUtils.distanceMeters(near, const LatLng(26.8467, 80.9462)) <= 100000;
-    if (!nearLucknow) return const <Place>[];
+    if (near == null ||
+        GeoUtils.distanceMeters(near, const LatLng(26.8467, 80.9462)) >
+            100000) {
+      return const <Place>[];
+    }
 
     final List<String> queryTokens = q
         .split(RegExp(r'\s+'))
@@ -1018,10 +1020,9 @@ class FreeGeoClient {
       }
     }
 
-    if (near != null) {
-      matching.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
-          .compareTo(GeoUtils.distanceMeters(near, b.coords)));
-    }
+    // `near` is non-null here (the Lucknow gate above returned early).
+    matching.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
+        .compareTo(GeoUtils.distanceMeters(near, b.coords)));
     return matching;
   }
 
