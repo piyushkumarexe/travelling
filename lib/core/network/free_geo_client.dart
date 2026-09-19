@@ -2161,11 +2161,30 @@ class FreeGeoClient {
       if (includeShopping) 'shopping',
     ];
 
+    // Photon runs IN PARALLEL with the Overpass groups (verified live for
+    // small UP cities: it answers with real POIs even while overpass-api.de
+    // reports "server is probably too busy"). The old sequential fallback
+    // waited out the whole Overpass mirror chain before trying Photon —
+    // tens of seconds of skeleton during an Overpass brownout. Bounded
+    // per-group timeouts keep the whole view under ~13 s worst case.
     final List<(List<Place>?, Object?)> parts =
         await Future.wait<(List<Place>?, Object?)>(<Future<(List<Place>?, Object?)>>[
-      _nearbyCategoriesSafe(near, radiusMeters, essentials),
-      _nearbyCategoriesSafe(near, radiusMeters, foodTransit),
-      _nearbyCategoriesSafe(near, radiusMeters, staySee),
+      _boundedPart(
+        _nearbyCategoriesSafe(near, radiusMeters, essentials),
+        'overpass-essentials',
+        const Duration(seconds: 12),
+      ),
+      _boundedPart(
+        _nearbyCategoriesSafe(near, radiusMeters, foodTransit),
+        'overpass-food-transit',
+        const Duration(seconds: 12),
+      ),
+      _boundedPart(
+        _nearbyCategoriesSafe(near, radiusMeters, staySee),
+        'overpass-stay-see',
+        const Duration(seconds: 12),
+      ),
+      _photonNearbyPart(near, radiusMeters),
     ]);
 
     Object? firstError;
@@ -2187,42 +2206,20 @@ class FreeGeoClient {
       }
     }
 
-    if (ok == 0 || dedup.isEmpty) {
-      // Every Overpass query failed (or collectively returned nothing) —
-      // try the keyless Photon reverse search before giving up. Photon is
-      // an independent OSM index without Overpass's tight rate limits, so
-      // this is what keeps Nearby alive during an Overpass brownout (the
-      // reported "nearby never loads" bug).
-      try {
-        final List<Place> photonPlaces = await photonNearby(
-          near,
-          radiusMeters: radiusMeters,
-        ).timeout(const Duration(seconds: 10));
-        if (photonPlaces.isNotEmpty) {
-          NearbyDebug.instance.okQueries = ok + 1;
-          NearbyDebug.instance.failQueries = failed;
-          NearbyDebug.instance.parsedCount = photonPlaces.length;
-          NearbyDebug.instance.error =
-              'overpass unavailable — photon fallback (${photonPlaces.length})';
-          debugPrint('[places] nearbyAround photon-fallback '
-              'final=${photonPlaces.length}');
-          return photonPlaces;
-        }
-      } catch (_) {
-        // Photon fallback also failed — surface the original outcome below.
+    if (dedup.isEmpty) {
+      if (ok > 0) {
+        // Providers responded but genuinely found nothing here — an honest
+        // empty dataset (the repository widens the radius and retries).
+        NearbyDebug.instance.parsedCount = 0;
+        debugPrint('[places] nearbyAround ok=$ok failed=$failed final=0');
+        return const <Place>[];
       }
-      if (ok == 0) {
-        // Both query families failed — surface the real, typed error (never
-        // a fake empty list masquerading as "no places").
-        NearbyDebug.instance.phase = 'failed';
-        if (firstError != null) throw firstError;
-        throw const ApiException(
-            ApiErrorKind.network, 'Overpass is unreachable right now.');
-      }
-      // Overpass responded but genuinely found nothing; Photon found
-      // nothing either — an honest empty dataset.
-      NearbyDebug.instance.parsedCount = 0;
-      return const <Place>[];
+      // Every query family failed — surface the real, typed error (never a
+      // fake empty list masquerading as "no places").
+      NearbyDebug.instance.phase = 'failed';
+      if (firstError != null) throw firstError;
+      throw const ApiException(
+          ApiErrorKind.network, 'Nearby providers are unreachable right now.');
     }
 
     final List<Place> out = dedup.values.toList()
@@ -2238,6 +2235,35 @@ class FreeGeoClient {
     debugPrint('[places] nearbyAround ok=$ok failed=$failed '
         'final=${out.length}');
     return out;
+  }
+
+  /// Bounds one provider part: a slow/blocked provider becomes a failed
+  /// part instead of stalling the whole nearby view.
+  Future<(List<Place>?, Object?)> _boundedPart(
+    Future<(List<Place>?, Object?)> part,
+    String name,
+    Duration limit,
+  ) {
+    return part.timeout(limit, onTimeout: () {
+      debugPrint('[places] $name timed out after ${limit.inSeconds}s');
+      return (null, TimeoutException('$name timed out', limit));
+    });
+  }
+
+  /// Photon part of the parallel nearby sweep — never throws.
+  Future<(List<Place>?, Object?)> _photonNearbyPart(
+    LatLng near,
+    double radiusMeters,
+  ) async {
+    try {
+      final List<Place> places = await photonNearby(
+        near,
+        radiusMeters: radiusMeters,
+      ).timeout(const Duration(seconds: 10));
+      return (places, null);
+    } catch (e) {
+      return (null, e);
+    }
   }
 
   Future<(List<Place>?, Object?)> _nearbyCategoriesSafe(

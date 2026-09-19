@@ -445,9 +445,20 @@ class PlacesRepository {
       // Keep the first Explore skeleton bounded even if an Overpass mirror
       // accepts the request but never completes it. The UI can then use its
       // honest multi-provider fallback path.
-      fetch: () => _free
-          .nearbyAround(location, radiusMeters: radiusMeters)
-          .timeout(const Duration(seconds: 20)),
+      // Empty result at the default radius → one widening retry (Overpass
+      // groups + Photon both re-run at 25 km) so sparse-OSM areas never see
+      // a bare "No places found nearby".
+      fetch: () async {
+        List<Place> places = await _free
+            .nearbyAround(location, radiusMeters: radiusMeters)
+            .timeout(const Duration(seconds: 20));
+        if (places.isEmpty && radiusMeters < 25000) {
+          places = await _free
+              .nearbyAround(location, radiusMeters: 25000)
+              .timeout(const Duration(seconds: 20));
+        }
+        return places;
+      },
     );
   }
 
@@ -535,9 +546,32 @@ class PlacesRepository {
       }
     }
 
+    // Photon reverse runs IN PARALLEL with Overpass and the backend proxy:
+    // a busy Overpass mirror ("server is probably too busy" — chronic on
+    // the public instances) no longer blanks out or delays a category; the
+    // fastest family that answers fills the list.
+    Future<List<Place>> photonRequest() async {
+      final Set<String>? datasetCats = _datasetCategoriesFor(category);
+      if (datasetCats == null || datasetCats.isEmpty) {
+        return const <Place>[];
+      }
+      try {
+        return await _free
+            .photonNearby(
+              location,
+              radiusMeters: radiusMeters,
+              categories: datasetCats,
+            )
+            .timeout(const Duration(seconds: 10));
+      } catch (_) {
+        return const <Place>[];
+      }
+    }
+
     final List<List<Place>> batches = await Future.wait(<Future<List<Place>>>[
       freeRequest(),
       backendRequest(),
+      photonRequest(),
     ]);
     final Map<String, Place> merged = <String, Place>{};
     for (final List<Place> batch in batches) {
@@ -557,33 +591,6 @@ class PlacesRepository {
         if (old == null || _isRicherSuggestion(place, old)) {
           merged[key] = place;
         }
-      }
-    }
-    if (merged.isEmpty) {
-      // Overpass (and the backend proxy, when configured) came back empty —
-      // fall back to the keyless Photon reverse search for this category so
-      // a busy Overpass mirror can never blank out a category chip.
-      try {
-        final List<Place> photonPlaces = await _free
-            .photonNearby(
-              location,
-              radiusMeters: radiusMeters,
-              categories: _datasetCategoriesFor(category),
-            )
-            .timeout(const Duration(seconds: 10));
-        for (final Place raw in photonPlaces) {
-          final double distance = GeoUtils.distanceMeters(location, raw.coords);
-          if (distance > radiusMeters) continue;
-          final Place place = raw.copyWith(
-            category: category,
-            distanceMeters: raw.distanceMeters ?? distance,
-          );
-          final String key =
-              '${place.name.toLowerCase().trim()}|${place.lat.toStringAsFixed(4)},${place.lng.toStringAsFixed(4)}';
-          merged[key] = place;
-        }
-      } catch (_) {
-        // Photon also unavailable — fall through to the honest error below.
       }
     }
     if (merged.isEmpty && freeFailed && (backendFailed || !configured)) {
