@@ -1450,16 +1450,22 @@ class FreeGeoClient {
       final Object? queryObj = data['query'];
       if (queryObj is! Map || queryObj['pages'] is! Map) return null;
       for (final dynamic page in (queryObj['pages'] as Map).values) {
-        if (page is! Map) continue;
+        if (page is! Map) {
+          continue;
+        }
         final String title = (page['title'] as String? ?? '')
             .toLowerCase()
             .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
             .trim();
-        if (title != wanted) continue;
+        if (title != wanted) {
+          continue;
+        }
         if (near != null) {
           final Object? coordinates = page['coordinates'];
           if (coordinates is! List || coordinates.isEmpty ||
-              coordinates.first is! Map) continue;
+              coordinates.first is! Map) {
+            continue;
+          }
           final Map c = coordinates.first as Map;
           final double? lat = (c['lat'] as num?)?.toDouble();
           final double? lng = (c['lon'] as num?)?.toDouble();
@@ -1470,7 +1476,9 @@ class FreeGeoClient {
                     lat,
                     lng,
                   ) >
-                  10000) continue;
+                  10000) {
+            continue;
+          }
         }
         final Object? thumb = page['thumbnail'];
         if (thumb is Map && thumb['source'] is String) {
