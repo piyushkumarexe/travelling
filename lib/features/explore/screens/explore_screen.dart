@@ -595,9 +595,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // so the default nearby view shows REAL places instead of an error.
       try {
         final LatLng here = LatLng(pos.latitude, pos.longitude);
-        final List<Place> places =
-            await _c.placesRepository.search('tourist attractions near me',
-                location: here, radiusMeters: 25000);
+        final List<Place> places = await _c.placesRepository.search(
+          'tourist attractions near me',
+          location: here,
+          radiusMeters: 25000,
+          forceFresh: true,
+        );
         if (!mounted || requestGeneration != _queryGeneration) return;
         if (places.isNotEmpty) {
           NearbyDebug.instance.finalCount = places.length;
@@ -605,7 +608,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
               '(${places.length} places)';
           setState(() {
             _results = places;
-            _providerWarning = _c.placesRepository.backendWarning;
+            _providerWarning =
+                _c.placesRepository.backendWarning ??
+                (places.any((Place p) => p.provider == 'curated')
+                    ? 'Some results are directory records; verify details before relying on them.'
+                    : null);
             _loading = false;
             _searchedOnce = true;
           });

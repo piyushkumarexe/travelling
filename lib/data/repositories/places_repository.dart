@@ -67,6 +67,7 @@ class PlacesRepository {
     LatLng? location,
     double? radiusMeters,
     List<String>? types,
+    bool forceFresh = false,
   }) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
@@ -89,6 +90,7 @@ class PlacesRepository {
         near: location,
         types: types,
         radiusMeters: radiusMeters ?? 25000,
+        forceFresh: forceFresh,
       )),
       if (configured)
         (() async {
@@ -317,6 +319,7 @@ class PlacesRepository {
     LatLng? near,
     List<String>? types,
     double radiusMeters = 10000,
+    bool forceFresh = false,
   }) async {
     final String cacheKey = SearchCache.key(
       query,
@@ -325,29 +328,31 @@ class PlacesRepository {
       near?.longitude,
       radiusMeters,
     );
-    final List<Place>? cached = await SearchCache.read(cacheKey);
-    if (cached != null && cached.isNotEmpty) {
-      // Cached lists were written by whatever ranking existed at write time.
-      // Re-apply local-first ranking + relevance so a stale or old-format
-      // entry can never put far-away noise above the user's own area.
-      if (types == null) {
-        final List<Place> ranked =
-            PlaceRanking.rankSuggestions(cached, query.trim(), near);
-        final List<Place> relevant =
-            PlaceRanking.filterRelevant(ranked, query.trim(), near);
-        if (relevant.isNotEmpty) return relevant;
-        // Cached entry is entirely irrelevant now (e.g. written by an old
-        // build) — fall through to a fresh network search instead.
-      } else {
-        final List<Place> inRadius = near == null
-            ? cached
-            : cached
-                .where((Place p) =>
-                    GeoUtils.distanceMeters(near, p.coords) <= radiusMeters)
-                .toList();
-        if (inRadius.isNotEmpty) return inRadius;
-        // A stale category cache can contain records outside the current
-        // radius after a GPS move; ignore it and ask the provider again.
+    if (!forceFresh) {
+      final List<Place>? cached = await SearchCache.read(cacheKey);
+      if (cached != null && cached.isNotEmpty) {
+        // Cached lists were written by whatever ranking existed at write time.
+        // Re-apply local-first ranking + relevance so a stale or old-format
+        // entry can never put far-away noise above the user's own area.
+        if (types == null) {
+          final List<Place> ranked =
+              PlaceRanking.rankSuggestions(cached, query.trim(), near);
+          final List<Place> relevant =
+              PlaceRanking.filterRelevant(ranked, query.trim(), near);
+          if (relevant.isNotEmpty) return relevant;
+          // Cached entry is entirely irrelevant now (e.g. written by an old
+          // build) — fall through to a fresh network search instead.
+        } else {
+          final List<Place> inRadius = near == null
+              ? cached
+              : cached
+                  .where((Place p) =>
+                      GeoUtils.distanceMeters(near, p.coords) <= radiusMeters)
+                  .toList();
+          if (inRadius.isNotEmpty) return inRadius;
+          // A stale category cache can contain records outside the current
+          // radius after a GPS move; ignore it and ask the provider again.
+        }
       }
     }
     try {
@@ -364,12 +369,13 @@ class PlacesRepository {
       return result;
     } on ApiException catch (e) {
       // Offline / rate-limited / provider error → serve stale saved results
-      // instead of surfacing a misleading failure when we have real data.
-      if (e.kind == ApiErrorKind.network ||
-          e.kind == ApiErrorKind.timeout ||
-          e.kind == ApiErrorKind.rateLimited ||
-          e.kind == ApiErrorKind.server ||
-          e.kind == ApiErrorKind.parser) {
+      // for ordinary searches. A forced nearby fallback must stay live-only.
+      if (!forceFresh &&
+          (e.kind == ApiErrorKind.network ||
+              e.kind == ApiErrorKind.timeout ||
+              e.kind == ApiErrorKind.rateLimited ||
+              e.kind == ApiErrorKind.server ||
+              e.kind == ApiErrorKind.parser)) {
         final List<Place>? stale = await SearchCache.readStale(cacheKey);
         if (stale != null && stale.isNotEmpty) return stale;
       }
