@@ -239,11 +239,10 @@ jobs:
           mkdir -p dist
           cp "$APK" dist/yatrawise-release.apk
           sha256sum dist/yatrawise-release.apk > dist/SHA256SUMS.txt
-          # Also provide a normal, independently testable ZIP. GitHub wraps
-          # every Actions artifact in its own archive; keeping this inner ZIP
-          # uncompressed avoids nested-APK extraction issues on Android file
-          # managers and gives users a clearly named download.
-          (cd dist && zip -X -0 yatrawise-release.zip yatrawise-release.apk SHA256SUMS.txt)
+          # GitHub wraps every Actions artifact in its own archive. Put one
+          # clearly named, ordinary ZIP inside that wrapper so Android file
+          # managers do not have to guess whether an APK is an archive.
+          (cd dist && zip -X -9 yatrawise-release.zip yatrawise-release.apk SHA256SUMS.txt)
           unzip -t dist/yatrawise-release.zip
           ls -lh dist/yatrawise-release.apk dist/yatrawise-release.zip
 
@@ -251,13 +250,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: yatrawise-release-apk
-          path: |
-            dist/yatrawise-release.apk
-            dist/yatrawise-release.zip
-            dist/SHA256SUMS.txt
+          # Upload only the verified inner ZIP; this avoids duplicating the
+          # 120 MB uncompressed APK in the outer GitHub artifact.
+          path: dist/yatrawise-release.zip
           if-no-files-found: error
-          # APKs are already ZIP containers. Do not deflate them again inside
-          # the GitHub artifact; this keeps the downloaded archive compatible
-          # with Android's built-in extractors.
+          # The inner ZIP is already compressed. Store it as-is in the outer
+          # GitHub archive so the two archives remain independently valid.
           compression-level: 0
           retention-days: 14
