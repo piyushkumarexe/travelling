@@ -2712,10 +2712,13 @@ class PlaceRanking {
             return da.compareTo(db);
           }
 
-          // Exact full name match within metro (<35km) beats a weak/boundary match
-          // (Test 2: Transport Nagar 8km beats Transport Nagar Metro Station 500m)
-          if (ma == 0 && da <= 35000 && mb >= 2) return -1;
-          if (mb == 0 && db <= 35000 && ma >= 2) return 1;
+          // Exact full name match within the metro (<35km) beats any
+          // qualified/extended-name match, even when the longer name is
+          // physically closer. "Transport Nagar" must outrank the nearby
+          // "Transport Nagar Metro Station"; this also keeps exact Google
+          // Places branches above similarly named landmarks.
+          if (ma == 0 && da <= 35000 && mb >= 1) return -1;
+          if (mb == 0 && db <= 35000 && ma >= 1) return 1;
 
           // If one is exact (ma == 0) and one is prefix (mb == 1):
           // e.g. Hazratganj vs Hazratganj Market when distances are close (< 3km)
