@@ -387,7 +387,7 @@ class PlacesRepository {
     return _nearby.load(
       location,
       force: force,
-      variant: 'core',
+      variant: 'core|r:${radiusMeters.round()}',
       // Keep the first Explore skeleton bounded even if an Overpass mirror
       // accepts the request but never completes it. The UI can then use its
       // honest multi-provider fallback path.
@@ -409,7 +409,7 @@ class PlacesRepository {
     double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
     bool force = false,
   }) {
-    final String variant = 'category:$category';
+    final String variant = 'category:$category|r:${radiusMeters.round()}';
     return _nearby.load(
       location,
       force: force,
