@@ -235,7 +235,11 @@ and password, and you land on the dashboard.
 2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze
    --fatal-warnings`, `flutter test`) and **Build release APK**
    (JDK 17 + Android SDK + `flutter build apk --release`).
-3. Download the **`yatrawise-release-apk`** artifact from the job summary.
+3. Download the **`yatrawise-release-apk`** artifact from the job summary. GitHub
+   downloads Actions artifacts as an outer ZIP. Extract that archive once and
+   install `dist/yatrawise-release.apk`, or extract the verified
+   `dist/yatrawise-release.zip` archive. `dist/SHA256SUMS.txt` can be used to
+   verify the APK after downloading.
 
 The release APK is signed with the project's *debug* keystore (the same
 one CI always has). For public distribution you should create a proper

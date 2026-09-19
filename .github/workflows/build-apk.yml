@@ -63,17 +63,35 @@ jobs:
           fi
 
       - name: Run tests
+        # Keep the APK job available while exposing the complete test output.
+        # A pipe followed by `|| echo` used to hide the failing test name and
+        # made the red aggregate annotation impossible to diagnose.
+        continue-on-error: true
         run: |
-          set -o pipefail; flutter test --no-pub 2>&1 | tee test.log || echo "Tests failed but continuing"
-          exit 0
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.log
 
       - name: Surface test failures as annotations
-        if: failure()
+        if: always()
         run: |
-          grep -a -E "FAILED|failed|Expected|Actual|_test.dart" test.log | grep -a -v "✅" | head -n 60 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
-            echo "::error title=flutter test::$MSG"
-          done
+          if [ ! -s test.log ]; then
+            echo "::warning title=flutter test::No test log was produced."
+            exit 0
+          fi
+          grep -a -E "FAILED|failed|Expected|Actual|_test.dart" test.log \
+            | grep -a -v "✅" | head -n 60 | while IFS= read -r line; do
+              MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
+              echo "::error title=flutter test::$MSG"
+            done
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-log
+          path: test.log
+          if-no-files-found: warn
+          retention-days: 7
 
   build-apk:
     name: Build release APK
@@ -206,10 +224,32 @@ jobs:
             jarsigner -verify "$APK"
           fi
 
+      - name: Prepare verified APK downloads
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          mkdir -p dist
+          cp "$APK" dist/yatrawise-release.apk
+          sha256sum dist/yatrawise-release.apk > dist/SHA256SUMS.txt
+          # Also provide a normal, independently testable ZIP. GitHub wraps
+          # every Actions artifact in its own archive; keeping this inner ZIP
+          # uncompressed avoids nested-APK extraction issues on Android file
+          # managers and gives users a clearly named download.
+          (cd dist && zip -X -0 yatrawise-release.zip yatrawise-release.apk SHA256SUMS.txt)
+          unzip -t dist/yatrawise-release.zip
+          ls -lh dist/yatrawise-release.apk dist/yatrawise-release.zip
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: yatrawise-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            dist/yatrawise-release.apk
+            dist/yatrawise-release.zip
+            dist/SHA256SUMS.txt
           if-no-files-found: error
+          # APKs are already ZIP containers. Do not deflate them again inside
+          # the GitHub artifact; this keeps the downloaded archive compatible
+          # with Android's built-in extractors.
+          compression-level: 0
           retention-days: 14
