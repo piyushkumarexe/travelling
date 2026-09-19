@@ -158,23 +158,13 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     }
   }
 
-  Future<void> _search(_Category c) async {
+  Future<void> _search(_Category c, {Position? fixedPosition}) async {
     final int generation = ++_requestGeneration;
-    final Position? pos = await _freshPositionForSearch();
-    if (!mounted || generation != _requestGeneration) return;
-    if (pos == null) {
-      if (mounted) {
-        setState(() {
-          _selected = c;
-          _error =
-              'Could not get a fresh GPS fix. Turn on location services and retry.';
-          _loading = false;
-        });
-      }
-      return;
-    }
+    // INSTANT FEEDBACK: the chip selects and the skeleton shows in the SAME
+    // frame as the tap. The old flow awaited a fresh GPS fix BEFORE this
+    // setState, so the button didn't even look tapped for seconds — the
+    // reported "4 second delay on every option" bug.
     setState(() {
-      _position = pos;
       _selected = c;
       _loading = true;
       _error = null;
@@ -183,8 +173,30 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
       _results = const <Place>[];
       _datasetKey = null;
     });
+    // Position: a chip tap uses the fix the screen already holds (or the
+    // best recent one — instant). Waiting for a fresh GPS lock belongs to
+    // the explicit Refresh action, not to every tap.
+    Position? pos = fixedPosition ?? _position;
+    if (pos == null) {
+      pos = await _fastPositionForSearch();
+      if (!mounted || generation != _requestGeneration) return;
+    }
+    if (pos == null) {
+      setState(() {
+        _error =
+            'Your location is unavailable. Turn on location services and retry.';
+        _loading = false;
+      });
+      return;
+    }
+    if (!identical(pos, _position)) {
+      setState(() => _position = pos);
+    }
     try {
-      final NearbyResult dataset = await _loadDataset(c, force: true);
+      // Cache-first (SWR): a repeat tap serves the cached dataset instantly
+      // and refreshes in the background (the updates stream swaps the fresh
+      // list in). Only the explicit Refresh button forces a network fetch.
+      final NearbyResult dataset = await _loadDataset(c);
       if (!mounted || generation != _requestGeneration) return;
       final List<Place> filtered = dataset.places
           .where((Place p) => _matches(p, c.categories))
@@ -206,6 +218,50 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         _error = _friendlyError(e);
         _loading = false;
       });
+    }
+    // Keep it LIVE: verify the position in the background; if the user has
+    // actually moved well beyond the cached area, re-run this category at
+    // the fresh fix (skipped for background re-runs to avoid loops).
+    if (fixedPosition == null) {
+      unawaited(_verifyLivePosition(c));
+    }
+  }
+
+  /// Instant position for taps: the best recent fix without any GPS wait.
+  Future<Position?> _fastPositionForSearch() async {
+    final Position? recent = await _c.locationService.bestRecentFix();
+    if (recent != null) return recent;
+    // Nothing usable cached — only now wait for a live fix (hard-capped).
+    try {
+      return await _c.locationService
+          .refreshPosition(timeout: const Duration(seconds: 10))
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Background GPS verification after a tap-served list: fetches a fresh
+  /// fix quietly; when the user has really moved (>500 m — beyond GPS
+  /// jitter and half a cache bucket), the selected category re-runs around
+  /// the live position so the list always follows where the user is.
+  Future<void> _verifyLivePosition(_Category c) async {
+    try {
+      final Position? old = _position;
+      final Position? fresh = await _c.locationService
+          .refreshPosition(timeout: const Duration(seconds: 10))
+          .timeout(const Duration(seconds: 12));
+      if (!mounted || fresh == null || _selected != c) return;
+      if (old != null) {
+        final double moved = GeoUtils.distanceMeters(
+          LatLng(old.latitude, old.longitude),
+          LatLng(fresh.latitude, fresh.longitude),
+        );
+        if (moved < 500) return; // same area — the shown list is valid
+      }
+      await _search(c, fixedPosition: fresh);
+    } catch (_) {
+      // Verification is best-effort; the shown list stays as-is.
     }
   }
 

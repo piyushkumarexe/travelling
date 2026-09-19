@@ -37,7 +37,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
   String _scope = 'nearby'; // nearby | anywhere | hidden
 
   Position? _position;
-  bool _liveLocationReady = false;
   bool _locationDone = false;
   bool _locationDenied = false;
 
@@ -155,7 +154,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final bool hadLocation = _position != null;
       setState(() {
         _position = pos;
-        _liveLocationReady = !hadLocation;
         _locationDone = true;
         _locationDenied = false;
       });
@@ -190,7 +188,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (!mounted || fresh == null) return null;
     setState(() {
       _position = fresh;
-      _liveLocationReady = true;
       _locationDone = true;
       _locationDenied = false;
     });
@@ -216,7 +213,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 LatLng(old.latitude, old.longitude),
                 LatLng(fresh.latitude, fresh.longitude),
               ) >
-              100;
+              // 500 m: beyond normal GPS jitter and half a cache bucket
+              // (~1.1 km). A smaller threshold made background refreshes
+              // re-run the whole view on indoor GPS noise.
+              500;
       // The first nearby request may still be pending because the screen was
       // opened with a last-known fix. Always start it after that first live
       // refresh; later refreshes only restart the view when the user moved.
@@ -312,7 +312,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
     try {
       Position? pos = _position;
-      if (_scope == 'nearby' && !_liveLocationReady) {
+      // A cached-but-recent fix is a perfectly good search bias — only wait
+      // for a live GPS lock when there is no position at all (the old check
+      // re-locked GPS on the first search even with a usable fix in hand).
+      if (pos == null) {
         pos = await _freshExplorePosition();
         if (!mounted || requestGeneration != _queryGeneration) return;
       }
@@ -433,8 +436,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final int requestGeneration = _queryGeneration;
     final List<String>? cats = _categoryDatasetSet(category);
     if (cats == null) return;
+    // INSTANT FEEDBACK: the skeleton shows in the same frame as the chip
+    // tap. The old flow awaited a fresh GPS fix BEFORE this setState, so
+    // the chip looked dead for seconds after tapping.
+    setState(() {
+      _loading = true;
+      _stale = false;
+      _error = null;
+      _datasetKey = null;
+      _shown = 20;
+    });
+    // A chip tap uses the fix the screen already holds; only a screen with
+    // NO position at all waits for a live fix.
     Position? pos = _position;
-    if (refreshLocation || !_liveLocationReady) {
+    if (pos == null) {
       pos = await _freshExplorePosition();
       if (!mounted || requestGeneration != _queryGeneration) return;
     }
@@ -448,20 +463,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
       });
       return;
     }
-    setState(() {
-      _loading = true;
-      _stale = false;
-      _error = null;
-      _datasetKey = null;
-      _shown = 20;
-    });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
+      // Cache-first (SWR): a repeat tap serves the cached dataset instantly
+      // and refreshes in the background (the updates stream swaps the fresh
+      // list in). The stale-banner Refresh button forces a fresh fetch.
       final NearbyResult dataset =
           await _c.placesRepository.nearbyCategory(
             here,
             category,
-            force: true,
           );
       if (!mounted ||
           _activeCategory != category ||
@@ -497,6 +507,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _searchedOnce = true;
       });
     }
+    // Keep it LIVE: a fresh GPS fix arrives quietly in the background; if
+    // the user actually moved, the current view re-runs around it (only
+    // for user-initiated runs — background re-runs skip this, no loops).
+    if (refreshLocation) {
+      unawaited(_refreshExplorePosition());
+    }
   }
 
   String _effectiveQuery() {
@@ -529,10 +545,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// cached Overpass request and show it nearest-first. This is what makes
   /// Explore "auto-detect nearby places" on open, instead of a slow
   /// free-text multi-provider search.
-  Future<void> _runNearbyDefault({bool refreshLocation = true}) async {
+  Future<void> _runNearbyDefault({
+    bool refreshLocation = true,
+    bool force = false,
+  }) async {
     final int requestGeneration = _queryGeneration;
+    // INSTANT FEEDBACK: skeleton in the same frame as the tap/open.
+    setState(() {
+      _activeCategory = null;
+      _loading = true;
+      _stale = false;
+      _error = null;
+      _datasetKey = null;
+      _shown = 20;
+    });
+    // Use the position the screen already holds; only wait for a live fix
+    // when there is nothing at all (the old flow re-locked GPS on every
+    // open, adding seconds of dead skeleton).
     Position? pos = _position;
-    if (refreshLocation || !_liveLocationReady) {
+    if (pos == null) {
       pos = await _freshExplorePosition();
       if (!mounted || requestGeneration != _queryGeneration) return;
     }
@@ -546,19 +577,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
       return;
     }
-    setState(() {
-      _activeCategory = null;
-      _loading = true;
-      _stale = false;
-      _error = null;
-      _datasetKey = null;
-      _shown = 20;
-    });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
+      // Cache-first (SWR): repeat opens serve the cached dataset instantly
+      // and refresh in the background; [force] is used by the explicit
+      // Refresh button on the stale banner.
       final NearbyResult dataset = await _c.placesRepository.nearbyAround(
         here,
-        force: true,
+        force: force,
       );
       if (!mounted || requestGeneration != _queryGeneration) return;
       // Show EVERYTHING that is actually mapped nearby (essentials —
@@ -624,6 +650,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _loading = false;
         _searchedOnce = true;
       });
+    }
+    // Keep it LIVE: background fresh fix → re-run around it when the user
+    // actually moved (skipped for background re-runs, so no loops).
+    if (refreshLocation) {
+      unawaited(_refreshExplorePosition());
     }
   }
 
@@ -997,7 +1028,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                   onPressed: _loading
                       ? null
-                      : () => _runNearbyDefault(),
+                      : () => _runNearbyDefault(force: true),
                   child: const Text('Refresh',
                       style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
