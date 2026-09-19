@@ -114,14 +114,14 @@ class LocationService {
   Future<Position?> _obtainFresh({Duration timeout = const Duration(seconds: 8)}) async {
     try {
       final bool serviceOn = await Geolocator.isLocationServiceEnabled();
-      if (!serviceOn) return await lastKnown();
+      if (!serviceOn) return null;
       LocationPermission p = await Geolocator.checkPermission();
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
       }
       if (p == LocationPermission.denied ||
           p == LocationPermission.deniedForever) {
-        return await lastKnown();
+        return null;
       }
       // Two quick tiers instead of a long ladder: the common case gets a fix
       // in seconds, and the OS location-manager fallback covers devices whose
@@ -153,9 +153,12 @@ class LocationService {
           // Next tier.
         }
       }
-      return await lastKnown();
+      // An explicit fresh request must not silently downgrade to a cached
+      // coordinate. Callers can still use [currentPosition] for a fast
+      // last-known fix, but nearby refreshes need a clear unavailable result.
+      return null;
     } catch (_) {
-      return await lastKnown();
+      return null;
     }
   }
 

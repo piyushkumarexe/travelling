@@ -300,6 +300,8 @@ class PlacesRepository {
   }
 
   static bool _isRicherSuggestion(Place a, Place b) {
+    if (a.provider != 'curated' && b.provider == 'curated') return true;
+    if (a.provider == 'curated' && b.provider != 'curated') return false;
     int score(Place p) =>
         (p.address != null && p.address!.isNotEmpty ? 1 : 0) +
         (p.rating != null ? 1 : 0) +
@@ -440,6 +442,8 @@ class PlacesRepository {
   }) async {
     final String? freeType = _freeTypeForCategory(category);
     if (freeType == null) return const <Place>[];
+    bool freeFailed = false;
+    bool backendFailed = false;
 
     Future<List<Place>> freeRequest() async {
       try {
@@ -457,6 +461,7 @@ class PlacesRepository {
           filterToRadius: true,
         ).timeout(const Duration(seconds: 15));
       } catch (_) {
+        freeFailed = true;
         return const <Place>[];
       }
     }
@@ -472,6 +477,7 @@ class PlacesRepository {
         _recordBackendSuccess();
         return places;
       } catch (_) {
+        backendFailed = true;
         _recordBackendFailure();
         return const <Place>[];
       }
@@ -481,6 +487,12 @@ class PlacesRepository {
       freeRequest(),
       backendRequest(),
     ]);
+    if (freeFailed && (backendFailed || !configured)) {
+      throw const ApiException(
+        ApiErrorKind.network,
+        'Nearby place providers are unavailable right now. Please retry.',
+      );
+    }
     final Map<String, Place> merged = <String, Place>{};
     for (final List<Place> batch in batches) {
       for (final Place raw in batch) {
@@ -517,6 +529,12 @@ class PlacesRepository {
         'park' => 'parks',
         'hotel' => 'hotels',
         'food' => 'restaurants and cafes',
+        'hospital' => 'hospitals',
+        'police' => 'police stations',
+        'pharmacy' => 'pharmacies',
+        'atm' => 'ATMs',
+        'fuel' => 'fuel stations',
+        'transit' => 'transit stations',
         'shopping' => 'shopping',
         _ => category,
       };
@@ -530,6 +548,12 @@ class PlacesRepository {
         'park': 'park',
         'hotel': 'hotel',
         'food': 'food',
+        'hospital': 'hospital',
+        'police': 'police',
+        'pharmacy': 'pharmacy',
+        'atm': 'atm',
+        'fuel': 'fuel',
+        'transit': 'transit',
         'shopping': 'shopping',
       }[category];
 
@@ -541,6 +565,12 @@ class PlacesRepository {
         'park' => 'park',
         'hotel' => 'lodging',
         'food' => 'restaurant',
+        'hospital' => 'hospital',
+        'police' => 'police',
+        'pharmacy' => 'pharmacy',
+        'atm' => 'atm',
+        'fuel' => 'gas_station',
+        'transit' => 'transit_station',
         'shopping' => 'store',
         _ => 'point_of_interest',
       };
@@ -638,15 +668,19 @@ class PlacesRepository {
   /// server-side).
   Future<Uint8List> photoBytes(String photoUrl) => _api.getBytes(photoUrl);
 
-  /// Free Wikipedia photo + short description for a page title. Used so place
-  /// details show a real picture even when the backend is offline.
+  /// Free Wikipedia photo + short description for a verified page title.
+  /// Used so place details show a real picture even when the backend is
+  /// offline.
   Future<(String?, String?)> wikipediaSummary(String title) =>
       _free.wikipediaSummary(title);
 
-  /// Free Wikipedia thumbnail by free-text search (for places without a wiki
-  /// URL). Returns an image URL or null.
-  Future<String?> wikipediaThumbnailBySearch(String query) =>
-      _free.wikipediaThumbnailBySearch(query);
+  /// Free Wikipedia thumbnail by exact title and nearby coordinates. It
+  /// returns null rather than guessing when the search result is another place.
+  Future<String?> wikipediaThumbnailBySearch(
+    String query, {
+    LatLng? near,
+  }) =>
+      _free.wikipediaThumbnailBySearch(query, near: near);
 
   /// Opens real turn-by-turn navigation on the device: native Google Maps
   /// navigation first, then the Maps deep link, then a geo: URI.

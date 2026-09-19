@@ -15,7 +15,7 @@ import '../../../data/models/places.dart';
 
 /// Nearby essentials: on-demand nearby-POI search around the user's real GPS
 /// location, with OpenStreetMap Overpass as the primary bulk engine and a
-/// strict 10,000 m radius. Categories: Hospital, Police, Pharmacy, ATM, Fuel,
+/// strict 25,000 m radius. Categories: Hospital, Police, Pharmacy, ATM, Fuel,
 /// Food, Hotel, Transit, Attractions, Museums, Parks and Shopping — each with
 /// its proper OSM tag mapping. Results are parsed, deduplicated, filtered to
 /// the radius and sorted nearest-first; every result opens for details and
@@ -32,8 +32,9 @@ class _Category {
   final String label;
   final IconData icon;
 
-  /// Dataset categories to filter the combined nearby dataset by. Fetching
-  /// happens ONCE per location bucket; switching chips filters locally.
+  /// Exact provider category keys used by the chip request. Each chip gets a
+  /// category-scoped dataset so a hospital request cannot be filled with
+  /// unrelated nearby places.
   final List<String> categories;
 }
 
@@ -50,7 +51,8 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         <String>['food', 'restaurant', 'cafe', 'fast_food']),
     _Category('Hotel', Icons.hotel, <String>['hotel']),
     _Category('Transit', Icons.directions_bus, <String>['transit']),
-    _Category('Attractions', Icons.attractions, <String>['attraction']),
+    _Category('Attractions', Icons.attractions,
+        <String>['tourist_attraction']),
     _Category('Museums', Icons.museum, <String>['museum']),
     _Category('Parks', Icons.park, <String>['park']),
     _Category('Shopping', Icons.shopping_bag, <String>['shopping']),
@@ -62,11 +64,13 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
   List<Place> _results = const <Place>[];
   bool _loading = false;
   String? _error;
+  String? _providerWarning;
   bool _stale = false;
   String? _datasetKey;
   StreamSubscription<NearbyUpdate>? _updatesSub;
 
   bool _subscribedUpdates = false;
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -96,6 +100,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
           .compareTo(b.distanceMeters ?? double.infinity));
     setState(() {
       _results = filtered;
+      _providerWarning = _c.placesRepository.backendWarning;
       _stale = false;
     });
   }
@@ -154,24 +159,33 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
   }
 
   Future<void> _search(_Category c) async {
-    final Position? pos = _position;
+    final int generation = ++_requestGeneration;
+    final Position? pos = await _freshPositionForSearch();
+    if (!mounted || generation != _requestGeneration) return;
     if (pos == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Enable location services to search nearby.')),
-      );
+      if (mounted) {
+        setState(() {
+          _selected = c;
+          _error =
+              'Could not get a fresh GPS fix. Turn on location services and retry.';
+          _loading = false;
+        });
+      }
       return;
     }
     setState(() {
+      _position = pos;
       _selected = c;
       _loading = true;
       _error = null;
+      _providerWarning = null;
       _stale = false;
       _results = const <Place>[];
+      _datasetKey = null;
     });
     try {
-      final NearbyResult dataset = await _loadDataset(c);
-      if (!mounted) return;
+      final NearbyResult dataset = await _loadDataset(c, force: true);
+      if (!mounted || generation != _requestGeneration) return;
       final List<Place> filtered = dataset.places
           .where((Place p) => _matches(p, c.categories))
           .toList()
@@ -179,12 +193,15 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
             .compareTo(b.distanceMeters ?? double.infinity));
       setState(() {
         _results = filtered;
+        _providerWarning = dataset.fromCache
+            ? null
+            : _c.placesRepository.backendWarning;
         _loading = false;
         _stale = dataset.stale;
         _datasetKey = dataset.key;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _error = _friendlyError(e);
         _loading = false;
@@ -192,32 +209,81 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
     }
   }
 
-  Future<NearbyResult> _loadDataset(_Category c) {
+  Future<Position?> _freshPositionForSearch() async {
+    try {
+      final Position? fresh = await _c.locationService
+          .refreshPosition(timeout: const Duration(seconds: 6))
+          .timeout(const Duration(seconds: 10));
+      if (fresh != null && mounted) {
+        setState(() {
+          _position = fresh;
+          _locationDone = true;
+        });
+      }
+      return fresh;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _providerCategory(_Category c) => switch (c.label) {
+        'Hospital' => 'hospital',
+        'Police' => 'police',
+        'Pharmacy' => 'pharmacy',
+        'ATM' => 'atm',
+        'Fuel' => 'fuel',
+        'Food' => 'food',
+        'Hotel' => 'hotel',
+        'Transit' => 'transit',
+        'Attractions' => 'tourist_attraction',
+        'Museums' => 'museum',
+        'Parks' => 'park',
+        'Shopping' => 'shopping',
+        _ => c.label.toLowerCase(),
+      };
+
+  Future<NearbyResult> _loadDataset(
+    _Category c, {
+    bool force = false,
+  }) {
     final Position pos = _position!;
     final LatLng here = LatLng(pos.latitude, pos.longitude);
-    if (c.label == 'Shopping') {
-      return _c.placesRepository.nearbyShopping(here);
-    }
-    return _c.placesRepository.nearbyAround(here);
+    return _c.placesRepository.nearbyCategory(
+      here,
+      _providerCategory(c),
+      force: force,
+    );
   }
 
   /// Explicit Refresh: bypass the cache and force a fresh Overpass fetch.
   Future<void> _refresh() async {
+    final int generation = ++_requestGeneration;
     final _Category? c = _selected;
     if (c == null) return;
-    final Position? pos = _position;
-    if (pos == null) return;
+    final Position? pos = await _freshPositionForSearch();
+    if (!mounted || generation != _requestGeneration) return;
+    if (pos == null) {
+      setState(() {
+        _error =
+            'Could not get a fresh GPS fix. Turn on location services and retry.';
+        _loading = false;
+      });
+      return;
+    }
     setState(() {
+      _position = pos;
       _loading = true;
       _error = null;
       _stale = false;
     });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
-      final NearbyResult dataset = c.label == 'Shopping'
-          ? await _c.placesRepository.nearbyShopping(here, force: true)
-          : await _c.placesRepository.nearbyAround(here, force: true);
-      if (!mounted) return;
+      final NearbyResult dataset = await _c.placesRepository.nearbyCategory(
+        here,
+        _providerCategory(c),
+        force: true,
+      );
+      if (!mounted || generation != _requestGeneration) return;
       final List<Place> filtered = dataset.places
           .where((Place p) => _matches(p, c.categories))
           .toList()
@@ -225,12 +291,15 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
             .compareTo(b.distanceMeters ?? double.infinity));
       setState(() {
         _results = filtered;
+        _providerWarning = dataset.fromCache
+            ? null
+            : _c.placesRepository.backendWarning;
         _loading = false;
         _stale = dataset.stale;
         _datasetKey = dataset.key;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _error = _friendlyError(e);
         _loading = false;
@@ -349,6 +418,12 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         onRetry: () => _search(_selected!),
       );
     }
+    if (_providerWarning != null && _results.isEmpty) {
+      return ErrorState(
+        message: _providerWarning!,
+        onRetry: () => _search(_selected!),
+      );
+    }
     if (_results.isEmpty) {
       return EmptyState(
         icon: Icons.search_off,
@@ -360,11 +435,41 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
         onAction: () => _refresh(),
       );
     }
+    final bool hasWarning = _providerWarning != null;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: _results.length + (_stale ? 1 : 0),
+      itemCount: _results.length + (_stale ? 1 : 0) + (hasWarning ? 1 : 0),
       itemBuilder: (BuildContext context, int i) {
-        if (_stale && i == 0) {
+        if (hasWarning && i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Icon(Icons.info_outline,
+                      size: 18, color: Color(0xFF9A5B00)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _providerWarning!,
+                      style: const TextStyle(
+                          fontSize: 12.5, color: Color(0xFF7A4A00)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final int offset = hasWarning ? 1 : 0;
+        final int contentIndex = i - offset;
+        if (_stale && contentIndex == 0) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Container(
@@ -399,7 +504,7 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
             ),
           );
         }
-        final Place p = _results[_stale ? i - 1 : i];
+        final Place p = _results[_stale ? contentIndex - 1 : contentIndex];
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: PlaceCard(

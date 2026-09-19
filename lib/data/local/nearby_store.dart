@@ -60,6 +60,10 @@ class NearbyStore {
   final Map<String, _Bucket> _mem = <String, _Bucket>{};
   final Map<String, Future<NearbyResult>> _inFlight =
       <String, Future<NearbyResult>>{};
+  final Map<String, int> _requestVersions = <String, int>{};
+
+  int _nextRequestVersion(String key) =>
+      _requestVersions[key] = (_requestVersions[key] ?? 0) + 1;
 
   final StreamController<NearbyUpdate> _updates =
       StreamController<NearbyUpdate>.broadcast();
@@ -112,13 +116,24 @@ class NearbyStore {
     }
 
     final Future<NearbyResult>? pending = _inFlight[key];
-    if (pending != null) {
+    if (pending != null && !force) {
       debugPrint('[places] nearbyStore DEDUP $key (shared in-flight fetch)');
       return pending;
     }
+    if (pending != null && force) {
+      // A forced live refresh must not inherit a stale-while-revalidate
+      // future that was started by an earlier screen.
+      debugPrint('[places] nearbyStore FORCE $key (bypassing in-flight refresh)');
+    }
 
     debugPrint('[places] nearbyStore FETCH $key (network fetch starting)');
-    final Future<NearbyResult> run = _run(key, fetch);
+    final int version = _nextRequestVersion(key);
+    final Future<NearbyResult> run = _run(
+      key,
+      fetch,
+      version: version,
+      allowStaleOnError: !force,
+    );
     _inFlight[key] = run;
     try {
       return await run;
@@ -135,7 +150,12 @@ class NearbyStore {
   void _backgroundRefresh(String key, Future<List<Place>> Function() fetch) {
     final Future<NearbyResult>? pending = _inFlight[key];
     if (pending != null) return; // already refreshing
-    final Future<NearbyResult> run = _run(key, fetch);
+    final int version = _nextRequestVersion(key);
+    final Future<NearbyResult> run = _run(
+      key,
+      fetch,
+      version: version,
+    );
     _inFlight[key] = run;
     unawaited(run.then(
       (NearbyResult _) {},
@@ -143,7 +163,12 @@ class NearbyStore {
         // Retry once after a short backoff, still deduplicated.
         await Future<void>.delayed(const Duration(seconds: 6));
         if (!_inFlight.containsKey(key)) {
-          final Future<NearbyResult> retry = _run(key, fetch);
+          final int version = _nextRequestVersion(key);
+          final Future<NearbyResult> retry = _run(
+            key,
+            fetch,
+            version: version,
+          );
           _inFlight[key] = retry;
           unawaited(retry.whenComplete(() {
             if (identical(_inFlight[key], retry)) _inFlight.remove(key);
@@ -157,33 +182,40 @@ class NearbyStore {
 
   Future<NearbyResult> _run(
     String key,
-    Future<List<Place>> Function() fetch,
-  ) async {
+    Future<List<Place>> Function() fetch, {
+    required int version,
+    bool allowStaleOnError = true,
+  }) async {
     try {
       final List<Place> places = await fetch();
+      final bool isLatest = _requestVersions[key] == version;
       // Do not cache an empty/ambiguous outcome. A provider timeout or a
       // temporary backend failure can otherwise turn into a 15-minute
       // skeleton/empty state and permanently mask a successful retry.
-      if (places.isNotEmpty) {
-        _mem[key] = _Bucket(DateTime.now(), places);
-        unawaited(_persist(key, places));
-      } else {
-        _mem.remove(key);
+      if (isLatest) {
+        if (places.isNotEmpty) {
+          _mem[key] = _Bucket(DateTime.now(), places);
+          unawaited(_persist(key, places));
+        } else {
+          _mem.remove(key);
+        }
       }
       final NearbyResult fresh = NearbyResult(places: places, key: key);
-      // Tell waiting screens the live data has landed (see NearbyUpdate).
-      if (!_updates.isClosed) {
+      // Tell waiting screens the live data has landed (see NearbyUpdate), but
+      // never let an older request overwrite a newer forced GPS refresh.
+      if (isLatest && !_updates.isClosed) {
         _updates.add(NearbyUpdate(key: key, result: fresh));
       }
       return fresh;
     } on ApiException catch (e) {
       // Offline / rate-limited / provider error: serve the best cached data
       // we have instead of converting the failure into "no places found".
-      if (e.kind == ApiErrorKind.network ||
-          e.kind == ApiErrorKind.timeout ||
-          e.kind == ApiErrorKind.rateLimited ||
-          e.kind == ApiErrorKind.server ||
-          e.kind == ApiErrorKind.parser) {
+      if (allowStaleOnError &&
+          (e.kind == ApiErrorKind.network ||
+              e.kind == ApiErrorKind.timeout ||
+              e.kind == ApiErrorKind.rateLimited ||
+              e.kind == ApiErrorKind.server ||
+              e.kind == ApiErrorKind.parser)) {
         final _Bucket? mem = _mem[key];
         if (mem != null && mem.places.isNotEmpty) {
           return NearbyResult(

@@ -636,6 +636,7 @@ function mapPlace(r, base) {
         : openHours && typeof openHours.open_now === 'boolean'
           ? openHours.open_now
           : null,
+    provider: 'google',
   };
 }
 

@@ -422,7 +422,7 @@ class FreeGeoClient {
       address: 'Anora, Sarojini Nagar, Lucknow, Uttar Pradesh 227309',
       primaryType: 'university',
       types: <String>['university', 'school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -436,7 +436,7 @@ class FreeGeoClient {
       address: 'Transport Nagar, Kanpur Road, Lucknow, Uttar Pradesh',
       primaryType: 'locality',
       types: <String>['locality', 'political'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -450,7 +450,7 @@ class FreeGeoClient {
       address: 'Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'park',
       types: <String>['park', 'tourist_attraction', 'point_of_interest'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -464,7 +464,7 @@ class FreeGeoClient {
       address: 'Sector O, Aliganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -477,7 +477,7 @@ class FreeGeoClient {
       address: 'Vishal Khand 2, Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -490,7 +490,7 @@ class FreeGeoClient {
       address: 'Sector 8, Gomti Nagar Extension, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -503,7 +503,7 @@ class FreeGeoClient {
       address: 'Kanpur Road, Sector C, LDA Colony, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -516,7 +516,7 @@ class FreeGeoClient {
       address: 'Sector B, Mahanagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -529,7 +529,7 @@ class FreeGeoClient {
       address: 'Sector 14, Indira Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -542,7 +542,7 @@ class FreeGeoClient {
       address: 'Kalyan Giri, Chowk, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -555,7 +555,7 @@ class FreeGeoClient {
       address: 'Sector 12, Rajajipuram, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -568,7 +568,7 @@ class FreeGeoClient {
       address: 'Station Road, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -581,7 +581,7 @@ class FreeGeoClient {
       address: 'RDSO Colony, Manak Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -594,7 +594,7 @@ class FreeGeoClient {
       address: 'Anand Nagar, Jail Road, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -608,7 +608,7 @@ class FreeGeoClient {
       address: 'Sector 19, Eldeco Udyan II, Shaheed Path, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -621,7 +621,7 @@ class FreeGeoClient {
       address: 'Sector 19, Indira Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -634,7 +634,7 @@ class FreeGeoClient {
       address: 'Vipul Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -647,7 +647,7 @@ class FreeGeoClient {
       address: 'Sector F, Jankipuram, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -661,7 +661,7 @@ class FreeGeoClient {
       address: 'Shahnajaf Road, Hazratganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -674,7 +674,7 @@ class FreeGeoClient {
       address: 'La Martiniere Road, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'college', 'tourist_attraction', 'point_of_interest'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -687,7 +687,7 @@ class FreeGeoClient {
       address: 'Rana Pratap Marg, Hazratganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -700,7 +700,7 @@ class FreeGeoClient {
       address: 'University Road, Hasanganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -713,7 +713,7 @@ class FreeGeoClient {
       address: 'Vineet Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -726,33 +726,89 @@ class FreeGeoClient {
       address: 'Lucknow Cantonment, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    // Verified local recall for the reported "new public college" query.
+    // These are separate real branches; do not collapse them into one
+    // guessed Mahanagar coordinate or the card will navigate to the wrong
+    // campus when Google is temporarily unavailable.
+    Place(
+      placeId: 'lucknow-new-public-college-neelmatha',
+      name: 'New Public College, Deputy Ganj Neelmatha',
+      lat: 26.813367,
+      lng: 80.913141,
+      address: 'Deputy Ganj, Neelmatha, Lucknow, Uttar Pradesh 226005',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
     ),
     Place(
-      placeId: 'lucknow-new-public-inter-college',
-      name: 'New Public Inter College',
-      lat: 26.8810,
-      lng: 80.9820,
-      address: 'Block B, Indira Nagar, Lucknow, Uttar Pradesh',
+      placeId: 'lucknow-new-public-college-ghuswal-kalan',
+      name: 'New Public College, Ghuswal Kalan',
+      lat: 26.774857,
+      lng: 80.977567,
+      address: 'Roberts Lines, Ghuswal Kalan, Lucknow, Uttar Pradesh 226002',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
     ),
     Place(
-      placeId: 'lucknow-new-public-college-mahanagar',
-      name: 'New Public College',
-      lat: 26.8730,
-      lng: 80.9550,
-      address: 'Mahanagar, Lucknow, Uttar Pradesh',
+      placeId: 'lucknow-new-public-college-mohanlalganj',
+      name: 'New Public College, Mohanlalganj',
+      lat: 26.687742,
+      lng: 80.978617,
+      address: 'Raebareli Road, Mohanlalganj, Lucknow, Uttar Pradesh 226301',
       primaryType: 'school',
       types: <String>['school', 'college', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    Place(
+      placeId: 'lucknow-new-public-inter-college-krishna-nagar',
+      name: 'New Public Inter College, Krishna Nagar',
+      lat: 26.796517,
+      lng: 80.886139,
+      address: 'Krishna Nagar, Lucknow, Uttar Pradesh 226005',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'curated',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    Place(
+      placeId: 'lucknow-new-public-inter-college-singar-nagar',
+      name: 'New Public Inter College, Singar Nagar',
+      lat: 26.809969,
+      lng: 80.895992,
+      address: 'New Sri Nagar, Alambagh, Singar Nagar, Lucknow, Uttar Pradesh 226005',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'curated',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
+    Place(
+      placeId: 'lucknow-new-public-inter-college-neelmatha',
+      name: 'New Public Inter College, Deputy Ganj Neelmatha',
+      lat: 26.813367,
+      lng: 80.913141,
+      address: 'Deputy Ganj, Neelmatha, Lucknow, Uttar Pradesh 226005',
+      primaryType: 'school',
+      types: <String>['school', 'college', 'point_of_interest', 'establishment'],
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -765,7 +821,7 @@ class FreeGeoClient {
       address: 'Sector J, Aliganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -778,7 +834,7 @@ class FreeGeoClient {
       address: 'Vipin Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -791,7 +847,7 @@ class FreeGeoClient {
       address: 'Lucknow Cantonment, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -804,7 +860,7 @@ class FreeGeoClient {
       address: 'Nehru Road, Cantonment, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -817,7 +873,7 @@ class FreeGeoClient {
       address: 'Sector 14, Indira Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -830,7 +886,7 @@ class FreeGeoClient {
       address: 'Hazratganj, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -843,7 +899,7 @@ class FreeGeoClient {
       address: 'Vipul Khand, Gomti Nagar, Lucknow, Uttar Pradesh',
       primaryType: 'school',
       types: <String>['school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
@@ -856,13 +912,16 @@ class FreeGeoClient {
       address: 'Babuganj, Hasanganj, Lucknow, Uttar Pradesh',
       primaryType: 'university',
       types: <String>['university', 'school', 'point_of_interest', 'establishment'],
-      provider: 'local',
+      provider: 'curated',
       city: 'Lucknow',
       state: 'Uttar Pradesh',
       country: 'India',
     ),
   ];
 
+  /// Small, manually verified open-data recall used only when live providers
+  /// do not return a matching Lucknow place. Every record is explicitly marked
+  /// `curated`; callers must not present it as a Google/OSM verification.
   List<Place> lucknowFallback(String query, LatLng? near) =>
       _lucknowSuggestFallback(query, near);
 
@@ -928,19 +987,9 @@ class FreeGeoClient {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
 
-    // Check Lucknow fallback for immediate known places
-    final List<Place> immediateFb = _lucknowSuggestFallback(q, near);
-    if (immediateFb.length >= 3) {
-      // If we have 3+ local matches (e.g. multiple branches of a school in Lucknow),
-      // return immediately sorted by distance nearest-first for instant response.
-      List<Place> sortedFb = List<Place>.from(immediateFb);
-      if (near != null) {
-        sortedFb.sort((Place a, Place b) => GeoUtils.distanceMeters(near, a.coords)
-            .compareTo(GeoUtils.distanceMeters(near, b.coords)));
-      }
-      return sortedFb.take(limit).toList();
-    }
-
+    // Curated local recall is merged only after live providers have had a
+    // chance to answer. The old immediate return made a hand-maintained
+    // coordinate permanently beat a fresher OSM/MapTiler/Google record.
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
         f.timeout(const Duration(seconds: 6),
             onTimeout: () => _ProviderResult.skipped('$name-timeout'));
@@ -1104,6 +1153,8 @@ class FreeGeoClient {
   }
 
   static bool _isRicher(Place a, Place b) {
+    if (a.provider != 'curated' && b.provider == 'curated') return true;
+    if (a.provider == 'curated' && b.provider != 'curated') return false;
     int score(Place p) =>
         (p.address != null && p.address!.isNotEmpty ? 1 : 0) +
         (p.phone != null && p.phone!.isNotEmpty ? 1 : 0) +
@@ -1366,9 +1417,19 @@ class FreeGeoClient {
     }
   }
 
-  /// Finds a thumbnail image by searching Wikipedia for [query] — used for
-  /// places that don't already carry a Wikipedia URL (hotels, landmarks…).
-  Future<String?> wikipediaThumbnailBySearch(String query) async {
+  /// Finds a Wikipedia thumbnail only when the result is an exact title
+  /// match and its article coordinates are close to [near]. Returning no image
+  /// is safer than showing a photograph of a different place with a similar
+  /// name.
+  Future<String?> wikipediaThumbnailBySearch(
+    String query, {
+    LatLng? near,
+  }) async {
+    final String wanted = query
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
+    if (wanted.isEmpty) return null;
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(
         'https://en.wikipedia.org/w/api.php',
@@ -1376,8 +1437,8 @@ class FreeGeoClient {
           'action': 'query',
           'generator': 'search',
           'gsrsearch': query,
-          'gsrlimit': 3,
-          'prop': 'pageimages',
+          'gsrlimit': 5,
+          'prop': 'coordinates|pageimages',
           'piprop': 'thumbnail',
           'pithumbsize': 800,
           'format': 'json',
@@ -1390,6 +1451,27 @@ class FreeGeoClient {
       if (queryObj is! Map || queryObj['pages'] is! Map) return null;
       for (final dynamic page in (queryObj['pages'] as Map).values) {
         if (page is! Map) continue;
+        final String title = (page['title'] as String? ?? '')
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+            .trim();
+        if (title != wanted) continue;
+        if (near != null) {
+          final Object? coordinates = page['coordinates'];
+          if (coordinates is! List || coordinates.isEmpty ||
+              coordinates.first is! Map) continue;
+          final Map c = coordinates.first as Map;
+          final double? lat = (c['lat'] as num?)?.toDouble();
+          final double? lng = (c['lon'] as num?)?.toDouble();
+          if (lat == null || lng == null ||
+              GeoUtils.distanceMetersLL(
+                    near.latitude,
+                    near.longitude,
+                    lat,
+                    lng,
+                  ) >
+                  10000) continue;
+        }
         final Object? thumb = page['thumbnail'];
         if (thumb is Map && thumb['source'] is String) {
           return thumb['source'] as String;
@@ -2216,6 +2298,15 @@ class FreeGeoClient {
     if (charge != null && charge.toString().trim().isNotEmpty) {
       m['charge'] = charge.toString();
     }
+    // These are place-attached OSM image references. Keep them only when the
+    // mapper supplied a real URL/file tag; the detail screen never guesses a
+    // generic image from the place name.
+    final String image = _tagOf(tags, 'image').trim();
+    if (image.startsWith('http://') || image.startsWith('https://')) {
+      m['image'] = image;
+    }
+    final String commons = _tagOf(tags, 'wikimedia_commons').trim();
+    if (commons.isNotEmpty) m['wikimedia_commons'] = commons;
     return m;
   }
 
@@ -2678,6 +2769,12 @@ class PlaceRanking {
       List<Place> places, String query, LatLng? near) {
     final String t = query.toLowerCase().trim();
 
+    int provenanceScore(Place p) => switch (p.provider) {
+          'google' => 0,
+          'curated' => 2,
+          _ => 1,
+        };
+
     int matchScore(Place p) {
       final String n = p.name.toLowerCase();
       final String full = '$n ${(p.address ?? '').toLowerCase()}';
@@ -2696,6 +2793,11 @@ class PlaceRanking {
 
     final List<Place> out = List<Place>.from(places)
       ..sort((Place a, Place b) {
+        // Prefer the configured Google proxy, then other live providers;
+        // hand-maintained open-data recall stays below both and never looks
+        // like provider verification.
+        final int provenance = provenanceScore(a) - provenanceScore(b);
+        if (provenance != 0) return provenance;
         final bool aNamed = queryNamesLocality(a, t);
         final bool bNamed = queryNamesLocality(b, t);
         if (near != null) {

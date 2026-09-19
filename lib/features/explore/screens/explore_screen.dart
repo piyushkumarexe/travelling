@@ -37,6 +37,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   String _scope = 'nearby'; // nearby | anywhere | hidden
 
   Position? _position;
+  bool _liveLocationReady = false;
   bool _locationDone = false;
   bool _locationDenied = false;
 
@@ -120,8 +121,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _initLocation() async {
-    // 1) Use the instant cached/last-known fix so the first search is already
-    //    a real "nearby" search (no flicker, no global fallback noise).
+    // 1) Use the instant cached/last-known fix for map/UI readiness. Nearby
+    //    data still waits for the explicit live refresh below.
     try {
       final Position? cached = await _c.locationService.lastKnown();
       if (mounted && cached != null) {
@@ -145,28 +146,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
     } catch (_) {}
     // 3) Never run a "nearby" search without a real location — a global
     //    search would return unrelated far-away results.
-    if (_position != null && !_searchedOnce) {
-      unawaited(_runNearbyDefault());
-    }
-    // 4) Refresh the fix (prompting for permission if needed); re-run nearby
-    //    only when we had no location at all, so a successful search is never
-    //    wiped out.
+    // 4) Wait for the live refresh before the first nearby request. A cached
+    //    fix is useful for the map UI, but must not be presented as the GPS
+    //    origin of a new nearby dataset.
     try {
       final Position? pos = await _c.locationService.currentPosition();
       if (!mounted || pos == null) return;
       final bool hadLocation = _position != null;
-      final bool returnedCached = identical(pos, _position);
       setState(() {
         _position = pos;
+        _liveLocationReady = !hadLocation;
         _locationDone = true;
         _locationDenied = false;
       });
       if (!hadLocation) {
-        unawaited(_runNearbyDefault());
-      } else if (returnedCached) {
-        // currentPosition returned the cached fix while LocationService
-        // refreshes it in the background. Propagate that fresh fix back into
-        // nearby/category/search requests when it materially moved.
+        unawaited(_runNearbyDefault(refreshLocation: false));
+      } else {
+        // currentPosition may be last-known; refreshPosition below obtains a
+        // live fix and starts the current mode only after that fix is ready.
         unawaited(_refreshExplorePosition());
       }
     } catch (_) {
@@ -176,30 +173,61 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  Future<Position?> _freshExplorePosition() async {
+    try {
+      final Position? fresh = await _c.locationService
+          .refreshPosition(timeout: const Duration(seconds: 12));
+      if (!mounted || fresh == null) return null;
+      setState(() {
+        _position = fresh;
+        _liveLocationReady = true;
+        _locationDone = true;
+        _locationDenied = false;
+      });
+      return fresh;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _refreshExplorePosition() async {
     try {
-      final Position? fresh =
-          await _c.locationService.refreshPosition(timeout: const Duration(seconds: 12));
-      if (!mounted || fresh == null) return;
       final Position? old = _position;
+      final Position? fresh = await _freshExplorePosition();
+      if (!mounted) return;
+      if (fresh == null) {
+        if (_scope == 'nearby' && !_searchedOnce) {
+          setState(() {
+            _error =
+                'Could not get a fresh GPS fix. Turn on location services and retry.';
+          });
+        }
+        return;
+      }
       final bool moved = old == null ||
           GeoUtils.distanceMeters(
                 LatLng(old.latitude, old.longitude),
                 LatLng(fresh.latitude, fresh.longitude),
               ) >
               100;
-      setState(() {
-        _position = fresh;
-        _locationDone = true;
-        _locationDenied = false;
-      });
-      if (!moved || _loading) return;
-      if (_query.trim().isNotEmpty) {
+      // The first nearby request may still be pending because the screen was
+      // opened with a last-known fix. Always start it after that first live
+      // refresh; later refreshes only restart the view when the user moved.
+      if (_searchedOnce && !moved) return;
+      // Invalidate the request that used the cached fix and immediately
+      // re-run the currently visible mode around the fresh GPS point. This
+      // is important when the first nearby fetch started before the GPS
+      // refresh completed.
+      _queryGeneration++;
+      if (_activeCategory != null && _scope != 'anywhere') {
+        unawaited(_runCategoryNearby(
+          _activeCategory!,
+          refreshLocation: false,
+        ));
+      } else if (_query.trim().isNotEmpty) {
         unawaited(_runSuggestions(_query));
-      } else if (_activeCategory != null && _scope != 'anywhere') {
-        unawaited(_runCategoryNearby(_activeCategory!));
       } else if (_scope == 'nearby') {
-        unawaited(_runNearbyDefault());
+        unawaited(_runNearbyDefault(refreshLocation: false));
       }
     } catch (_) {
       // Keep the already usable cached fix; the UI must not regress to a
@@ -276,7 +304,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _shown = 20;
     });
     try {
-      final Position? pos = _position;
+      Position? pos = _position;
+      if (_scope == 'nearby' && !_liveLocationReady) {
+        pos = await _freshExplorePosition();
+        if (!mounted || requestGeneration != _queryGeneration) return;
+      }
       List<Place> places = await _c.placesRepository.suggest(
         q,
         location: pos == null
@@ -396,16 +428,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<String>? _categoryDatasetSet(String? category) =>
       category == null ? null : <String>[category];
 
-  Future<void> _runCategoryNearby(String category) async {
+  Future<void> _runCategoryNearby(
+    String category, {
+    bool refreshLocation = true,
+  }) async {
     final int requestGeneration = _queryGeneration;
     final List<String>? cats = _categoryDatasetSet(category);
     if (cats == null) return;
-    final Position? pos = _position;
+    Position? pos = _position;
+    if (refreshLocation || !_liveLocationReady) {
+      pos = await _freshExplorePosition();
+      if (!mounted || requestGeneration != _queryGeneration) return;
+    }
     if (pos == null) {
       // Location failure is its own outcome — never "temporarily limited"
       // and never a silent empty list.
       setState(() {
         _error = 'Your location is currently unavailable.';
+        _loading = false;
         _searchedOnce = true;
       });
       return;
@@ -420,7 +460,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
       final NearbyResult dataset =
-          await _c.placesRepository.nearbyCategory(here, category);
+          await _c.placesRepository.nearbyCategory(
+            here,
+            category,
+            force: true,
+          );
       if (!mounted ||
           _activeCategory != category ||
           requestGeneration != _queryGeneration) {
@@ -487,10 +531,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// cached Overpass request and show it nearest-first. This is what makes
   /// Explore "auto-detect nearby places" on open, instead of a slow
   /// free-text multi-provider search.
-  Future<void> _runNearbyDefault() async {
+  Future<void> _runNearbyDefault({bool refreshLocation = true}) async {
     final int requestGeneration = _queryGeneration;
-    final Position? pos = _position;
-    if (pos == null) return;
+    Position? pos = _position;
+    if (refreshLocation || !_liveLocationReady) {
+      pos = await _freshExplorePosition();
+      if (!mounted || requestGeneration != _queryGeneration) return;
+    }
+    if (pos == null) {
+      if (mounted) {
+        setState(() {
+          _error =
+              'Could not get a fresh GPS fix. Turn on location services and retry.';
+          _loading = false;
+        });
+      }
+      return;
+    }
     setState(() {
       _activeCategory = null;
       _loading = true;
@@ -501,7 +558,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
-      final NearbyResult dataset = await _c.placesRepository.nearbyAround(here);
+      final NearbyResult dataset = await _c.placesRepository.nearbyAround(
+        here,
+        force: true,
+      );
       if (!mounted || requestGeneration != _queryGeneration) return;
       // Show EVERYTHING that is actually mapped nearby (essentials —
       // hospitals, ATMs, pharmacies — included), nearest first. The old
@@ -910,7 +970,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     visualDensity: VisualDensity.compact,
                     foregroundColor: const Color(0xFFB26A00),
                   ),
-                  onPressed: _loading ? null : _runNearbyDefault,
+                  onPressed: _loading
+                      ? null
+                      : () => _runNearbyDefault(),
                   child: const Text('Refresh',
                       style: TextStyle(fontWeight: FontWeight.w800)),
                 ),

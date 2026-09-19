@@ -121,19 +121,23 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         if (mounted) setState(() => _photoLoading = false);
       }
     }
-    // Free Wikipedia photo + description so OSM/Wikipedia places never show
-    // a bare placeholder.
-    String? image;
+    // Free images are accepted only when attached to this exact OSM/Wikipedia
+    // record. Never use a generic image search: a similarly named college,
+    // hotel, or landmark must not receive somebody else's photograph.
+    String? image = _trustedTaggedImage(p);
     String? extract;
     final String? title = _wikiTitleFromUrl(p.website);
-    if (title != null) {
+    if (image == null && title != null) {
       final (String?, String?) s =
           await _c.placesRepository.wikipediaSummary(title);
       image = s.$1;
       extract = s.$2;
     }
     if (image == null && p.name.trim().isNotEmpty) {
-      image = await _c.placesRepository.wikipediaThumbnailBySearch(p.name);
+      image = await _c.placesRepository.wikipediaThumbnailBySearch(
+        p.name,
+        near: p.coords,
+      );
     }
     if (mounted) {
       setState(() {
@@ -152,6 +156,21 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       return Uri.decodeComponent(segs[1]);
     }
     return null;
+  }
+
+  String? _trustedTaggedImage(Place p) {
+    final Object? rawImage = p.metadata['image'];
+    if (rawImage is String &&
+        (rawImage.startsWith('https://') || rawImage.startsWith('http://'))) {
+      return rawImage;
+    }
+    final Object? rawCommons = p.metadata['wikimedia_commons'];
+    if (rawCommons is! String || rawCommons.trim().isEmpty) return null;
+    String file = rawCommons.trim();
+    if (file.startsWith('File:')) file = file.substring(5);
+    if (file.startsWith('Category:')) return null;
+    return 'https://commons.wikimedia.org/wiki/Special:FilePath/'
+        '${Uri.encodeComponent(file)}';
   }
 
   Future<void> _initSaved() async {
