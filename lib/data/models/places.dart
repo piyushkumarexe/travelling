@@ -119,6 +119,37 @@ class Place {
 
   LatLng get coords => LatLng(lat, lng);
 
+  /// Keeps provider data intact while allowing repositories to attach
+  /// computed context (for example the requested category and GPS distance)
+  /// without rebuilding a place by hand.
+  Place copyWith({
+    String? category,
+    double? distanceMeters,
+  }) =>
+      Place(
+        placeId: placeId,
+        name: name,
+        lat: lat,
+        lng: lng,
+        address: address,
+        rating: rating,
+        userRatingCount: userRatingCount,
+        primaryType: primaryType,
+        types: types,
+        photoUrls: photoUrls,
+        phone: phone,
+        website: website,
+        priceLevel: priceLevel,
+        openNow: openNow,
+        category: category ?? this.category,
+        provider: provider,
+        distanceMeters: distanceMeters ?? this.distanceMeters,
+        metadata: metadata,
+        city: city,
+        state: state,
+        country: country,
+      );
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'placeId': placeId,
         'name': name,

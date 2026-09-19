@@ -8,6 +8,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/free_geo_client.dart';
 import '../../core/network/osrm_client.dart';
+import '../../core/utils/geo.dart';
 import '../local/nearby_store.dart';
 import '../local/search_cache.dart';
 import '../models/places.dart';
@@ -27,6 +28,21 @@ class PlacesRepository {
   final FreeGeoClient _free = FreeGeoClient();
   final OsrmClient _osrm = OsrmClient();
   final NearbyStore _nearby = NearbyStore();
+
+  String? _backendWarning;
+
+  /// Non-fatal diagnostic for screens that are showing real free-provider
+  /// results while the configured Google Places proxy is unavailable. Keeping
+  /// this explicit prevents a weak fallback list from looking like a healthy
+  /// Google response.
+  String? get backendWarning => _backendWarning;
+
+  void _recordBackendSuccess() => _backendWarning = null;
+
+  void _recordBackendFailure() {
+    _backendWarning =
+        'Google Places is unavailable right now; showing open-data results.';
+  }
 
   /// Broadcast of background nearby-dataset refreshes — screens showing a
   /// stale (saved) dataset subscribe and swap in the fresh list the moment
@@ -53,62 +69,73 @@ class PlacesRepository {
     List<String>? types,
   }) async {
     final String q = query.trim();
+    if (q.isEmpty) return const <Place>[];
 
-    // Check local fallback places for Lucknow (schools, landmarks, universities)
+    // Keep the verified local fallback, but never let it block the live
+    // providers. Both provider families run together so a working Google
+    // proxy can win even when Overpass is slow.
     final List<Place> fallback = _lucknowFallback(q, location);
-    
-    // Try free providers (Overpass + MapTiler + Photon + Nominatim)
-    List<Place> free = <Place>[];
-    try {
-      free = await _freeSearchWithCache(
+    Future<List<Place>> safe(Future<List<Place>> request) async {
+      try {
+        return await request;
+      } catch (_) {
+        return const <Place>[];
+      }
+    }
+
+    final List<Future<List<Place>>> requests = <Future<List<Place>>>[
+      safe(_freeSearchWithCache(
         q,
         near: location,
         types: types,
         radiusMeters: radiusMeters ?? 25000,
-      );
-    } catch (_) {
-      free = <Place>[];
+      )),
+      if (configured)
+        (() async {
+          try {
+            final List<Place> places = await _backendSearch(
+              q,
+              location,
+              radiusMeters,
+              types,
+            ).timeout(const Duration(seconds: 8));
+            _recordBackendSuccess();
+            return places;
+          } catch (_) {
+            _recordBackendFailure();
+            return const <Place>[];
+          }
+        })(),
+    ];
+    final List<List<Place>> batches = await Future.wait(requests);
+    final List<Place> allPlaces = <Place>[...fallback];
+    for (final List<Place> batch in batches) {
+      allPlaces.addAll(batch);
     }
-
-    // Always try backend (Google Places TextSearch) as well when configured
-    List<Place> backend = <Place>[];
-    if (configured) {
-      final Map<String, dynamic> body = <String, dynamic>{'query': q};
-      if (location != null) {
-        body['location'] = <String, double>{
-          'lat': location.latitude,
-          'lng': location.longitude,
-        };
-      }
-      if (radiusMeters != null) body['radiusMeters'] = radiusMeters;
-      if (types != null && types.isNotEmpty) body['types'] = types;
-      try {
-        final Map<String, dynamic> data = await _api.post('/placesSearch', body);
-        backend = _decode(data);
-      } catch (_) {
-        backend = <Place>[];
-      }
-    }
-
-    // Merge fallback + free + backend, dedup
-    final List<Place> allPlaces = <Place>[...fallback, ...free, ...backend];
     if (allPlaces.isEmpty) return const <Place>[];
 
     final Map<String, Place> merged = <String, Place>{};
     for (final Place p in allPlaces) {
       final String key =
           '${p.name.toLowerCase().trim()}|${p.lat.toStringAsFixed(4)},${p.lng.toStringAsFixed(4)}';
-      merged.putIfAbsent(key, () => p);
+      final Place? old = merged[key];
+      if (old == null || _isRicherSuggestion(p, old)) merged[key] = p;
     }
     List<Place> out = merged.values.toList();
+    if (location != null && types != null && radiusMeters != null) {
+      out = out
+          .where((Place p) =>
+              GeoUtils.distanceMeters(location, p.coords) <= radiusMeters)
+          .toList();
+    }
 
-    // Accuracy and shortest distance first
+    // Accuracy and shortest distance first. The relevance filter removes
+    // foreign/generic noise only after all real providers have been merged.
     if (location != null) {
       out = PlaceRanking.rankSuggestions(out, q, location);
       final List<Place> rel = PlaceRanking.filterRelevant(out, q, location);
       if (rel.isNotEmpty) out = rel;
     }
-
     return out;
   }
 
@@ -134,18 +161,24 @@ class PlacesRepository {
       location?.longitude,
       0,
     );
-    final List<Place>? cached = await SearchCache.read(cacheKey);
-    if (cached != null && cached.isNotEmpty) {
-      // Re-rank a cached response against the current GPS fix. The cache key
-      // is intentionally area-bucketed, so the user's position may have
-      // moved a little since the response was written.
-      final List<Place> cachedRanked =
-          PlaceRanking.rankSuggestions(cached, q, location);
-      final List<Place> cachedRelevant =
-          PlaceRanking.filterRelevant(cachedRanked, q, location);
-      return (cachedRelevant.isNotEmpty ? cachedRelevant : cachedRanked)
-          .take(limit)
-          .toList();
+    // Once a Google proxy is configured, always make a live request for
+    // autocomplete. A cache entry may have been written before Firebase/key
+    // setup (or during a transient backend outage) and must not permanently
+    // beat a fresh locality-aware response.
+    if (!configured || q.length < 3) {
+      final List<Place>? cached = await SearchCache.read(cacheKey);
+      if (cached != null && cached.isNotEmpty) {
+        // Re-rank a cached response against the current GPS fix. The cache key
+        // is intentionally area-bucketed, so the user's position may have
+        // moved a little since the response was written.
+        final List<Place> cachedRanked =
+            PlaceRanking.rankSuggestions(cached, q, location);
+        final List<Place> cachedRelevant =
+            PlaceRanking.filterRelevant(cachedRanked, q, location);
+        return (cachedRelevant.isNotEmpty ? cachedRelevant : cachedRanked)
+            .take(limit)
+            .toList();
+      }
     }
 
     Future<List<Place>> safe(Future<List<Place>> request) async {
@@ -161,7 +194,17 @@ class PlacesRepository {
       // Avoid spending a backend/Places request on one- or two-letter input;
       // the free providers still provide lightweight early suggestions.
       if (configured && q.length >= 3)
-        safe(_backendSuggest(q, location).timeout(const Duration(seconds: 7))),
+        (() async {
+          try {
+            final List<Place> places = await _backendSuggest(q, location)
+                .timeout(const Duration(seconds: 7));
+            _recordBackendSuccess();
+            return places;
+          } catch (_) {
+            _recordBackendFailure();
+            return const <Place>[];
+          }
+        })(),
     ];
     final List<List<Place>> batches = await Future.wait(requests);
     final List<Place> all = <Place>[
@@ -200,10 +243,44 @@ class PlacesRepository {
     final List<Place> result = (relevant.isNotEmpty ? relevant : ranked)
         .take(limit)
         .toList();
-    if (result.isNotEmpty) {
+    // A free-only response is deliberately not cached while the backend is
+    // configured. Otherwise one temporary backend outage permanently masks
+    // the Google result until the cache expires.
+    final bool backendWasUsed = configured && q.length >= 3;
+    final bool backendReturned = batches.length > 1 && batches[1].isNotEmpty;
+    if (result.isNotEmpty && (!backendWasUsed || backendReturned)) {
       unawaited(SearchCache.write(cacheKey, result));
     }
     return result;
+  }
+
+  Future<List<Place>> _backendSearch(
+    String query,
+    LatLng? location,
+    double? radiusMeters,
+    List<String>? types,
+  ) async {
+    final Map<String, dynamic> body = <String, dynamic>{'query': query};
+    if (location != null) {
+      body['location'] = <String, double>{
+        'lat': location.latitude,
+        'lng': location.longitude,
+      };
+    }
+    if (radiusMeters != null) body['radiusMeters'] = radiusMeters;
+    if (types != null && types.isNotEmpty) {
+      final String rawType = types.first;
+      final String googleType = <String, String>{
+        'tourist_places': 'tourist_attraction',
+        'landmark': 'tourist_attraction',
+        'food': 'restaurant',
+        'hotel': 'lodging',
+        'shopping': 'store',
+      }[rawType] ?? rawType;
+      body['types'] = <String>[googleType];
+    }
+    final Map<String, dynamic> data = await _api.post('/placesSearch', body);
+    return _decode(data);
   }
 
   Future<List<Place>> _backendSuggest(String query, LatLng? location) async {
@@ -260,7 +337,15 @@ class PlacesRepository {
         // Cached entry is entirely irrelevant now (e.g. written by an old
         // build) — fall through to a fresh network search instead.
       } else {
-        return cached;
+        final List<Place> inRadius = near == null
+            ? cached
+            : cached
+                .where((Place p) =>
+                    GeoUtils.distanceMeters(near, p.coords) <= radiusMeters)
+                .toList();
+        if (inRadius.isNotEmpty) return inRadius;
+        // A stale category cache can contain records outside the current
+        // radius after a GPS move; ignore it and ask the provider again.
       }
     }
     try {
@@ -292,10 +377,10 @@ class PlacesRepository {
 
   /// Combined nearby dataset (all essential categories) for a location,
   /// fetched once via a grouped Overpass query and cached per location
-  /// bucket. Callers filter it locally by category — switching categories
-  /// does NOT trigger another network request. On network/rate-limit
-  /// failures a stale cached dataset is returned (flagged) instead of an
-  /// error.
+  /// bucket. This is the fast default Nearby view; exact category chips use
+  /// [nearbyCategory] so their provider query and cache are category-scoped.
+  /// On network/rate-limit failures a stale cached dataset is returned
+  /// (flagged) instead of an error.
   Future<NearbyResult> nearbyAround(LatLng location,
       {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
       bool force = false}) {
@@ -303,21 +388,178 @@ class PlacesRepository {
       location,
       force: force,
       variant: 'core',
-      fetch: () => _free.nearbyAround(location, radiusMeters: radiusMeters),
+      // Keep the first Explore skeleton bounded even if an Overpass mirror
+      // accepts the request but never completes it. The UI can then use its
+      // honest multi-provider fallback path.
+      fetch: () => _free
+          .nearbyAround(location, radiusMeters: radiusMeters)
+          .timeout(const Duration(seconds: 20)),
     );
   }
 
-  /// Shops only (`shop=*`) for the Shopping category — fetched on demand so
-  /// the dense shop layer never crowds the essential POI dataset.
-  Future<NearbyResult> nearbyShopping(LatLng location,
-      {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
-      bool force = false}) {
+  /// Category-specific nearby search. The Google Places proxy is the primary
+  /// recall source when configured; the real OSM/Overpass category search runs
+  /// in parallel and remains the offline/free fallback. This path is separate
+  /// from the broad nearby dataset because a `shop=*` query can be much denser
+  /// than hospitals, parks, or food and should never leave the chip skeleton
+  /// spinning while the other categories load.
+  Future<NearbyResult> nearbyCategory(
+    LatLng location,
+    String category, {
+    double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
+    bool force = false,
+  }) {
+    final String variant = 'category:$category';
     return _nearby.load(
       location,
       force: force,
-      variant: 'shopping',
-      fetch: () => _free.nearbyShopping(location, radiusMeters: radiusMeters),
+      variant: variant,
+      fetch: () => _fetchNearbyCategory(
+        location,
+        category,
+        radiusMeters: radiusMeters,
+      ),
     );
+  }
+
+  /// Backwards-compatible convenience for callers that only need shops.
+  Future<NearbyResult> nearbyShopping(LatLng location,
+      {double radiusMeters = FreeGeoClient.kNearbyRadiusMeters,
+      bool force = false}) =>
+      nearbyCategory(
+        location,
+        'shopping',
+        radiusMeters: radiusMeters,
+        force: force,
+      );
+
+  Future<List<Place>> _fetchNearbyCategory(
+    LatLng location,
+    String category, {
+    required double radiusMeters,
+  }) async {
+    final String? freeType = _freeTypeForCategory(category);
+    if (freeType == null) return const <Place>[];
+
+    Future<List<Place>> freeRequest() async {
+      try {
+        // The broad shop layer is especially large; ten kilometres gives a
+        // useful nearby list without asking a public mirror for an entire
+        // metro's worth of stores.
+        final double freeRadius = category == 'shopping'
+            ? radiusMeters.clamp(1000, 10000).toDouble()
+            : radiusMeters;
+        return await _free.searchPlaces(
+          _categoryQuery(category),
+          near: location,
+          types: <String>[freeType],
+          radiusMeters: freeRadius,
+          filterToRadius: true,
+        ).timeout(const Duration(seconds: 15));
+      } catch (_) {
+        return const <Place>[];
+      }
+    }
+
+    Future<List<Place>> backendRequest() async {
+      if (!configured) return const <Place>[];
+      try {
+        final List<Place> places = await _backendNearby(
+          location,
+          _googleTypeForCategory(category),
+          radiusMeters,
+        ).timeout(const Duration(seconds: 8));
+        _recordBackendSuccess();
+        return places;
+      } catch (_) {
+        _recordBackendFailure();
+        return const <Place>[];
+      }
+    }
+
+    final List<List<Place>> batches = await Future.wait(<Future<List<Place>>>[
+      freeRequest(),
+      backendRequest(),
+    ]);
+    final Map<String, Place> merged = <String, Place>{};
+    for (final List<Place> batch in batches) {
+      for (final Place raw in batch) {
+        final double distance = GeoUtils.distanceMeters(location, raw.coords);
+        if (distance > radiusMeters) continue;
+        // This request is already category-scoped. Normalize the semantic
+        // category so the UI does not discard Google `tourist_attraction` /
+        // `store` records while filtering for its chip label.
+        final Place place = raw.copyWith(
+          category: category,
+          distanceMeters: raw.distanceMeters ?? distance,
+        );
+        final String key =
+            '${place.name.toLowerCase().trim()}|${place.lat.toStringAsFixed(4)},${place.lng.toStringAsFixed(4)}';
+        final Place? old = merged[key];
+        if (old == null || _isRicherSuggestion(place, old)) {
+          merged[key] = place;
+        }
+      }
+    }
+    final List<Place> out = merged.values.toList()
+      ..sort((Place a, Place b) =>
+          (a.distanceMeters ?? GeoUtils.distanceMeters(location, a.coords))
+              .compareTo(b.distanceMeters ??
+                  GeoUtils.distanceMeters(location, b.coords)));
+    return out;
+  }
+
+  static String _categoryQuery(String category) => switch (category) {
+        'tourist_attraction' => 'tourist attractions',
+        'tourist_places' => 'tourist attractions',
+        'landmark' => 'tourist attractions',
+        'museum' => 'museums',
+        'park' => 'parks',
+        'hotel' => 'hotels',
+        'food' => 'restaurants and cafes',
+        'shopping' => 'shopping',
+        _ => category,
+      };
+
+  static String? _freeTypeForCategory(String category) =>
+      <String, String>{
+        'tourist_attraction': 'tourist_attraction',
+        'tourist_places': 'tourist_places',
+        'landmark': 'landmark',
+        'museum': 'museum',
+        'park': 'park',
+        'hotel': 'hotel',
+        'food': 'food',
+        'shopping': 'shopping',
+      }[category];
+
+  static String _googleTypeForCategory(String category) => switch (category) {
+        'tourist_attraction' => 'tourist_attraction',
+        'tourist_places' => 'tourist_attraction',
+        'landmark' => 'tourist_attraction',
+        'museum' => 'museum',
+        'park' => 'park',
+        'hotel' => 'lodging',
+        'food' => 'restaurant',
+        'shopping' => 'store',
+        _ => 'point_of_interest',
+      };
+
+  Future<List<Place>> _backendNearby(
+    LatLng location,
+    String type,
+    double radiusMeters,
+  ) async {
+    final Map<String, dynamic> data = await _api.post('/placesSearch',
+        <String, dynamic>{
+      'location': <String, double>{
+        'lat': location.latitude,
+        'lng': location.longitude,
+      },
+      'radiusMeters': radiusMeters,
+      'types': <String>[type],
+    });
+    return _decode(data);
   }
 
   /// Validates the compiled MapTiler key with a single geocoding request.

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// background.
 class LocationService {
   Position? _cached;
+  Future<Position?>? _freshInFlight;
 
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
 
@@ -85,11 +86,29 @@ class LocationService {
     final Position? recent = await lastKnown();
     if (recent != null &&
         DateTime.now().difference(recent.timestamp).inSeconds < 120) {
-      // Refresh in the background for a more precise fix.
-      unawaited(_obtainFresh());
+      // Refresh in the background for a more precise fix. The in-flight future
+      // is shared so a screen that needs accuracy can await this same refresh
+      // instead of starting a second GPS request.
+      unawaited(refreshPosition(timeout: timeout));
       return recent;
     }
-    return _obtainFresh(timeout: timeout);
+    return refreshPosition(timeout: timeout);
+  }
+
+  /// Obtains a fresh GPS fix, deduplicating callers during the same refresh.
+  /// A recent cached fix is intentionally not returned here: this method is
+  /// the explicit accuracy path used when nearby results must follow the
+  /// current device position.
+  Future<Position?> refreshPosition({
+    Duration timeout = const Duration(seconds: 8),
+  }) {
+    final Future<Position?>? pending = _freshInFlight;
+    if (pending != null) return pending;
+    final Future<Position?> request = _obtainFresh(timeout: timeout);
+    _freshInFlight = request;
+    return request.whenComplete(() {
+      if (identical(_freshInFlight, request)) _freshInFlight = null;
+    });
   }
 
   Future<Position?> _obtainFresh({Duration timeout = const Duration(seconds: 8)}) async {

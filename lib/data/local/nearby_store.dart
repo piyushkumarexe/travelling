@@ -45,9 +45,10 @@ class _Bucket {
   final List<Place> places;
 }
 
-/// Caches the combined nearby dataset per location bucket, so the app does
-/// NOT re-query Overpass every time the user opens a screen, switches a
-/// category, or moves a small distance. Fetch once → filter locally.
+/// Caches each nearby dataset per location bucket and variant. The default
+/// combined dataset can be filtered locally by category; exact category
+/// variants (for example Shopping) use their own key so they never reuse a
+/// different list.
 ///
 /// Also deduplicates in-flight requests: concurrent callers for the same
 /// bucket share ONE request instead of firing duplicates.
@@ -86,7 +87,7 @@ class NearbyStore {
       // switching categories reuses the already-downloaded dataset.
       debugPrint('[places] nearbyStore HIT $key (${mem.places.length} places, '
           '${DateTime.now().difference(mem.fetchedAt).inSeconds}s old)');
-      return NearbyResult(places: mem.places, fromCache: true);
+      return NearbyResult(places: mem.places, fromCache: true, key: key);
     }
 
     // Stale-while-revalidate: show the last dataset IMMEDIATELY (even if
@@ -160,8 +161,15 @@ class NearbyStore {
   ) async {
     try {
       final List<Place> places = await fetch();
-      _mem[key] = _Bucket(DateTime.now(), places);
-      if (places.isNotEmpty) unawaited(_persist(key, places));
+      // Do not cache an empty/ambiguous outcome. A provider timeout or a
+      // temporary backend failure can otherwise turn into a 15-minute
+      // skeleton/empty state and permanently mask a successful retry.
+      if (places.isNotEmpty) {
+        _mem[key] = _Bucket(DateTime.now(), places);
+        unawaited(_persist(key, places));
+      } else {
+        _mem.remove(key);
+      }
       final NearbyResult fresh = NearbyResult(places: places, key: key);
       // Tell waiting screens the live data has landed (see NearbyUpdate).
       if (!_updates.isClosed) {
@@ -178,12 +186,13 @@ class NearbyStore {
           e.kind == ApiErrorKind.parser) {
         final _Bucket? mem = _mem[key];
         if (mem != null && mem.places.isNotEmpty) {
-          return NearbyResult(places: mem.places, fromCache: true, stale: true);
+          return NearbyResult(
+              places: mem.places, fromCache: true, stale: true, key: key);
         }
         final List<Place>? persisted = await _read(key);
         if (persisted != null && persisted.isNotEmpty) {
           return NearbyResult(
-              places: persisted, fromCache: true, stale: true);
+              places: persisted, fromCache: true, stale: true, key: key);
         }
       }
       rethrow;

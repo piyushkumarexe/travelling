@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/network/free_geo_client.dart';
 import '../../../core/network/nearby_debug.dart';
 import '../../../core/services/favorites_store.dart';
 import '../../../core/state/app_container.dart';
@@ -43,6 +44,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   bool _loading = false;
   bool _stale = false;
   String? _error;
+  String? _providerWarning;
   bool _searchedOnce = false;
   String? _datasetKey;
   StreamSubscription<NearbyUpdate>? _updatesSub;
@@ -52,6 +54,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   int _shown = 20;
 
   Timer? _debounce;
+  int _queryGeneration = 0;
   bool _initialized = false;
 
   bool _subscribedUpdates = false;
@@ -152,16 +155,55 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final Position? pos = await _c.locationService.currentPosition();
       if (!mounted || pos == null) return;
       final bool hadLocation = _position != null;
+      final bool returnedCached = identical(pos, _position);
       setState(() {
         _position = pos;
         _locationDone = true;
         _locationDenied = false;
       });
-      if (!hadLocation) unawaited(_runNearbyDefault());
+      if (!hadLocation) {
+        unawaited(_runNearbyDefault());
+      } else if (returnedCached) {
+        // currentPosition returned the cached fix while LocationService
+        // refreshes it in the background. Propagate that fresh fix back into
+        // nearby/category/search requests when it materially moved.
+        unawaited(_refreshExplorePosition());
+      }
     } catch (_) {
       // The fix failed — re-check the permission so the UI distinguishes
       // "permission denied" from "GPS unavailable" instead of guessing.
       if (mounted) unawaited(_refreshLocationState());
+    }
+  }
+
+  Future<void> _refreshExplorePosition() async {
+    try {
+      final Position? fresh =
+          await _c.locationService.refreshPosition(timeout: const Duration(seconds: 12));
+      if (!mounted || fresh == null) return;
+      final Position? old = _position;
+      final bool moved = old == null ||
+          GeoUtils.distanceMeters(
+                LatLng(old.latitude, old.longitude),
+                LatLng(fresh.latitude, fresh.longitude),
+              ) >
+              100;
+      setState(() {
+        _position = fresh;
+        _locationDone = true;
+        _locationDenied = false;
+      });
+      if (!moved || _loading) return;
+      if (_query.trim().isNotEmpty) {
+        unawaited(_runSuggestions(_query));
+      } else if (_activeCategory != null && _scope != 'anywhere') {
+        unawaited(_runCategoryNearby(_activeCategory!));
+      } else if (_scope == 'nearby') {
+        unawaited(_runNearbyDefault());
+      }
+    } catch (_) {
+      // Keep the already usable cached fix; the UI must not regress to a
+      // location error merely because the optional refresh timed out.
     }
   }
 
@@ -202,27 +244,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _onQueryChanged() {
     final String q = _queryController.text.trim();
+    final int generation = ++_queryGeneration;
     if (q != _query) {
       setState(() => _query = q);
     }
     _debounce?.cancel();
-    if (q.isEmpty) return;
+    if (q.isEmpty) {
+      setState(() {
+        _loading = false;
+        _providerWarning = null;
+      });
+      return;
+    }
     _debounce = Timer(const Duration(milliseconds: 450), () {
       // A typed search is a brand-new query — clear stale results so the UI
       // never keeps showing a previous category's list.
       if (_results.isNotEmpty) setState(() => _results = const <Place>[]);
-      _runSuggestions(q);
+      _runSuggestions(q, generation: generation);
     });
   }
 
   /// Autocomplete suggestions while typing (MapTiler Geocoding — permitted;
   /// never public Nominatim). Shows real matching places as the user types.
-  Future<void> _runSuggestions(String q) async {
-    if (_loading) return;
+  Future<void> _runSuggestions(String q, {int? generation}) async {
+    final int requestGeneration = generation ?? _queryGeneration;
     setState(() {
       _loading = true;
       _stale = false;
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
     try {
@@ -233,33 +283,31 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ? null
             : LatLng(pos.latitude, pos.longitude),
       );
-      // Nearby mode: prioritize places in local metro (within 35km), fallback to 50km
-      // Sort nearest-first by shortest distance to current location
+      // Nearby mode: keep local metro recall, but do not throw away the
+      // repository's text relevance by sorting distance-only. Exact place
+      // names must remain above nearby extended names; distance breaks ties.
       if (_scope == 'nearby' && pos != null && places.isNotEmpty) {
         final LatLng here = LatLng(pos.latitude, pos.longitude);
-        List<Place> within35 = places
+        final List<Place> within35 = places
             .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
             .toList();
-        List<Place> filtered = within35.isNotEmpty
+        final List<Place> filtered = within35.isNotEmpty
             ? within35
             : places
                 .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
                 .toList();
-        if (filtered.isNotEmpty) {
-          places = filtered;
-        }
-        places.sort((Place a, Place b) =>
-            GeoUtils.distanceMeters(here, a.coords)
-                .compareTo(GeoUtils.distanceMeters(here, b.coords)));
+        if (filtered.isNotEmpty) places = filtered;
+        places = PlaceRanking.rankSuggestions(places, q, here);
       }
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
         _results = places;
+        _providerWarning = _c.placesRepository.backendWarning;
         _loading = false;
         _searchedOnce = true;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
         _error = placesErrorMessage(e);
         _loading = false;
@@ -270,11 +318,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _setScope(String scope) {
     _debounce?.cancel();
+    _queryGeneration++;
     setState(() {
       _scope = scope;
       _activeCategory = null;
       _results = const <Place>[];
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
     if (scope == 'saved') {
@@ -301,6 +351,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (!mounted) return;
       setState(() {
         _results = saved;
+        _providerWarning = null;
         _loading = false;
         _error = null;
         _searchedOnce = true;
@@ -313,6 +364,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _setCategory(String? category) {
     _debounce?.cancel();
+    _queryGeneration++;
     setState(() {
       _activeCategory = category;
       // Clear the previous list immediately so a slow category search never
@@ -320,12 +372,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // list").
       _results = const <Place>[];
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
-    // Category chips fetch the combined nearby dataset ONCE and filter it
-    // locally (no new Overpass request per chip). Deselecting a chip returns
-    // to the default all-categories nearby list. The "Anywhere" scope still
-    // runs a wider free-provider search.
+    // Category chips use an exact, category-scoped nearby dataset. This keeps
+    // Shopping from reusing a generic/previous category list and lets the
+    // repository use Google Nearby Search when its proxy is configured.
+    // Deselecting a chip returns to the default all-categories nearby list.
+    // The "Anywhere" scope still runs a wider free-provider search.
     if (category == null) {
       _runNearbyDefault();
     } else if (_scope != 'anywhere') {
@@ -335,23 +389,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
-  /// Dataset categories a Explore chip maps to (see
-  /// FreeGeoClient._nearbyCategoryTags). "Attractions" is the broad
-  /// tourism/historic/natural set; "Food" is the restaurant/café/fast-food
-  /// roll-up.
-  List<String>? _categoryDatasetSet(String? category) => switch (category) {
-        'tourist_attraction' => const <String>['attraction', 'museum', 'park'],
-        'museum' => const <String>['museum'],
-        'park' => const <String>['park'],
-        'hotel' => const <String>['hotel'],
-        'food' => const <String>['food', 'restaurant', 'cafe', 'fast_food'],
-        'shopping' => const <String>['shopping'],
-        'landmark' => const <String>['attraction'],
-        'tourist_places' => const <String>['attraction', 'museum', 'park'],
-        _ => null,
-      };
+  /// Category requests are already exact and the repository normalizes every
+  /// returned record to the requested semantic id. Keep this filter strict so
+  /// a slow/empty Shopping request can never display the broad nearby dataset
+  /// or another chip's results.
+  List<String>? _categoryDatasetSet(String? category) =>
+      category == null ? null : <String>[category];
 
   Future<void> _runCategoryNearby(String category) async {
+    final int requestGeneration = _queryGeneration;
     final List<String>? cats = _categoryDatasetSet(category);
     if (cats == null) return;
     final Position? pos = _position;
@@ -368,14 +414,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _loading = true;
       _stale = false;
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
-      final NearbyResult dataset = category == 'shopping'
-          ? await _c.placesRepository.nearbyShopping(here)
-          : await _c.placesRepository.nearbyAround(here);
-      if (!mounted) return;
+      final NearbyResult dataset =
+          await _c.placesRepository.nearbyCategory(here, category);
+      if (!mounted ||
+          _activeCategory != category ||
+          requestGeneration != _queryGeneration) return;
       final List<Place> filtered = dataset.places
           .where((Place p) =>
               cats.any((String c) => p.category == c || p.types.contains(c)))
@@ -385,13 +433,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
       NearbyDebug.instance.finalCount = filtered.length;
       setState(() {
         _results = filtered;
+        _providerWarning = dataset.fromCache
+            ? null
+            : _c.placesRepository.backendWarning;
         _loading = false;
         _stale = dataset.stale;
         _datasetKey = dataset.key;
         _searchedOnce = true;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          _activeCategory != category ||
+          requestGeneration != _queryGeneration) return;
       setState(() {
         if (_results.isEmpty) _error = placesErrorMessage(e);
         _loading = false;
@@ -431,6 +484,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   /// Explore "auto-detect nearby places" on open, instead of a slow
   /// free-text multi-provider search.
   Future<void> _runNearbyDefault() async {
+    final int requestGeneration = _queryGeneration;
     final Position? pos = _position;
     if (pos == null) return;
     setState(() {
@@ -438,12 +492,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _loading = true;
       _stale = false;
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
     try {
       final LatLng here = LatLng(pos.latitude, pos.longitude);
       final NearbyResult dataset = await _c.placesRepository.nearbyAround(here);
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       // Show EVERYTHING that is actually mapped nearby (essentials —
       // hospitals, ATMs, pharmacies — included), nearest first. The old
       // tourist-only filter threw away 101 real places and left the user
@@ -462,13 +517,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
       NearbyDebug.instance.finalCount = sorted.length;
       setState(() {
         _results = sorted;
+        _providerWarning = null;
         _loading = false;
         _stale = dataset.stale;
         _datasetKey = dataset.key;
         _searchedOnce = true;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       // The grouped Overpass dataset failed (rate-limited / unreachable).
       // FALLBACK: run the multi-provider text search instead (MapTiler +
       // Nominatim + Wikipedia geosearch still work when Overpass is busy),
@@ -478,13 +534,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
         final List<Place> places =
             await _c.placesRepository.search('tourist attractions near me',
                 location: here, radiusMeters: 25000);
-        if (!mounted) return;
+        if (!mounted || requestGeneration != _queryGeneration) return;
         if (places.isNotEmpty) {
           NearbyDebug.instance.finalCount = places.length;
           NearbyDebug.instance.error = 'fallback: multi-provider search '
               '(${places.length} places)';
           setState(() {
             _results = places;
+            _providerWarning = _c.placesRepository.backendWarning;
             _loading = false;
             _searchedOnce = true;
           });
@@ -538,11 +595,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _runSearch({bool preserveOnEmpty = false}) async {
     final String q = _effectiveQuery();
-    if (_loading) return;
+    _queryGeneration++;
+    final int requestGeneration = _queryGeneration;
     setState(() {
       _loading = true;
       _stale = false;
       _error = null;
+      _datasetKey = null;
       _shown = 20;
     });
     try {
@@ -563,22 +622,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
         radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
         types: types,
       );
-      // Nearby mode: local metro (within 35km), fallback to 50km, sorted nearest-first
+      // Nearby mode: keep the local metro boundary, then preserve exact and
+      // prefix text matches above merely-nearby names. Distance is a tie-break.
       if (_scope == 'nearby' && here != null) {
-        List<Place> within35 = places
+        final List<Place> within35 = places
             .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 35000)
             .toList();
-        List<Place> filtered = within35.isNotEmpty
+        final List<Place> filtered = within35.isNotEmpty
             ? within35
             : places
                 .where((Place p) => GeoUtils.distanceMeters(here, p.coords) <= 50000)
                 .toList();
-        if (filtered.isNotEmpty) {
-          places = filtered;
-        }
-        places.sort((Place a, Place b) =>
-            GeoUtils.distanceMeters(here, a.coords)
-                .compareTo(GeoUtils.distanceMeters(here, b.coords)));
+        if (filtered.isNotEmpty) places = filtered;
+        places = PlaceRanking.rankSuggestions(places, q, here);
       }
       if (hasCategoryFilters && _scope != 'nearby') {
         for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
@@ -591,7 +647,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           );
         }
       }
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
         // A background refresh (GPS re-run) that comes back empty must never
         // wipe out results the user is already looking at. Explicit searches
@@ -601,11 +657,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
           return;
         }
         _results = places;
+        _providerWarning = _c.placesRepository.backendWarning;
         _loading = false;
         _searchedOnce = true;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
         if (_results.isEmpty) _error = placesErrorMessage(e);
         _loading = false;
@@ -743,6 +800,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
         onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
       );
     }
+    if (_providerWarning != null && _results.isEmpty) {
+      return ErrorState(
+        message: _providerWarning!,
+        onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
+      );
+    }
     if (_results.isEmpty) {
       if (_scope == 'saved') {
         return EmptyState(
@@ -857,15 +920,43 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return _resultsList();
   }
 
+  Widget _providerNotice() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(Icons.info_outline, size: 18, color: Color(0xFF9A5B00)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _providerWarning!,
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF7A4A00)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _resultsList() {
+    final bool hasNotice = _providerWarning != null;
+    final int visible = _results.length < _shown ? _results.length : _shown;
+    final int loadMore = _results.length > _shown ? 1 : 0;
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: (_results.length < _shown ? _results.length : _shown) +
-          (_results.length > _shown ? 1 : 0),
+      itemCount: visible + loadMore + (hasNotice ? 1 : 0),
       separatorBuilder: (BuildContext context, int i) =>
           const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int i) {
-        if (i >= _shown) {
+        if (hasNotice && i == 0) return _providerNotice();
+        final int index = hasNotice ? i - 1 : i;
+        if (index >= _shown) {
           return Center(
             child: OutlinedButton.icon(
               icon: const Icon(Icons.expand_more),
@@ -874,7 +965,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           );
         }
-        final Place p = _results[i];
+        final Place p = _results[index];
         return PlaceCard(
           place: p,
           distance: _distanceFor(p),

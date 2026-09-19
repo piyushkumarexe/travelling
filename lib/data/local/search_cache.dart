@@ -23,9 +23,9 @@ class SearchCache {
         ? 'global'
         : '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
     final String t = (types ?? const <String>[]).join('+');
-    // v4: invalidates older free-provider-only suggestion caches now that
-    // authenticated Google Places results are merged into autocomplete.
-    return 'v4.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
+    // v5: invalidates free-only suggestion caches. A fallback response must
+    // not hide a later live Google Places response for the same query.
+    return 'v5.places_cache_${Uri.encodeComponent(query.trim().toLowerCase())}'
         '|$t|$loc|${radiusMeters.round()}';
   }
 
