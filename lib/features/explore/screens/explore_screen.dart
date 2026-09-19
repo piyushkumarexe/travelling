@@ -423,7 +423,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
           await _c.placesRepository.nearbyCategory(here, category);
       if (!mounted ||
           _activeCategory != category ||
-          requestGeneration != _queryGeneration) return;
+          requestGeneration != _queryGeneration) {
+        return;
+      }
       final List<Place> filtered = dataset.places
           .where((Place p) =>
               cats.any((String c) => p.category == c || p.types.contains(c)))
@@ -444,7 +446,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     } catch (e) {
       if (!mounted ||
           _activeCategory != category ||
-          requestGeneration != _queryGeneration) return;
+          requestGeneration != _queryGeneration) {
+        return;
+      }
       setState(() {
         if (_results.isEmpty) _error = placesErrorMessage(e);
         _loading = false;
