@@ -189,31 +189,50 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
             ),
           ),
           Expanded(
-            child: DefaultTabController(
-              length: it.plan.length,
-              child: Column(
-                children: <Widget>[
-                  TabBar(
-                    isScrollable: true,
-                    labelColor: scheme.primary,
-                    unselectedLabelColor: scheme.onSurfaceVariant,
-                    tabs: <Widget>[
-                      for (int i = 0; i < it.plan.length; i++)
-                        Tab(text: 'Day ${i + 1}'),
-                    ],
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: TabBarView(
+            child: it.plan.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.event_busy, size: 48, color: Colors.grey),
+                          const SizedBox(height: 12),
+                          const Text('No days in this itinerary',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          Text('This itinerary has no plan yet. Generate a new one.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center),
+                        ],
+                      ),
+                    ),
+                  )
+                : DefaultTabController(
+                    length: it.plan.length,
+                    child: Column(
                       children: <Widget>[
-                        for (int i = 0; i < it.plan.length; i++)
-                          _dayView(it.plan[i]),
+                        TabBar(
+                          isScrollable: true,
+                          labelColor: scheme.primary,
+                          unselectedLabelColor: scheme.onSurfaceVariant,
+                          tabs: <Widget>[
+                            for (int i = 0; i < it.plan.length; i++)
+                              Tab(text: 'Day ${i + 1}'),
+                          ],
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: TabBarView(
+                            children: <Widget>[
+                              for (int i = 0; i < it.plan.length; i++)
+                                _dayView(it.plan[i]),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
           ),
         ],
       ),
