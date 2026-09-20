@@ -11,17 +11,20 @@ Releases → **`apk-latest`** ("Latest Tourism APK") me ye files hoti hain:
 
 | File | Kiske liye |
 | --- | --- |
-| `yatrawise-arm64-v8a.apk` | ✅ **Sabse common — 2017 ke baad ke lagbhag sabhi phones.** Pehle YEHI try karein (~35–50 MB). |
+| `yatrawise-arm64-v8a.apk` | ✅ **Sabse common — 2017 ke baad ke lagbhag sabhi phones.** Pehle YEHI try karein (~50 MB). |
 | `yatrawise-armeabi-v7a.apk` | Sirf bahut puraane 32-bit phones ke liye. |
 | `yatrawise-x86_64.apk` | Emulator / rare x86 devices ke liye. |
 | `yatrawise-universal.apk` | Fallback — har device par chalti hai, lekin sabse badi file (~120 MB). |
 | `SHA256SUMS.txt` | Download verify karne ke hash. |
 
 **Hamesha update ke liye WAHI file dobara download karein** jo pehli baar ki
-thi (file badalne par Android kabhi-kabhi use "downgrade" samajh kar
-"App not installed" bol deta hai).
+thi. File badalne par Android use "downgrade" samajh kar "App not
+installed" bol deta hai (har file ka versionCode alag hota hai) — ek
+apvaad: **universal → split** (jaise universal → arm64) bina uninstall ke
+upgrade ho jaata hai. Baaki har switch me pehle purana app uninstall
+karein, phir nayi file fresh install karein.
 
-Requirements: **Android 6.0+** aur ~300 MB free space.
+Requirements: **Android 7.0+** (minSdk 24) aur ~300 MB free space.
 
 ## 2. Install kaise karein (steps)
 
@@ -37,19 +40,19 @@ Requirements: **Android 6.0+** aur ~300 MB free space.
 
 ### "There was a problem parsing the package" (Parse error)
 
-Matlab: **file adhuri/corrupt download hui hai.** APK server par sahi hai
-(CI gate se verified), phone tak poori nahi pahunchi.
+Matlab aam taur par: **file adhuri/corrupt download hui hai.** APK server
+par sahi hai (CI gate se verified), phone tak poori nahi pahunchi.
 
 1. File **delete** karke **WiFi par dobara download** karein.
 2. Download poori hui ya nahi — **size match** karein: release notes me har
-   file ka size likha hota hai (Settings me file size vs release notes).
+   file ka size likha hota hai.
 3. Pakka verify karna ho to **SHA-256** match karein: Play Store se koi
    "Hash Checker" app lein, APK ka SHA-256 nikaal kar release ke
    `SHA256SUMS.txt` se milayein. Ek character bhi alag = dobara download.
-4. Browser badal kar dekhein (Chrome → Firefox) ya "Desktop site" off karke.
-5. Phone ka Android version **6.0 ya upar** hona chahiye
-   (Settings → About phone). Usse puraane Android par ye APK parse hi
-   nahi hogi.
+4. Browser badal kar dekhein (Chrome → Firefox).
+5. Phone ka Android version **7.0 ya upar** hona chahiye
+   (Settings → About phone). Android 6.x par ye APK install nahi hogi
+   (Flutter ki minSdk 24 hai) — us case me naya Android phone chahiye.
 
 ### "App not installed" (bina wajah)
 
@@ -57,7 +60,8 @@ Matlab: **file adhuri/corrupt download hui hai.** APK server par sahi hai
    (Puraane debug-signed build ke upar naya permanent-key build install
    nahi hota.)
 2. Wahi APK file use karein jo pehle install thi (arm64 ↔ universal
-   adla-badli na karein).
+   adla-badli me behtar hai uninstall + fresh install; sirf
+   universal → split bina uninstall ke chalta hai).
 3. Free space banayein (kam se kam 500 MB free).
 4. Phone **restart** karke dobara try karein.
 
@@ -71,7 +75,7 @@ Matlab: **file adhuri/corrupt download hui hai.** APK server par sahi hai
 
 ### Download hi complete nahi hota
 
-1. **arm64 wali chhoti APK** (~40 MB) use karein, universal (~120 MB) nahi.
+1. **arm64 wali chhoti APK** (~50 MB) use karein, universal (~120 MB) nahi.
 2. WiFi par karein, battery-saver / data-saver off rakhein.
 3. GitHub release page se seedha download karein
    (`.../releases/download/apk-latest/yatrawise-arm64-v8a.apk`),
@@ -87,7 +91,7 @@ Maintainer ko ye 4 cheezein bhejein — bina inke diagnose nahi ho sakta:
 4. Kya phone me Tourism **pehle se installed** hai/thi?
 
 > English summary: every APK is verified installable in CI before publish.
-> A parse error always means a truncated download — re-download on WiFi and
-> compare size/SHA-256 with the release notes. "App not installed" over an
-> old copy means a signature change — uninstall the old app once, then
-> install fresh. Android 6.0+ required.
+> A parse error almost always means a truncated download — re-download on
+> WiFi and compare size/SHA-256 with the release notes. "App not installed"
+> over an old copy means a signature change or file switch — uninstall the
+> old app once, then install fresh. Android 7.0+ required.

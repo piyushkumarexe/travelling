@@ -199,10 +199,12 @@ jobs:
           #     phones, which Android reports as "problem parsing the
           #     package". Small files download reliably.
           #  2. Universal (fat) APK -> fallback that runs on every device.
-          #     Its versionCode is RUN*1000+500 so it stays ABOVE this run's
-          #     split APKs but BELOW the next run's splits however Flutter
-          #     offsets the per-ABI codes — switching files across updates
-          #     never looks like a version downgrade.
+          #     Same --build-number as the splits: Flutter offsets split
+          #     versionCodes upward (+1000/+2000/+4000 per ABI, measured in
+          #     CI), so plain-R keeps universal→universal AND
+          #     universal→split updates working. (split→universal needs a
+          #     one-time reinstall — always re-download the SAME file, see
+          #     docs/INSTALL_APK_TROUBLESHOOTING.md.)
           flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle-split.log
           # flutter_tools wipes build/app/outputs/flutter-apk on EVERY
           # build, so rescue each build's outputs before the next build
@@ -210,7 +212,7 @@ jobs:
           mkdir -p build-out/split build-out/universal
           mv build/app/outputs/flutter-apk/*.apk build-out/split/
           echo "::notice::split-per-abi outputs: $(ls -m build-out/split)"
-          flutter build apk --release --build-number=$((${{ github.run_number }} * 1000 + 500)) $DEFINES 2>&1 | tee gradle.log
+          flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
           mv build/app/outputs/flutter-apk/*.apk build-out/universal/
           echo "::notice::universal outputs: $(ls -m build-out/universal)"
           ls -lhR build-out/
@@ -374,6 +376,10 @@ jobs:
             printf '%s\n' "$CERT_OUT" | tee "/tmp/certs-$TAG.txt" | head -n 8
             SCHEMES="$("$APKSIGNER" verify -v "$APK" 2>&1 | grep -iE "verified using|does not verify" | tr '\n' ';' || true)"
             echo "::notice::$TAG schemes: $SCHEMES"
+            # v1 (JAR) signature files live under META-INF — informational
+            # only: with minSdk 24+, devices verify v2 and never need v1.
+            V1FILES="$(unzip -l "$APK" 2>/dev/null | grep -cE 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$' || true)"
+            echo "::notice::$TAG v1-JAR-files: ${V1FILES:-0} (0 = v2-only signing)"
             ACTUAL_CERT="$(printf '%s' "$CERT_OUT" | grep -m1 'SHA-256 digest' | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F' || true)"
             if [ -z "$ACTUAL_CERT" ]; then
               fail "$APK: could not parse signer SHA-256 from apksigner output."

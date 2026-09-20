@@ -240,8 +240,12 @@ the file for your phone:
 | `yatrawise-universal.apk` | Fallback for any device (biggest file). |
 | `SHA256SUMS.txt` | Hashes to verify a complete download. |
 
-Requires **Android 6.0+**. Tap the APK → allow **"Install unknown
-apps"** → Install. Always re-download the **same** file for updates.
+Requires **Android 7.0+** (minSdk 24 — the floor enforced by current
+Flutter stable; the APK itself is the source of truth, see release
+notes). Tap the APK → allow **"Install unknown apps"** → Install.
+Always re-download the **same** file for updates — switching files
+needs a one-time uninstall + fresh install (universal → split is the
+only switch that upgrades cleanly).
 
 Install failing? See
 **[`docs/INSTALL_APK_TROUBLESHOOTING.md`](docs/INSTALL_APK_TROUBLESHOOTING.md)**
