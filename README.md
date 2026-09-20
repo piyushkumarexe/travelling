@@ -226,39 +226,62 @@ First launch shows a short setup guide; sign in with Google (an account
 that has access to the OAuth client) or create an account with your email
 and password, and you land on the dashboard.
 
+## 📲 Install the APK (testers)
+
+**Direct download — no login, no ZIP:** open
+**GitHub → Releases → `apk-latest` ("Latest Tourism APK")** and download
+the file for your phone:
+
+| File | For |
+| --- | --- |
+| `yatrawise-arm64-v8a.apk` | ✅ Almost all phones (2017+) — download **this** (~35–50 MB). |
+| `yatrawise-armeabi-v7a.apk` | Very old 32-bit phones only. |
+| `yatrawise-x86_64.apk` | Emulator / rare x86 devices. |
+| `yatrawise-universal.apk` | Fallback for any device (biggest file). |
+| `SHA256SUMS.txt` | Hashes to verify a complete download. |
+
+Requires **Android 6.0+**. Tap the APK → allow **"Install unknown
+apps"** → Install. Always re-download the **same** file for updates.
+
+Install failing? See
+**[`docs/INSTALL_APK_TROUBLESHOOTING.md`](docs/INSTALL_APK_TROUBLESHOOTING.md)**
+(Hindi + English: parse error, "App not installed", Play Protect…).
+
 ## Building the APK
 
 ### Via GitHub Actions (recommended)
 
 1. Push to `main` (or any PR into `main`), **or** open
    **GitHub → Actions → "Build APK" → Run workflow**.
-2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze
-   --fatal-warnings`, `flutter test`) and **Build release APK**
-   (JDK 17 + Android SDK + `flutter build apk --release`).
-3. Download the **`yatrawise-release-apk`** artifact from the job summary. GitHub
-   downloads Actions artifacts as an outer ZIP. Extract that archive once to
-   get the clearly named `yatrawise-release.zip`, then extract that ordinary
-   ZIP to install `yatrawise-release.apk`. The ZIP also contains
-   `SHA256SUMS.txt` for verification.
+2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze`,
+   `flutter test`) and **Build release APK** (JDK 21 + Android SDK +
+   `flutter build apk --release --split-per-abi` plus a universal APK).
+3. Every APK passes a strict **installability gate** before publish:
+   `apksigner verify`, permanent-key certificate match, `aapt` badging
+   (package / minSdk 23 / launcher activity), `zipalign` incl. 16 KB page
+   alignment, and a test-only check. The verified APKs + `SHA256SUMS.txt`
+   are published to the rolling **`apk-latest`** release (and as the
+   `yatrawise-release-apk` artifact).
 
-The release APK is signed with the project's *debug* keystore (the same
-one CI always has). For public distribution you should create a proper
-release keystore and provide it as workflow secrets — see "Signing"
-below.
+### Signing (permanent upload key — required)
+
+Release builds are signed with ONE permanent certificate from the
+**`ANDROID_KEYSTORE_BASE64`** repo secret. The build **fails** if the
+secret is missing, so a debug-signed APK can never be published by
+mistake (its ever-changing signature would break all updates with "App
+not installed"). Maintainer setup/rotation notes:
+[`android/RELEASE_SIGNING_BACKUP.txt`](android/RELEASE_SIGNING_BACKUP.txt).
 
 ### Locally
 
 ```bash
-flutter build apk --release
-# → build/app/outputs/flutter-apk/app-release.apk
+flutter build apk --release --split-per-abi   # small per-device APKs
+flutter build apk --release                   # universal (fat) APK
+# → build/app/outputs/flutter-apk/
 ```
 
-### Signing (optional, for store distribution)
-
-Create a keystore, add its path/password to **Settings → Secrets** in the
-repo, and switch `android/app/build.gradle` release signing config to
-read from `System.getenv(...)`. The committed config intentionally
-uses the debug keystore so the CI build is reproducible without secrets.
+Local builds without the keystore fall back to the debug key
+(development only — never distribute those).
 
 ## Android permissions (and why)
 

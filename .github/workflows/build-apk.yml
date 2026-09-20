@@ -129,9 +129,13 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          # Hard fail (not a warning): a debug-signed "release" APK changes
+          # signature on EVERY build, so updates fail on phones with "App not
+          # installed". The permanent upload key MUST exist before anything
+          # is published to the release.
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — the APK will be signed with a throwaway debug key (SHA changes every build, updates will NOT install over old versions). Add the single secret (see android/RELEASE_SIGNING_BACKUP.txt) to get the permanent SHA."
-            exit 0
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set — refusing to publish a debug-signed release APK. Add the single secret (see android/RELEASE_SIGNING_BACKUP.txt) and re-run."
+            exit 1
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.p12
           echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/app/upload-keystore.p12" >> "$GITHUB_ENV"
@@ -242,24 +246,77 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gradle-log
-          path: gradle.log
+          path: |
+            gradle.log
+            gradle-split.log
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Verify APK signature
+      # Strict installability gate: every APK we publish must (1) verify
+      # under apksigner, (2) be signed by the PERMANENT upload key (never a
+      # throwaway debug key), (3) parse under aapt with the right package /
+      # SDK levels / launcher activity, (4) pass zipalign (incl. 16 KB page
+      # alignment for native libs), and (5) NOT be marked test-only. Any
+      # "problem parsing the package" report after this gate means a bad
+      # phone-side download, not a bad APK — and SHA256SUMS.txt lets the
+      # user prove it.
+      - name: Verify APKs are signed + installable
         run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          ls -lh "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)"
-          if [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
-            echo "### APK signature" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E "SHA-256|SHA-1" /tmp/certs.txt | head -n 4 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            jarsigner -verify "$APK"
+          set -euo pipefail
+          OUT=build/app/outputs/flutter-apk
+          for f in app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-x86_64-release.apk app-release.apk; do
+            if [ ! -f "$OUT/$f" ]; then
+              echo "::error::Expected APK is missing: $OUT/$f"
+              exit 1
+            fi
+          done
+          BT="$(dirname "$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)")"
+          APKSIGNER="$BT/apksigner"
+          AAPT="$BT/aapt"
+          AAPT2="$BT/aapt2"
+          ZIPALIGN="$BT/zipalign"
+          echo "build-tools: $BT"
+          # Permanent-key fingerprint (colons stripped, uppercase) — every
+          # published APK must match this exact certificate.
+          EXPECTED_CERT="$(keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "YatraWise-Upload-2026" 2>/dev/null | grep -m1 'SHA256:' | sed 's/.*SHA256: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
+          if [ -z "$EXPECTED_CERT" ]; then
+            echo "::error::Could not read the upload-keystore SHA-256 fingerprint."
+            exit 1
           fi
+          echo "Expected signer SHA-256: $EXPECTED_CERT"
+          FAIL=0
+          for APK in "$OUT"/app-arm64-v8a-release.apk "$OUT"/app-armeabi-v7a-release.apk "$OUT"/app-x86_64-release.apk "$OUT"/app-release.apk; do
+            TAG="$(basename "$APK" .apk)"
+            echo "=== Verifying $APK ($(du -h "$APK" | cut -f1)) ==="
+            "$APKSIGNER" verify --print-certs --min-sdk-version 23 "$APK" | tee "/tmp/certs-$TAG.txt"
+            ACTUAL_CERT="$(grep -m1 'SHA-256 digest' "/tmp/certs-$TAG.txt" | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
+            if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+              echo "::error::$APK is NOT signed by the permanent upload key (got $ACTUAL_CERT). Refusing to publish."
+              FAIL=1
+            fi
+            "$ZIPALIGN" -c -p 4 "$APK" && echo "zipalign (incl. 16 KB page alignment): OK"
+            "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt"
+            BAD="/tmp/badging-$TAG.txt"
+            grep -q "package: name='app.roamio.tourism'" "$BAD" || { echo "::error::$APK badging: package name mismatch."; FAIL=1; }
+            grep -Eq "versionCode='[0-9]+'" "$BAD" || { echo "::error::$APK badging: versionCode missing."; FAIL=1; }
+            grep -q "sdkVersion:'23'" "$BAD" || { echo "::error::$APK badging: minSdk is not 23 (Android 6.0)."; FAIL=1; }
+            grep -Eq "targetSdkVersion:'[0-9]+'" "$BAD" || { echo "::error::$APK badging: targetSdk missing."; FAIL=1; }
+            grep -q "launchable-activity:" "$BAD" || { echo "::error::$APK badging: no launchable activity."; FAIL=1; }
+            if "$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml 2>/dev/null | grep -qi 'testOnly'; then
+              echo "::error::$APK manifest is marked testOnly — it can never install normally."
+              FAIL=1
+            fi
+            grep -E "^package:|^sdkVersion:|^targetSdkVersion:|^application-label:|launchable-activity:" "$BAD" || true
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::One or more APKs failed the installability gate."
+            exit 1
+          fi
+          echo "### Published APKs (all verified installable)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Signer SHA-256: $EXPECTED_CERT" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$OUT"/*.apk >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare verified APK downloads
         run: |
@@ -280,8 +337,8 @@ jobs:
         with:
           name: yatrawise-release-apk
           # Upload only the verified inner ZIP; this avoids duplicating the
-          # 120 MB uncompressed APK in the outer GitHub artifact.
-          path: dist/yatrawise-release.zip
+          # ~200 MB of uncompressed APKs in the outer GitHub artifact.
+          path: dist/yatrawise-apks.zip
           if-no-files-found: error
           # The inner ZIP is already compressed. Store it as-is in the outer
           # GitHub archive so the two archives remain independently valid.
@@ -289,10 +346,12 @@ jobs:
           retention-days: 14
 
       # Phones frequently fail to extract the nested artifact ZIP ("Could
-      # not extract file / 1 file was not copied correctly"). Publishing the
-      # raw APK on a rolling prerelease tag gives testers a DIRECT download
-      # link — no ZIP, no extraction, just install.
-      - name: Publish APK to GitHub Release (direct phone download)
+      # not extract file / 1 file was not copied correctly"), and the old
+      # single 124 MB file kept breaking mid-download ("problem parsing the
+      # package"). Publishing small per-device APKs on a rolling prerelease
+      # tag gives testers DIRECT download links — no ZIP, no extraction,
+      # just install.
+      - name: Publish APKs to GitHub Release (direct phone download)
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
@@ -300,18 +359,65 @@ jobs:
         run: |
           set -euo pipefail
           TAG="apk-latest"
-          NOTES="Latest build: run #${RUN_NUMBER} (${RUN_SHA})
-          Direct APK download — no ZIP extraction needed. Install this file directly.
-          Includes: nearby detection fixes, search accuracy, live nearby data, real place photos, instant taps (no GPS wait on option click)."
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/yatrawise-release.apk --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          REPO="$GITHUB_REPOSITORY"
+          info() { # $1 = dist filename (without path), echoes "size | versionCode | sha256"
+            local f="dist/$1" tag vcode sha size
+            tag="$(basename "$1" .apk)"
+            case "$tag" in
+              yatrawise-arm64-v8a)   vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-arm64-v8a-release.txt | head -n1)" ;;
+              yatrawise-armeabi-v7a) vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-armeabi-v7a-release.txt | head -n1)" ;;
+              yatrawise-x86_64)      vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-x86_64-release.txt | head -n1)" ;;
+              yatrawise-universal)   vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-release.txt | head -n1)" ;;
+            esac
+            sha="$(awk -v f="$1" '$2 == f {print $1}' dist/SHA256SUMS.txt)"
+            size="$(du -h "$f" | cut -f1)"
+            echo "$size | $vcode | $sha"
+          }
+          ARM64="$(info yatrawise-arm64-v8a.apk)"
+          V7A="$(info yatrawise-armeabi-v7a.apk)"
+          X64="$(info yatrawise-x86_64.apk)"
+          UNI="$(info yatrawise-universal.apk)"
+          APK_CERT="$(grep -m1 'SHA-256 digest' /tmp/certs-app-release.txt | sed 's/.*digest: *//')"
+          SHORT_SHA="$(printf '%s' "$RUN_SHA" | head -c 7)"
+          {
+            echo "YatraWise Tourism — latest build (run #${RUN_NUMBER}, ${SHORT_SHA})."
+            echo "Package app.roamio.tourism — Android 6.0+ required (minSdk 23)."
+            echo "Signature SHA-256: ${APK_CERT}"
+            echo ""
+            echo "WHICH FILE SHOULD I DOWNLOAD?"
+            echo "| File | Size | Version | For |"
+            echo "|---|---|---|---|"
+            echo "| yatrawise-arm64-v8a.apk | ${ARM64} | ✅ ALMOST ALL phones (2017+) — download THIS |"
+            echo "| yatrawise-armeabi-v7a.apk | ${V7A} | very old 32-bit phones only |"
+            echo "| yatrawise-x86_64.apk | ${X64} | emulator / rare x86 devices |"
+            echo "| yatrawise-universal.apk | ${UNI} | fallback: every device, biggest file |"
+            echo "| SHA256SUMS.txt | — | — | hashes to verify your download |"
+            echo ""
+            echo "Columns above are: Size | versionCode | SHA-256."
+            echo "Always re-download the SAME file for updates (switching files between versions can look like a downgrade)."
+            echo ""
+            echo "INSTALL (Hindi me):"
+            echo "1. Phone me purana Tourism app ho to use uninstall kar dein (ek baar — signature change ki wajah se safest)."
+            echo "2. WiFi par apne phone wali sahi APK download karein (zyaadaatar phones: arm64 wali)."
+            echo "3. File par tap karein → 'Install unknown apps' allow karein → Install."
+            echo "'Problem parsing the package' aaye = download beech me tooti hai: WiFi par dobara download karein aur size / SHA256SUMS.txt se match karein."
+            echo "Details: docs/INSTALL_APK_TROUBLESHOOTING.md"
+          } > /tmp/notes.md
+          cat /tmp/notes.md
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/yatrawise-*.apk dist/SHA256SUMS.txt --clobber --repo "$REPO"
+            # Remove the retired single-file asset so nobody installs the
+            # stale 124 MB build by mistake.
+            gh release delete-asset "$TAG" yatrawise-release.apk --yes --repo "$REPO" 2>/dev/null || true
+            gh release edit "$TAG" --notes-file /tmp/notes.md --repo "$REPO"
           else
-            gh release create "$TAG" dist/yatrawise-release.apk \
+            gh release create "$TAG" dist/yatrawise-*.apk dist/SHA256SUMS.txt \
               --title "Latest Tourism APK" \
-              --notes "$NOTES" \
+              --notes-file /tmp/notes.md \
               --prerelease \
-              --repo "$GITHUB_REPOSITORY"
+              --repo "$REPO"
           fi
-          echo "Direct download:"
-          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/yatrawise-release.apk"
+          echo "Direct downloads:"
+          for f in yatrawise-arm64-v8a.apk yatrawise-armeabi-v7a.apk yatrawise-x86_64.apk yatrawise-universal.apk SHA256SUMS.txt; do
+            echo "https://github.com/$REPO/releases/download/$TAG/$f"
+          done
