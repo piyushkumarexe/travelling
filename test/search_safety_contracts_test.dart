@@ -94,6 +94,65 @@ void main() {
     });
   });
 
+  group('admin regions are not answers (map search reported bug)', () {
+    // Typing "new Public college" into the Map tab offered "Noida — Noida,
+    // Ut…" as the only result: a 470 km-away CITY, because the geocoders
+    // return city records too and nothing said a city is not a venue.
+    Place noidaNominatimStyle() => Place(
+          placeId: 'nom-123',
+          name: 'Noida',
+          lat: 28.5355,
+          lng: 77.3910,
+          address: 'Noida, Uttar Pradesh, India',
+          primaryType: 'city',
+          types: const <String>['administrative_area', 'political'],
+          city: 'Noida',
+          state: 'Uttar Pradesh',
+        );
+
+    test('a city record is recognised as an administrative region', () {
+      expect(PlaceRanking.isAdminRegion(noidaNominatimStyle()), isTrue);
+      expect(PlaceRanking.isAdminType('suburb'), isTrue);
+      expect(PlaceRanking.isAdminType('administrative_area_level_2'), isTrue);
+      expect(PlaceRanking.isAdminType('college'), isFalse);
+      expect(PlaceRanking.isAdminType('tourist_attraction'), isFalse);
+      expect(PlaceRanking.isAdminType('point_of_interest'), isFalse);
+    });
+
+    test('a specific place query never resolves to a far city', () {
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[noidaNominatimStyle()], 'new Public college', _lucknow);
+      expect(kept, isEmpty,
+          reason: 'the city of Noida is not a college; the honest answer is '
+              'no result, not admin noise 470 km away');
+    });
+
+    test('a real venue with the same locality stays', () {
+      final Place college = Place(
+        placeId: 'ph-9',
+        name: 'New Public College',
+        lat: 26.8692,
+        lng: 80.9401,
+        primaryType: 'college',
+        types: const <String>['point_of_interest'],
+        city: 'Lucknow',
+        state: 'Uttar Pradesh',
+      );
+      expect(PlaceRanking.isAdminRegion(college), isFalse);
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[college, noidaNominatimStyle()], 'new Public college',
+          _lucknow);
+      expect(kept.map((Place p) => p.placeId).toList(), <String>['ph-9']);
+    });
+
+    test('a query that names the city still gets the city', () {
+      // "noida" is a legitimate search for the place itself.
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[noidaNominatimStyle()], 'noida', _lucknow);
+      expect(kept.length, 1);
+    });
+  });
+
   group('incident document shape (firestore.rules contract)', () {
     Incident build({String description = 'Wallet stolen in the bus station'}) =>
         Incident(

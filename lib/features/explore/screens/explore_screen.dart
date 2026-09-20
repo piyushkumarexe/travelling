@@ -89,6 +89,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _results = fresh;
       _stale = false;
       _shown = 20;
+      _searchedRadiusMeters = FreeGeoClient.kGroupedNearbyRadiusMeters;
     });
   }
 
@@ -616,6 +617,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
       NearbyDebug.instance.finalCount = sorted.length;
       setState(() {
         _results = sorted;
+        // The grouped nearby dataset is an 8 km sweep — record that, or the
+        // empty state below has no radius to quote.
+        _searchedRadiusMeters = FreeGeoClient.kGroupedNearbyRadiusMeters;
         _providerWarning = null;
         _loading = false;
         _stale = dataset.stale;
@@ -946,8 +950,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
       );
     }
     if (_providerWarning != null && _results.isEmpty) {
+      // The repository's warning promises open-data results — true in
+      // general, but not when every provider also came back empty. Say so
+      // instead of leaving the traveller to guess whether results are hidden.
       return ErrorState(
-        message: _providerWarning!,
+        message: '${_providerWarning!}\n\nThe open-data providers (OpenStreetMap '
+            'Overpass, Photon, MapTiler, Wikipedia) returned nothing '
+            'either — usually a slow connection or a throttled mirror. '
+            'Try again in a minute.',
+        retryLabel: 'Try again',
         onRetry: _scope == 'saved' ? _loadSaved : _runSearch,
       );
     }
@@ -1011,8 +1022,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       icon: Icons.search_off,
                       title: 'No places found nearby',
                       message:
-                          'We searched $_searchedRadiusLabel of your '
-                          'location — nothing was mapped there yet. Try '
+                          'We searched $_searchedRadiusLabel around your current '
+                          'position — nothing was mapped there yet. Try '
                           '"Anywhere" to search the whole world, or move to '
                           'a larger town.',
                       actionLabel: 'Search anywhere',

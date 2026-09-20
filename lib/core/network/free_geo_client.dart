@@ -53,6 +53,50 @@ class FreeGeoClient {
   /// Overpass's fair-use envelope; results are re-sorted nearest-first.
   static const double kNearbyRadiusMeters = 25000;
 
+  /// Last time the bulk Overpass sweep blew its budget. Its public mirrors
+  /// queue, so one slow attempt means the next few will be slow too — see
+  /// [_bounded].
+  DateTime? _overpassGaveUpAt;
+
+  /// Runs a provider request under a per-provider deadline.
+  ///
+  /// Overpass is the only source that returns *all* the real POIs around a
+  /// traveller, and its public mirrors legitimately need 5-18 s (the client
+  /// itself is configured with an 18 s receive timeout, and the code rotates
+  /// three mirrors). Giving it the same 6-8 s deadline as the fast geocoders
+  /// meant the bulk provider was counted as "skipped" on almost every search:
+  /// Explore answered "No places found nearby" in cities full of mapped
+  /// places, and a 400 km-away city name from a geocoder was left as the only
+  /// "result". Overpass now gets its full budget; once it has timed out the
+  /// next minute's searches skip it instead of making the user wait again.
+  Future<_ProviderResult> _bounded(
+    String name,
+    Future<_ProviderResult> request, {
+    bool quick = false,
+  }) {
+    final bool bulk = name.startsWith('overpass');
+    if (bulk) {
+      final DateTime? gaveUp = _overpassGaveUpAt;
+      if (gaveUp != null &&
+          DateTime.now().difference(gaveUp) < const Duration(seconds: 15)) {
+        return Future<_ProviderResult>.value(
+            _ProviderResult.skipped('$name-cooldown'));
+      }
+    }
+    final Duration budget = quick
+        ? (bulk ? const Duration(seconds: 12) : const Duration(seconds: 6))
+        : bulk
+            ? const Duration(seconds: 22)
+            : (name == 'nominatim' || name == 'photon' ||
+                    name == 'photon-category')
+                ? const Duration(seconds: 12)
+                : const Duration(seconds: 9);
+    return request.timeout(budget, onTimeout: () {
+      if (bulk) _overpassGaveUpAt = DateTime.now();
+      return _ProviderResult.skipped('$name-timeout');
+    });
+  }
+
   /// Radius for the DEFAULT grouped "Nearby" view. The old 25 km grouped
   /// sweep was so heavy that public Overpass mirrors regularly answered it
   /// with 429/timeouts — which is exactly why "Nearby" showed nothing while
@@ -259,8 +303,7 @@ class FreeGeoClient {
     // stuck indefinitely on "ts mishra university"). Slow-but-complete beats
     // never-returning: on timeout the provider simply counts as skipped.
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 8),
-            onTimeout: () => _ProviderResult.skipped('$name-timeout'));
+        _bounded(name, f);
 
     final List<_ProviderResult> results = await Future.wait(<Future<_ProviderResult>>[
       if (filters != null && near != null)
@@ -1070,8 +1113,7 @@ class FreeGeoClient {
     // chance to answer. The old immediate return made a hand-maintained
     // coordinate permanently beat a fresher OSM/MapTiler/Google record.
     Future<_ProviderResult> bounded(String name, Future<_ProviderResult> f) =>
-        f.timeout(const Duration(seconds: 6),
-            onTimeout: () => _ProviderResult.skipped('$name-timeout'));
+        _bounded(name, f, quick: true);
 
     final List<_ProviderResult> results =
         await Future.wait(<Future<_ProviderResult>>[
@@ -1828,13 +1870,28 @@ class FreeGeoClient {
           (item['name'] as String?)?.isNotEmpty == true
               ? item['name'] as String
               : display.split(',').first.trim();
+      // jsonv2 reports what the OSM object actually IS: category=place +
+      // type=city for a city, category=educational + type=college for a
+      // college. Hardcoding 'poi' here made every admin region look like a
+      // business, so "new Public college" could be "answered" with the city
+      // of Noida. Keep the real type so ranking can tell them apart.
+      final String osmCategory = (item['category'] as String?) ?? '';
+      final String osmType = (item['type'] as String?) ?? '';
+      final bool adminish = osmCategory == 'place' ||
+          osmCategory == 'administrative' ||
+          PlaceRanking.isAdminType(osmType);
       out.add(Place(
         placeId: 'nom-${item['osm_id'] ?? '$lat,$lon'}',
         name: name.isEmpty ? 'Place' : name,
         lat: lat,
         lng: lon,
         address: display,
-        primaryType: 'poi',
+        primaryType: adminish
+            ? (osmType.isEmpty ? 'administrative' : osmType)
+            : (osmType.isEmpty ? 'poi' : osmType),
+        types: adminish
+            ? const <String>['administrative_area', 'political']
+            : const <String>['point_of_interest'],
       ));
     }
     return _ProviderResult(
@@ -3241,6 +3298,39 @@ class PlaceRanking {
     'essentials',
   };
 
+  /// OSM/geocoder types that describe an ADMINISTRATIVE AREA rather than a
+  /// place a traveller can visit. A city name is never "the college" someone
+  /// searched for, so ranking needs to be able to tell the two apart.
+  static const Set<String> kAdminTypes = <String>{
+    'city', 'town', 'village', 'hamlet', 'municipality', 'district',
+    'county', 'state', 'province', 'region', 'country', 'continent',
+    'archipelago', 'island', 'sea', 'ocean', 'lake', 'river', 'waterway',
+    'suburb', 'neighbourhood', 'neighborhood', 'quarter', 'borough',
+    'civil', 'administrative', 'administrative_area', 'locality',
+  };
+
+  static bool isAdminType(String type) {
+    final String t = type.toLowerCase().trim();
+    if (t.isEmpty) return false;
+    if (kAdminTypes.contains(t)) return true;
+    // Google spells them administrative_area_level_1 … _6.
+    return t.startsWith('administrative_area');
+  }
+
+  /// True when this result is a region/city/suburb record instead of a real
+  /// venue. Providers that mislabel their rows (older code marked every
+  /// Nominatim hit `poi`) are handled by checking both fields.
+  static bool isAdminRegion(Place p) {
+    final String t = (p.primaryType ?? '').toLowerCase();
+    if (t.isNotEmpty && t != 'poi' && t != 'point_of_interest') {
+      if (isAdminType(t)) return true;
+    }
+    for (final String ty in p.types) {
+      if (isAdminType(ty)) return true;
+    }
+    return false;
+  }
+
   /// Lowercase + strip punctuation/extra spaces, so "Taj Mahal" ==
   /// "taj mahal" == "Taj  Mahal,".
   static String normalizeName(String s) => s
@@ -3448,6 +3538,14 @@ class PlaceRanking {
       // Pure category query ("attractions near me", "best temples") → every
       // provider hit is by definition relevant; keep the list.
       if (named.isEmpty) return true;
+      // A city / suburb / state record is never the answer to a specific
+      // place-name query: "new Public college" must not be satisfied with
+      // "Noida". A query that DOES name that locality still keeps it.
+      if (specific &&
+          isAdminRegion(p) &&
+          !queryNamesLocality(p, t)) {
+        return false;
+      }
       if (!specific) {
         // Single meaningful word ("college", "atm"): legacy behaviour.
         return true;
