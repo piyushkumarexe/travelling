@@ -187,17 +187,42 @@ jobs:
           if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
             DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
           fi
+          set -euo pipefail
           # objective_c is pinned in pubspec.yaml to the stable-compatible
           # release, so its native Dart assets can build normally.
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
-          set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
+          #
+          # Two builds, same source:
+          #  1. --split-per-abi -> small per-device APKs (~35-50 MB each).
+          #     The old single 124 MB file kept breaking mid-download on
+          #     phones, which Android reports as "problem parsing the
+          #     package". Small files download reliably.
+          #  2. Universal (fat) APK -> fallback that runs on every device.
+          #     Its versionCode is RUN*1000+500 so it stays ABOVE this run's
+          #     split APKs but BELOW the next run's splits however Flutter
+          #     offsets the per-ABI codes — switching files across updates
+          #     never looks like a version downgrade.
+          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle-split.log
+          # flutter_tools wipes build/app/outputs/flutter-apk on EVERY
+          # build, so rescue each build's outputs before the next build
+          # deletes them.
+          mkdir -p build-out/split build-out/universal
+          mv build/app/outputs/flutter-apk/*.apk build-out/split/
+          echo "::notice::split-per-abi outputs: $(ls -m build-out/split)"
+          flutter build apk --release --build-number=$((${{ github.run_number }} * 1000 + 500)) $DEFINES 2>&1 | tee gradle.log
+          mv build/app/outputs/flutter-apk/*.apk build-out/universal/
+          echo "::notice::universal outputs: $(ls -m build-out/universal)"
+          ls -lhR build-out/
 
       - name: Surface build errors as annotations
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Both builds (split + universal) log separately; merge so the
+          # failure search below sees whichever one failed.
+          cat gradle-split.log >> gradle.log 2>/dev/null || true
           echo "=== Full gradle.log tail (500) ==="
           tail -n 500 gradle.log || true
           echo "=== Grep What went wrong ==="
@@ -263,13 +288,18 @@ jobs:
       - name: Verify APKs are signed + installable
         run: |
           set -euo pipefail
-          OUT=build/app/outputs/flutter-apk
-          for f in app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-x86_64-release.apk app-release.apk; do
-            if [ ! -f "$OUT/$f" ]; then
-              echo "::error::Expected APK is missing: $OUT/$f"
+          SPLIT=build-out/split
+          UNI=build-out/universal
+          for f in app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-x86_64-release.apk; do
+            if [ ! -f "$SPLIT/$f" ]; then
+              echo "::error::Expected APK is missing: $SPLIT/$f (have: $(ls -m "$SPLIT" 2>/dev/null || echo EMPTY))"
               exit 1
             fi
           done
+          if [ ! -f "$UNI/app-release.apk" ]; then
+            echo "::error::Expected APK is missing: $UNI/app-release.apk (have: $(ls -m "$UNI" 2>/dev/null || echo EMPTY))"
+            exit 1
+          fi
           BT="$(dirname "$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)")"
           APKSIGNER="$BT/apksigner"
           AAPT="$BT/aapt"
@@ -285,7 +315,7 @@ jobs:
           fi
           echo "Expected signer SHA-256: $EXPECTED_CERT"
           FAIL=0
-          for APK in "$OUT"/app-arm64-v8a-release.apk "$OUT"/app-armeabi-v7a-release.apk "$OUT"/app-x86_64-release.apk "$OUT"/app-release.apk; do
+          for APK in "$SPLIT"/app-arm64-v8a-release.apk "$SPLIT"/app-armeabi-v7a-release.apk "$SPLIT"/app-x86_64-release.apk "$UNI"/app-release.apk; do
             TAG="$(basename "$APK" .apk)"
             echo "=== Verifying $APK ($(du -h "$APK" | cut -f1)) ==="
             "$APKSIGNER" verify --print-certs --min-sdk-version 23 "$APK" | tee "/tmp/certs-$TAG.txt"
@@ -315,22 +345,29 @@ jobs:
           echo "### Published APKs (all verified installable)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Signer SHA-256: $EXPECTED_CERT" >> "$GITHUB_STEP_SUMMARY"
-          ls -lh "$OUT"/*.apk >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$SPLIT"/*.apk "$UNI"/*.apk >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare verified APK downloads
         run: |
           set -euo pipefail
-          APK=build/app/outputs/flutter-apk/app-release.apk
+          SPLIT=build-out/split
+          UNI=build-out/universal
           mkdir -p dist
-          cp "$APK" dist/yatrawise-release.apk
-          sha256sum dist/yatrawise-release.apk > dist/SHA256SUMS.txt
+          # Clear per-device names: most phones (2017+) are arm64. The
+          # universal APK is the fallback for anything unusual.
+          cp "$SPLIT/app-arm64-v8a-release.apk"  dist/yatrawise-arm64-v8a.apk
+          cp "$SPLIT/app-armeabi-v7a-release.apk" dist/yatrawise-armeabi-v7a.apk
+          cp "$SPLIT/app-x86_64-release.apk"     dist/yatrawise-x86_64.apk
+          cp "$UNI/app-release.apk"              dist/yatrawise-universal.apk
+          (cd dist && sha256sum yatrawise-*.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
           # GitHub wraps every Actions artifact in its own archive. Put one
-          # clearly named, ordinary ZIP inside that wrapper so Android file
-          # managers do not have to guess whether an APK is an archive.
-          (cd dist && zip -X -9 yatrawise-release.zip yatrawise-release.apk SHA256SUMS.txt)
-          unzip -t dist/yatrawise-release.zip
-          ls -lh dist/yatrawise-release.apk dist/yatrawise-release.zip
+          # clearly named, ordinary ZIP inside that wrapper so the files stay
+          # usable no matter how they are downloaded.
+          (cd dist && zip -X -9 yatrawise-apks.zip yatrawise-*.apk SHA256SUMS.txt)
+          unzip -t dist/yatrawise-apks.zip
+          ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
