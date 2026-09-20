@@ -10,6 +10,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Telephony
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -316,7 +317,7 @@ class MainActivity : FlutterActivity() {
             val intent =
                 Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$destination")).apply {
                     putExtra(Intent.EXTRA_SUBJECT, "YatraWise emergency location")
-                    putExtra(Intent.EXTRA_SMSP_BODY, body)
+                    putExtra(Telephony.Sms.Intents.EXTRA_SMSP_BODY, body)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             startActivity(intent)
