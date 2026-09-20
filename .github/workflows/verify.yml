@@ -35,24 +35,41 @@ jobs:
         run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
 
       - name: Analyze
+        id: analyze
         run: |
           set -o pipefail
-          if ! flutter analyze --no-pub 2>&1 | tee analyze.log; then
-            echo '### flutter analyze reported errors — see analyze.log' \
-              >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          flutter analyze --no-pub 2>&1 | tee analyze.log || STATUS=1
+          # The artifact storage host is not reachable from every dev sandbox,
+          # so the issues are surfaced as ANNOTATIONS (readable through the
+          # checks API) as well as in the log.
+          if [ -s analyze.log ]; then
+            grep -E '(error|warning|info)( +)•' analyze.log | head -n 60 | while IFS= read -r line; do
+              MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
+              case "$line" in
+                *' error •'*) echo "::error::$MSG" ;;
+                *) echo "::warning::$MSG" ;;
+              esac
+            done
           fi
+          echo "status=${STATUS:-0}" >> "$GITHUB_OUTPUT"
 
       - name: Test
+        id: test
         run: |
           set -o pipefail
-          flutter test 2>&1 | tee test.log
+          flutter test 2>&1 | tee test.log || STATUS=1
+          grep -E '\[E\]|Failed to load|Some tests failed|Expected:|Actual:' test.log \
+            | head -n 40 | while IFS= read -r line; do
+              echo "::error::$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')"
+            done
+          echo "status=${STATUS:-0}" >> "$GITHUB_OUTPUT"
 
       - name: Sanity-check security rules
         # No emulator/credentials needed: this catches the two classes of
         # rules-file mistake that break a deploy — unbalanced braces and an
         # invalid action name (e.g. `allow query:` does not exist; only
         # read/get/list/create/update/delete/write are valid).
+        id: rules
         run: |
           set -euo pipefail
           node -e '
@@ -78,13 +95,27 @@ jobs:
                 }
               }
             }
-            if (bad) {
-              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-                "### Security rules sanity check failed\n");
-              process.exit(1);
-            }
+            if (bad) process.exit(1);
             console.log("rules OK: braces balanced, all actions valid");
-          '
+          ' || echo "status=1" >> "$GITHUB_OUTPUT"
+
+      - name: Aggregate result
+        env:
+          ANALYZE: ${{ steps.analyze.outputs.status }}
+          TEST: ${{ steps.test.outputs.status }}
+          RULES: ${{ steps.rules.outputs.status }}
+        run: |
+          fail=0
+          [ "${ANALYZE:-0}" = "0" ] || { echo "::error::flutter analyze reported issues"; fail=1; }
+          [ "${TEST:-0}" = "0" ] || { echo "::error::flutter test failed"; fail=1; }
+          [ "${RULES:-0}" = "0" ] || { echo "::error::security rules sanity check failed"; fail=1; }
+          if [ "$fail" = "0" ]; then
+            echo "### ✅ analyze + $(wc -l < test.log) test log lines + rules all clean" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ❌ see annotations on this run" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Upload logs
         if: failure()
