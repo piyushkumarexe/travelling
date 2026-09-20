@@ -147,7 +147,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Brand mark. See AppLogo: it picks up
                 // assets/images/yatrawise-logo.png the moment that file is
                 // dropped in (the .jpg stays as the fallback).
-                const Center(child: AppLogo()),
+                const Center(
+                  child: AppLogo(size: 152, radius: 34),
+                ),
                 const SizedBox(height: 28),
                 Text(
                   _isSignUp ? 'Create your account' : 'Welcome back',

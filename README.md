@@ -731,8 +731,19 @@ it belongs (login screen + all Android launcher densities, legacy and adaptive)
 without any image tooling:
 
 ```bash
-python3 tools/install_logo.py ~/Pictures/yatrawise-logo.png
+# in-app brand mark: proportions kept, padded onto a square canvas
+convert assets/images/yatrawise-logo.jpg -crop 1254x820+0+50 +repage \
+        -fuzz 6% -fill none -draw "matte 3,3 floodfill" -trim +repage /tmp/brand.png
+python3 tools/install_logo.py /tmp/brand.png --fit pad --only asset
+# launcher icons: the emblem only, square-cropped, legacy icons flattened
+# onto the brand cream (Android 8.0 and older cannot show transparency)
+python3 tools/install_logo.py /tmp/emblem.png --only icons
 ```
+
+Both are already applied for the current logo (`assets/images/yatrawise-logo.png`
++ all five `mipmap-*` densities), so nothing has to be re-run unless the
+artwork changes. `convert -strip -define png:compression-level=9` shrinks the
+generated PNG by ~10% — the encoder here favours simplicity over size.
 
 The script square-centre-crops the source, writes the asset and regenerates
 `ic_launcher.png`, `ic_launcher_round.png` and `ic_launcher_foreground.png` in

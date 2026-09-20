@@ -475,13 +475,19 @@ class PlacesRepository {
       // groups + Photon both re-run at 25 km) so sparse-OSM areas never see
       // a bare "No places found nearby".
       fetch: () async {
+        // The aggregate deadline has to sit ABOVE the per-provider budget
+        // inside FreeGeoClient (22 s for an Overpass sweep). Bounding the
+        // group at 20 s cancelled the whole dataset the moment one mirror
+        // used its full allowance — including the Photon results that had
+        // already arrived, which is how a partially working set of providers
+        // ended up as a hard "providers are unavailable" error on screen.
         List<Place> places = await _free
             .nearbyAround(location, radiusMeters: radiusMeters)
-            .timeout(const Duration(seconds: 20));
+            .timeout(const Duration(seconds: 26));
         if (places.isEmpty && radiusMeters < 25000) {
           places = await _free
               .nearbyAround(location, radiusMeters: 25000)
-              .timeout(const Duration(seconds: 20));
+              .timeout(const Duration(seconds: 26));
         }
         return places;
       },
@@ -548,7 +554,7 @@ class PlacesRepository {
           types: <String>[freeType],
           radiusMeters: freeRadius,
           filterToRadius: true,
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 24));
       } catch (_) {
         freeFailed = true;
         return const <Place>[];

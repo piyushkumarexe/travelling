@@ -36,6 +36,7 @@ DENSITIES = [
     ('mipmap-xxxhdpi', 192, 432),
 ]
 ASSET_SIZE = 1024
+BRAND_CREAM = '#FEFAF1'   # the logo's own background colour
 PREP_SIZE = 512   # working size for the icon sweep (quality vs. pure-python speed)
 
 
@@ -252,35 +253,114 @@ def circle_mask(size, rows):
     return rows
 
 
+def pad_to_square(w, h, rows, fill=(0, 0, 0, 0)):
+    """Letterbox a non-square image onto a transparent (or filled) square.
+
+    Used for the in-app asset: the brand artwork keeps its own proportions
+    instead of being cropped, and the widget that shows it stays a square.
+    """
+    side = max(w, h)
+    ox, oy = (side - w) // 2, (side - h) // 2
+    blank = bytes(fill) * side
+    out = [bytearray(blank) for _ in range(side)]
+    for y in range(h):
+        src = rows[y]
+        dst = out[y + oy]
+        dst[ox * 4:ox * 4 + w * 4] = src[:w * 4]
+    return side, side, out
+
+
+def flatten_onto(rows, rgb):
+    """Composite RGBA over an opaque colour.
+
+    Android 8.0 and older read `ic_launcher.png` as a plain bitmap: transparent
+    pixels there render as a black slab behind the logo. The adaptive
+    foreground (API 26+) keeps its transparency and lets the OS paint the
+    background layer, so only the legacy icons are flattened.
+    """
+    r, g, b = rgb
+    for line in rows:
+        for i in range(0, len(line), 4):
+            a = line[i + 3]
+            if a == 255:
+                continue
+            na = 255
+            inv = 255 - a
+            line[i] = (line[i] * a + r * inv) // 255
+            line[i + 1] = (line[i + 1] * a + g * inv) // 255
+            line[i + 2] = (line[i + 2] * a + b * inv) // 255
+            line[i + 3] = na
+    return rows
+
+
+def _hex_rgb(value):
+    v = value.lstrip('#')
+    if len(v) == 3:
+        v = ''.join(c * 2 for c in v)
+    if len(v) != 6:
+        raise SystemExit('bad colour %r (expected #RRGGBB)' % value)
+    return tuple(int(v[i:i + 2], 16) for i in (0, 2, 4))
+
+
 def main():
-    if len(sys.argv) != 2 or not os.path.exists(sys.argv[1]):
-        raise SystemExit(__doc__)
-    w, h, rows = png_read(sys.argv[1])
-    print('source %dx%d' % (w, h))
-    sw, sh, sq = square_crop(w, h, rows)
-    if sw > PREP_SIZE:                 # one bounded pass feeds every output
-        sq = resize(sw, sh, sq, PREP_SIZE)
-        sw = sh = PREP_SIZE
+    import argparse
 
-    os.makedirs(os.path.dirname(ASSET), exist_ok=True)
-    asset = ASSET_SIZE if sw > ASSET_SIZE else sw
-    png_write(ASSET, asset, asset,
-              resize(sw, sh, sq, asset) if asset != sw else sq)
-    print('wrote %s (%dx%d)' % (os.path.relpath(ASSET, ROOT), asset, asset))
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('source', nargs='?', help='non-interlaced 8-bit PNG logo')
+    ap.add_argument('--fit', choices=('crop', 'pad'), default='crop',
+                    help="crop = centre square crop (icons); "
+                         "pad = keep proportions on a square canvas (asset)")
+    ap.add_argument('--only', choices=('all', 'asset', 'icons'), default='all')
+    ap.add_argument('--asset-size', type=int, default=ASSET_SIZE,
+                    help='edge length of assets/images/yatrawise-logo.png')
+    ap.add_argument('--asset', default=ASSET, help='override the asset path')
+    ap.add_argument('--flatten', default=BRAND_CREAM,
+                    help='opaque background for the legacy launcher icons')
+    args = ap.parse_args()
+    if not args.source or not os.path.exists(args.source):
+        ap.error('give me a PNG file that exists: install_logo.py <logo.png>')
 
-    for d, legacy, adaptive in DENSITIES:
-        base = os.path.join(RES, d)
-        if not os.path.isdir(base):
-            continue
-        png_write(os.path.join(base, 'ic_launcher.png'), legacy, legacy,
-                  resize(sw, sh, sq, legacy))
-        png_write(os.path.join(base, 'ic_launcher_round.png'), legacy, legacy,
-                  circle_mask(legacy, resize(sw, sh, sq, legacy)))
-        png_write(os.path.join(base, 'ic_launcher_foreground.png'),
-                  adaptive, adaptive,
-                  resize(sw, sh, sq, adaptive, scale=66.0 / 108.0,
-                         pad_transparent=True))
-        print('wrote %s  %dpx icon + %dpx foreground' % (d, legacy, adaptive))
+    w, h, rows = png_read(args.source)
+    print('source %dx%d, fit=%s' % (w, h, args.fit))
+    if args.fit == 'crop':
+        w, h, rows = square_crop(w, h, rows)
+    else:
+        w, h, rows = pad_to_square(w, h, rows)
+    if args.only in ('all', 'asset'):
+        # The asset keeps the source's own detail (it is drawn at up to 168 dp
+        # on a 3x phone, so 512+ is plenty; never blow a small logo up).
+        size = min(args.asset_size, w)
+        os.makedirs(os.path.dirname(args.asset), exist_ok=True)
+        png_write(args.asset, size, size, resize(w, h, rows, size))
+        print('wrote %s (%dx%d)' % (os.path.relpath(args.asset, ROOT),
+                                    size, size))
+
+    if args.only in ('all', 'icons'):
+        if w > PREP_SIZE:             # one bounded pass feeds all five densities
+            rows = resize(w, h, rows, PREP_SIZE)
+            w = h = PREP_SIZE
+        bg = _hex_rgb(args.flatten)
+        for d, legacy, adaptive in DENSITIES:
+            base = os.path.join(RES, d)
+            if not os.path.isdir(base):
+                continue
+            icon = resize(w, h, rows, legacy)
+            # Legacy icons are opaque bitmaps; the round one gets the circle.
+            png_write(os.path.join(base, 'ic_launcher.png'), legacy, legacy,
+                      flatten_onto([bytearray(r) for r in icon], bg))
+            rounded = [bytearray(r) for r in icon]
+            circle_mask(legacy, rounded)
+            png_write(os.path.join(base, 'ic_launcher_round.png'),
+                      legacy, legacy, flatten_onto(rounded, bg))
+            # Adaptive foreground (API 26+): transparency kept, art inside the
+            # 66/108 safe zone so the OS can mask it any shape it likes.
+            png_write(os.path.join(base, 'ic_launcher_foreground.png'),
+                      adaptive, adaptive,
+                      resize(w, h, rows, adaptive, scale=66.0 / 108.0,
+                             pad_transparent=True))
+            print('wrote %s  %dpx icon + %dpx foreground'
+                  % (d, legacy, adaptive))
     print('\nDone. Rebuild the APK to ship the new brand mark.')
 
 

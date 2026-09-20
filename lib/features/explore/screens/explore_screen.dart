@@ -467,8 +467,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
       });
       return;
     }
+    final LatLng here = LatLng(pos.latitude, pos.longitude);
     try {
-      final LatLng here = LatLng(pos.latitude, pos.longitude);
       // Cache-first (SWR): a repeat tap serves the cached dataset instantly
       // and refreshes in the background (the updates stream swaps the fresh
       // list in). The stale-banner Refresh button forces a fresh fetch.
@@ -505,11 +505,52 @@ class _ExploreScreenState extends State<ExploreScreen> {
           requestGeneration != _queryGeneration) {
         return;
       }
-      setState(() {
-        if (_results.isEmpty) _error = placesErrorMessage(e);
-        _loading = false;
-        _searchedOnce = true;
-      });
+      // The category-scoped query failed — a throttled Overpass mirror plus an
+      // undeployed Google proxy is the usual pair. Before telling the
+      // traveller that nothing works, ask the MULTI-PROVIDER text search the
+      // same thing by its human label: it hits different endpoints (Photon,
+      // Nominatim, MapTiler, Wikipedia) and widens its own radius, and it has
+      // returned real places on devices where every category query failed.
+      bool rescued = false;
+      final String label = kExploreCategoryLabels[category] ?? category;
+      try {
+        final List<Place> fallback = await _c.placesRepository.search(
+          label,
+          location: here,
+          radiusMeters: FreeGeoClient.kNearbyRadiusMeters,
+        );
+        if (!mounted ||
+            _activeCategory != category ||
+            requestGeneration != _queryGeneration) {
+          return;
+        }
+        if (fallback.isNotEmpty) {
+          rescued = true;
+          NearbyDebug.instance.finalCount = fallback.length;
+          NearbyDebug.instance.error =
+              'category fallback: multi-provider search for "$label" '
+              '(${fallback.length} places)';
+          setState(() {
+            _results = fallback;
+            _error = null;
+            _providerWarning = _c.placesRepository.backendWarning;
+            _loading = false;
+            _stale = false;
+            _datasetKey = null;
+            _searchedOnce = true;
+            _searchedRadiusMeters = FreeGeoClient.kNearbyRadiusMeters;
+          });
+        }
+      } catch (_) {
+        // Both paths failed — the honest error below says so.
+      }
+      if (!rescued) {
+        setState(() {
+          if (_results.isEmpty) _error = placesErrorMessage(e);
+          _loading = false;
+          _searchedOnce = true;
+        });
+      }
     }
     // Keep it LIVE: a fresh GPS fix arrives quietly in the background; if
     // the user actually moved, the current view re-runs around it (only

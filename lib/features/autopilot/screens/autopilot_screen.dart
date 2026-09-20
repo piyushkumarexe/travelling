@@ -494,8 +494,11 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           const EmptyState(
             icon: Icons.search_off,
             title: 'No suitable places found nearby.',
-            message:
-                'Try expanding the search or changing your interests.',
+            message: 'The open places were collected around your current '
+                'position, but nothing left passed the filters — opening '
+                'hours right now, your interests, or the time left in the '
+                'session. Change the plan (more time / another interest) or '
+                'move somewhere with more coverage and refresh.',
           ),
         ],
         _notPracticalSection(),

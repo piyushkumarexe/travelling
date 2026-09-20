@@ -171,7 +171,10 @@ class AutopilotService extends ChangeNotifier {
       final LatLng? here = await _here();
       final List<Place> found = await _places
           .search(q, location: here, radiusMeters: 300000)
-          .timeout(const Duration(seconds: 12));
+          // Must outlast the providers' own budgets (Overpass needs up to
+          // 22 s) — cutting it at 12 s silently dropped a destination the
+          // traveller typed ("explore Ayodhya") instead of resolving it.
+          .timeout(const Duration(seconds: 24));
       if (found.isEmpty) return brief;
       final Place d = found.first;
       // If the geocode lands on the spot the traveller already stands at,
