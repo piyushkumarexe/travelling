@@ -289,7 +289,7 @@ jobs:
         run: |
           # NOTE: deliberately NO `set -e` here — every failure below
           # reports a precise ::error annotation (with tool output) instead
-          # of dying silently with an bare exit code.
+          # of dying silently with a bare exit code.
           set -uo pipefail
           FAIL=0
           fail() { echo "::error::$1"; FAIL=1; }
@@ -304,6 +304,7 @@ jobs:
             fail "Expected APK is missing: $UNI/app-release.apk (have: $(ls -m "$UNI" 2>/dev/null || echo EMPTY))"
           fi
           [ "$FAIL" = "0" ] || exit 1
+          echo "::notice::$(flutter --version 2>/dev/null | head -n 1)"
           APKSIGNER_BIN="$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)"
           if [ -z "$APKSIGNER_BIN" ]; then
             fail "apksigner not found under \$ANDROID_HOME/build-tools"; exit 1
@@ -333,11 +334,41 @@ jobs:
           else
             fail "zipalign FAILED for universal APK: $(head -c 400 /tmp/zap.txt)"
           fi
+          # Where did the final minSdk come from? (manifest merger report)
+          MERGER="$(find build/app/outputs/logs -name 'manifest-merger-*release-report.txt' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$MERGER" ]; then
+            echo "::notice::merger minSdk lines: $(grep -a -m6 -iE 'uses-sdk|minSdkVersion' "$MERGER" | tr '\n' ';' | head -c 600)"
+          else
+            echo "::notice::merger report not found (logs dir: $(ls build/app/outputs/logs 2>/dev/null | tr '\n' ',' || echo NONE))"
+          fi
+          MINSDK=""
           for APK in "$SPLIT"/app-arm64-v8a-release.apk "$SPLIT"/app-armeabi-v7a-release.apk "$SPLIT"/app-x86_64-release.apk "$UNI"/app-release.apk; do
             TAG="$(basename "$APK" .apk)"
             echo "=== Verifying $APK ($(du -h "$APK" | cut -f1)) ==="
-            if ! CERT_OUT="$("$APKSIGNER" verify --print-certs --min-sdk-version 23 "$APK" 2>&1)"; then
-              fail "apksigner verify FAILED for $APK: $(printf '%s' "$CERT_OUT" | head -c 500)"
+            # 1. Parse check FIRST (aapt = Android's own parser) + read the
+            # TRUE minSdk/targetSdk/versionCode straight from the APK.
+            if ! "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt" 2>/tmp/aapt-err.txt; then
+              fail "aapt dump badging FAILED for $APK (Android itself could not parse it): $(head -c 400 /tmp/aapt-err.txt)"
+              continue
+            fi
+            BAD="/tmp/badging-$TAG.txt"
+            APK_MIN="$(sed -n "s/.*sdkVersion:'\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            APK_TARGET="$(sed -n "s/.*targetSdkVersion:'\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            APK_VC="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            echo "::notice::$TAG: minSdk=${APK_MIN:-?} targetSdk=${APK_TARGET:-?} versionCode=${APK_VC:-?}"
+            grep -q "package: name='app.roamio.tourism'" "$BAD" || fail "$APK badging: package name mismatch."
+            if [ -z "$APK_MIN" ]; then
+              fail "$APK badging: could not read minSdk (sdkVersion line missing?)."
+              continue
+            fi
+            if [ -z "$MINSDK" ]; then
+              MINSDK="$APK_MIN"
+            elif [ "$MINSDK" != "$APK_MIN" ]; then
+              echo "::warning::APKs disagree on minSdk: $MINSDK vs $APK_MIN ($TAG)"
+            fi
+            # 2. Signature must verify on every device allowed to install it.
+            if ! CERT_OUT="$("$APKSIGNER" verify --print-certs --min-sdk-version "$APK_MIN" "$APK" 2>&1)"; then
+              fail "apksigner verify FAILED for $APK (minSdk $APK_MIN): $(printf '%s' "$CERT_OUT" | head -c 500)"
               continue
             fi
             printf '%s\n' "$CERT_OUT" | tee "/tmp/certs-$TAG.txt" | head -n 8
@@ -354,14 +385,6 @@ jobs:
             else
               echo "zipalign: OK"
             fi
-            if ! "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt" 2>/tmp/aapt-err.txt; then
-              fail "aapt dump badging FAILED for $APK (Android itself could not parse it): $(head -c 400 /tmp/aapt-err.txt)"
-              continue
-            fi
-            BAD="/tmp/badging-$TAG.txt"
-            grep -q "package: name='app.roamio.tourism'" "$BAD" || fail "$APK badging: package name mismatch."
-            grep -Eq "versionCode='[0-9]+'" "$BAD" || fail "$APK badging: versionCode missing."
-            grep -q "sdkVersion:'23'" "$BAD" || fail "$APK badging: minSdk is not 23 (Android 6.0)."
             grep -Eq "targetSdkVersion:'[0-9]+'" "$BAD" || fail "$APK badging: targetSdk missing."
             grep -q "launchable-activity:" "$BAD" || fail "$APK badging: no launchable activity."
             if "$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml 2>/dev/null | grep -qi 'testOnly'; then
@@ -369,6 +392,12 @@ jobs:
             fi
             grep -E "^package:|^sdkVersion:|^targetSdkVersion:|^application-label:|launchable-activity:" "$BAD" || true
           done
+          if [ -n "$MINSDK" ]; then
+            printf '%s' "$MINSDK" > /tmp/minsdk.txt
+          fi
+          if [ -n "$MINSDK" ] && [ "$MINSDK" != "23" ]; then
+            echo "::warning::Effective minSdk is $MINSDK (not 23) — release notes + docs will state the true requirement. See the merger notice above for what raised it."
+          fi
           if [ "$FAIL" != "0" ]; then
             echo "::error::One or more APKs failed the installability gate."
             exit 1
@@ -447,9 +476,18 @@ jobs:
           UNI="$(info yatrawise-universal.apk)"
           APK_CERT="$(grep -m1 'SHA-256 digest' /tmp/certs-app-release.txt | sed 's/.*digest: *//')"
           SHORT_SHA="$(printf '%s' "$RUN_SHA" | head -c 7)"
+          MINSDK="$(cat /tmp/minsdk.txt 2>/dev/null || echo 23)"
+          case "$MINSDK" in
+            23) MIN_ANDROID="Android 6.0+" ;; 24) MIN_ANDROID="Android 7.0+" ;;
+            26) MIN_ANDROID="Android 8.0+" ;; 28) MIN_ANDROID="Android 9.0+" ;;
+            29) MIN_ANDROID="Android 10+" ;; 30) MIN_ANDROID="Android 11+" ;;
+            31) MIN_ANDROID="Android 12+" ;; 33) MIN_ANDROID="Android 13+" ;;
+            34) MIN_ANDROID="Android 14+" ;; 35) MIN_ANDROID="Android 15+" ;;
+            *) MIN_ANDROID="API $MINSDK+" ;;
+          esac
           {
             echo "YatraWise Tourism — latest build (run #${RUN_NUMBER}, ${SHORT_SHA})."
-            echo "Package app.roamio.tourism — Android 6.0+ required (minSdk 23)."
+            echo "Package app.roamio.tourism — ${MIN_ANDROID} required (minSdk ${MINSDK}, read from the APK itself)."
             echo "Signature SHA-256: ${APK_CERT}"
             echo ""
             echo "WHICH FILE SHOULD I DOWNLOAD?"
