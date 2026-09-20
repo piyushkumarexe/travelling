@@ -38,13 +38,11 @@ jobs:
         id: analyze
         run: |
           set +e
-          flutter analyze --no-pub > analyze.log 2>&1
+          # NOTE: `flutter analyze` has no --no-pub flag in the current stable
+          # SDK (it exits with a usage error), so pub get stays as the explicit
+          # step above and analyze runs with its defaults.
+          flutter analyze > analyze.log 2>&1
           CODE=$?
-          if [ "$CODE" != 0 ]; then
-            flutter analyze > analyze-plain.log 2>&1
-            echo "flutter analyze (no --no-pub) exit=$CODE" >> analyze.log
-            cat analyze-plain.log >> analyze.log
-          fi
           # Every issue line becomes an annotation: the artifact store is not
           # reachable from every dev sandbox, so annotations are the reliable
           # channel for reading CI results.
