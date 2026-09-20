@@ -26,32 +26,54 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
   String? _error;
   StreamSubscription<List<Itinerary>>? _sub;
 
+  bool _listened = false;
+
   @override
   void initState() {
     super.initState();
-    _listen();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_listened) {
+      _listened = true;
+      _listen();
+    }
   }
 
   void _listen() {
-    final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
-    _sub = _c.itinerariesRepository
-        .watchMine(uid)
-        .listen((List<Itinerary> items) {
-      if (mounted) {
-        setState(() {
-          _items = items;
-          _loading = false;
-        });
+    try {
+      final String? uid = _c.authRepository.currentUser?.uid;
+      if (uid == null) {
+        if (mounted) setState(() => _loading = false);
+        return;
       }
-    }, onError: (Object e) {
+      _sub = _c.itinerariesRepository
+          .watchMine(uid)
+          .listen((List<Itinerary> items) {
+        if (mounted) {
+          setState(() {
+            _items = items;
+            _loading = false;
+          });
+        }
+      }, onError: (Object e) {
+        if (mounted) {
+          setState(() {
+            _error = e.toString();
+            _loading = false;
+          });
+        }
+      });
+    } catch (e) {
       if (mounted) {
         setState(() {
           _error = e.toString();
           _loading = false;
         });
       }
-    });
+    }
   }
 
   Future<void> _delete(Itinerary it) async {
@@ -98,7 +120,8 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    try {
+      return Scaffold(
       appBar: AppBar(title: const Text('My itineraries')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/itineraries/new'),
@@ -205,6 +228,33 @@ class _ItineraryListScreenState extends State<ItineraryListScreen> {
                         );
                       },
                     ),
-    );
+      );
+    } catch (e) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('My itineraries')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 12),
+                const Text('Itineraries failed to load',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(e.toString(),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 }

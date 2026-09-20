@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Consistent minimal card used across the app: clean surface, hairline
-/// border and a soft drop shadow (uiverse-inspired "soft UI" look).
+/// Consistent glass card used across the app: translucent gradient surface,
+/// hairline border and a soft drop shadow (uiverse-style glassmorphism).
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
@@ -24,14 +24,25 @@ class AppCard extends StatelessWidget {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final BorderRadius radius = BorderRadius.circular(AppTheme.cardRadius);
     final Widget content = Padding(padding: padding, child: child);
-    return Container(
-      decoration: BoxDecoration(
-        color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
+
+    final BoxDecoration decoration;
+    if (color != null) {
+      decoration = BoxDecoration(
+        color: color,
         borderRadius: radius,
-        border:
-            Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.10)
+              : scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
         boxShadow: AppTheme.softShadow(context),
-      ),
+      );
+    } else {
+      decoration = AppTheme.cardBox(context);
+    }
+
+    return Container(
+      decoration: decoration,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: radius,
@@ -70,6 +81,7 @@ class SectionHeader extends StatelessWidget {
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
                   ),
             ),
           ),

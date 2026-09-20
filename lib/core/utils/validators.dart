@@ -29,6 +29,27 @@ class Validators {
   static String? phone(String? value) =>
       isPhone(value) ? null : 'Enter a valid phone number (e.g. +91 98765 43210).';
 
+  static bool isEmail(String? value) {
+    final String v = (value ?? '').trim();
+    return RegExp(r'^[\w.+-]+@[\w-]+(\.[\w-]+)+$').hasMatch(v);
+  }
+
+  static String? email(String? value) {
+    final String v = (value ?? '').trim();
+    if (v.isEmpty) return 'Enter your email address.';
+    if (!isEmail(v)) return 'Enter a valid email (e.g. you@example.com).';
+    return null;
+  }
+
+  static String? password(String? value, {bool isSignUp = false}) {
+    final String v = value ?? '';
+    if (v.isEmpty) return 'Enter a password.';
+    if (isSignUp && v.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    return null;
+  }
+
   static bool isLat(double? v) => v != null && v >= -90 && v <= 90;
 
   static bool isLng(double? v) => v != null && v >= -180 && v <= 180;

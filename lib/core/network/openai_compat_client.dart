@@ -5,28 +5,35 @@ import 'package:dio/dio.dart';
 import '../app_config.dart';
 import 'api_exception.dart';
 
-/// Direct NVIDIA chat-completions client (OpenAI-compatible API).
+/// Direct OpenAI-compatible chat-completions client (NVIDIA NIM or any
+/// provider that exposes `/chat/completions`).
 ///
-/// Fallback path used ONLY when the YatraWise Cloud Functions backend is
-/// unreachable (not deployed yet) AND a build-time NVIDIA key is present
-/// (`flutter build ... --dart-define=NVIDIA_API_KEY=nvapi-...`).
+/// Fallback path used only when the Tourism Cloud Functions backend is
+/// unreachable (not deployed yet) AND a key was compiled into the app:
+///
+///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...        (NVIDIA)
+///   flutter build apk --dart-define=AI_API_KEY=... \
+///                     --dart-define=AI_BASE_URL=https://.../v1 \
+///                     --dart-define=AI_MODEL=some/model              (generic)
 ///
 /// It mirrors the backend prompts and response shapes so [AiRepository] can
 /// switch transports transparently. Prefer deploying the backend for
 /// production (server-side key, rate limits, no key inside the APK).
-class NvidiaDirectClient {
-  NvidiaDirectClient({Dio? dio, String? apiKey, String? model})
-      : _dio = dio ??
+class OpenAiCompatClient {
+  OpenAiCompatClient({Dio? dio, String? baseUrl, String? apiKey, String? model})
+      : _baseUrl = baseUrl ?? AppConfig.aiResolvedBaseUrl,
+        _dio = dio ??
             Dio(BaseOptions(
-              baseUrl: AppConfig.nvidiaBaseUrl,
+              baseUrl: baseUrl ?? AppConfig.aiResolvedBaseUrl,
               connectTimeout: const Duration(seconds: 15),
               sendTimeout: const Duration(seconds: 30),
-              receiveTimeout: const Duration(seconds: 120),
+              receiveTimeout: const Duration(seconds: 60),
               contentType: 'application/json',
             )),
-        _apiKey = apiKey ?? AppConfig.nvidiaApiKey,
-        _model = model ?? AppConfig.nvidiaModel;
+        _apiKey = apiKey ?? AppConfig.aiResolvedApiKey,
+        _model = model ?? AppConfig.aiResolvedModel;
 
+  final String _baseUrl;
   final Dio _dio;
   final String _apiKey;
   final String _model;
@@ -50,47 +57,137 @@ class NvidiaDirectClient {
   ];
 
   /// True when a direct key was compiled into the app.
-  bool get enabled => _apiKey.isNotEmpty;
+  bool get enabled => _apiKey.isNotEmpty && _baseUrl.isNotEmpty;
+
+  /// Full chat-completions URL, built explicitly so a trailing slash (or any
+  /// base-path quirk) can never drop a path segment.
+  String get _chatUrl {
+    final String base = _baseUrl.trim();
+    final String clean =
+        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    return '$clean/chat/completions';
+  }
+
+  /// Host of the configured base URL (shown in errors so it's obvious which
+  /// provider is being called). Never includes the key.
+  String get _host {
+    final Uri? uri = Uri.tryParse(_baseUrl.trim());
+    if (uri != null && uri.host.isNotEmpty) return uri.host;
+    return _baseUrl.trim();
+  }
+
+  /// Short, human-readable error body (Gemini/OpenAI return a JSON or HTML
+  /// error that pinpoints the problem, e.g. "model not found").
+  String _bodySnippet(Object? data) {
+    String raw = '';
+    if (data is String) {
+      raw = data.trim();
+    } else if (data is Map) {
+      raw = jsonEncode(data);
+    }
+    if (raw.isEmpty) return '';
+    final String clean = raw
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', ' ')
+        .replaceAll('\t', ' ')
+        .trim();
+    final String snippet =
+        clean.length > 220 ? '${clean.substring(0, 220)}…' : clean;
+    return '($snippet)\n';
+  }
 
   Future<String> _complete({
     required List<Map<String, String>> messages,
     bool jsonMode = false,
     int maxTokens = 1200,
   }) async {
-    try {
-      final Response<dynamic> resp = await _dio.post<dynamic>(
-        '/chat/completions',
-        data: <String, dynamic>{
-          'model': _model,
-          'messages': messages,
-          'temperature': 0.6,
-          'top_p': 0.9,
-          'max_tokens': maxTokens,
-          if (jsonMode)
-            'response_format': <String, String>{'type': 'json_object'},
-        },
-        options: Options(
-          headers: <String, Object?>{
-            'Authorization': 'Bearer $_apiKey',
-          },
-        ),
-      );
-      final dynamic data = resp.data;
-      final dynamic choices = data is Map ? data['choices'] : null;
-      String? content;
-      if (choices is List && choices.isNotEmpty) {
-        final dynamic first = choices[0];
-        final dynamic msg = first is Map ? first['message'] : null;
-        if (msg is Map) content = msg['content'] as String?;
+    // Try the primary model, then fall back to alternates when the provider
+    // reports the model was retired/renamed (404/400/410 "model not found"),
+    // so the assistant keeps working as providers rotate their catalogues.
+    final List<String> models = <String>{
+      _model,
+      ..._fallbackModelsFor(_baseUrl),
+    }.toList();
+    DioException? last;
+    for (final String m in models) {
+      try {
+        return await _post(messages, jsonMode, maxTokens, m);
+      } on DioException catch (e) {
+        last = e;
+        if (!_isModelNotFound(e) || m == models.last) throw _map(e);
       }
-      if (content == null || content.trim().isEmpty) {
-        throw ApiException(ApiErrorKind.server,
-            'The AI model returned an empty response. Please try again.');
-      }
-      return content;
-    } on DioException catch (e) {
-      throw _map(e);
     }
+    throw _map(last ??
+        DioException(requestOptions: RequestOptions(path: _chatUrl)));
+  }
+
+  Future<String> _post(
+    List<Map<String, String>> messages,
+    bool jsonMode,
+    int maxTokens,
+    String model,
+  ) async {
+    final Response<dynamic> resp = await _dio.post<dynamic>(
+      _chatUrl,
+      data: <String, dynamic>{
+        'model': model,
+        'messages': messages,
+        'temperature': 0.6,
+        'top_p': 0.9,
+        'max_tokens': maxTokens,
+        if (jsonMode)
+          'response_format': <String, String>{'type': 'json_object'},
+      },
+      options: Options(
+        headers: <String, Object?>{
+          'Authorization': 'Bearer $_apiKey',
+        },
+      ),
+    );
+    final dynamic data = resp.data;
+    final dynamic choices = data is Map ? data['choices'] : null;
+    String? content;
+    if (choices is List && choices.isNotEmpty) {
+      final dynamic first = choices[0];
+      final dynamic msg = first is Map ? first['message'] : null;
+      if (msg is Map) content = msg['content'] as String?;
+    }
+    if (content == null || content.trim().isEmpty) {
+      throw ApiException(ApiErrorKind.server,
+          'The AI model returned an empty response. Please try again.');
+    }
+    return content;
+  }
+
+  /// True when the provider says the model no longer exists (retired,
+  /// renamed, end-of-life) — worth retrying with the next candidate.
+  bool _isModelNotFound(DioException e) {
+    final int? code = e.response?.statusCode;
+    if (code != 400 && code != 404 && code != 410) return false;
+    final Object? d = e.response?.data;
+    final String s = d is String ? d : (d is Map ? d.toString() : '');
+    final String l = s.toLowerCase();
+    return l.contains('model') &&
+        (l.contains('not found') ||
+            l.contains('not_found') ||
+            l.contains('does not exist') ||
+            l.contains('end of life') ||
+            l.contains('deprecated') ||
+            l.contains('invalid_request'));
+  }
+
+  /// Alternate model ids per provider, tried in order when the primary is
+  /// retired. Verified against each provider's current catalogue.
+  List<String> _fallbackModelsFor(String baseUrl) {
+    final Uri? uri = Uri.tryParse(baseUrl.trim());
+    final String host = uri?.host ?? '';
+    if (host.contains('groq.com')) {
+      return const <String>['openai/gpt-oss-20b', 'qwen/qwen3.6-27b'];
+    }
+    if (host.contains('nvidia.com')) {
+      return const <String>['nvidia/nemotron-3-super-120b-a12b'];
+    }
+    return const <String>[];
   }
 
   ApiException _map(DioException e) {
@@ -98,7 +195,15 @@ class NvidiaDirectClient {
     if (code == 401 || code == 403) {
       return ApiException(
           ApiErrorKind.unauthorized,
-          'The NVIDIA API key was rejected. Please check the key and rebuild.',
+          'The AI API key was rejected. Please check the key and rebuild.',
+          statusCode: code,
+          retryable: false);
+    }
+    if (code == 402) {
+      return ApiException(
+          ApiErrorKind.upstream,
+          'The AI provider account has no credits or budget left. '
+          'Top it up or use another key.',
           statusCode: code,
           retryable: false);
     }
@@ -126,12 +231,16 @@ class NvidiaDirectClient {
       case DioExceptionType.badResponse:
         return ApiException(
             ApiErrorKind.server,
-            'The AI service returned an error (${code ?? 'unknown'}). '
+            'The AI service returned an error (${code ?? 'unknown'}) '
+            'from $_host (model: $_model). '
+            '${_bodySnippet(e.response?.data)}'
             'Please try again.',
             statusCode: code);
       case DioExceptionType.unknown:
         return ApiException(ApiErrorKind.unknown,
-            'Something went wrong while contacting the AI service.');
+            'The AI connection dropped before a reply arrived. The model may '
+            'be busy or slow — please try again in a moment.',
+            retryable: true);
     }
   }
 
@@ -183,11 +292,23 @@ class NvidiaDirectClient {
     String? profileContext,
   }) async {
     String system =
-        'You are YatraWise, a smart tourism and personal-safety assistant. '
+        'You are Tourism, a smart tourism and personal-safety assistant. '
         'Answer travel questions (attractions, food, transport, itineraries, local tips) '
-        'with practical, current, location-aware advice. Keep replies under 250 words, '
-        'friendly and specific. If safety is at stake, advise calling local emergency services. '
-        'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ';
+        'with practical, current, location-aware advice. If safety is at stake, advise '
+        'calling local emergency services. Never invent precise facts you are unsure of; '
+        'say what is typical and suggest verifying. '
+        'IMPORTANT: when a location is provided below, ALWAYS answer for that exact '
+        'location and never ask the traveler where they are. If no location is provided, '
+        'ask for it in ONE short sentence only. '
+        'LOCALITY RULE: prioritize places IN or VERY NEAR the traveler\'s city/town '
+        '(within roughly 40 km). List each recommendation with its approximate distance '
+        'from the traveler. Only mention far-away cities (over ~100 km) if the traveler '
+        'explicitly asks for a different city or a famous destination — and always '
+        'clearly label such places with their distance. '
+        'Format every reply in light Markdown for a chat UI: use a short **bold** '
+        'heading line (or ## heading) first, then bullet points (- ) with 2-6 items, '
+        '**bold** key terms (names, prices, times), and 1-2 relevant emojis per section '
+        '(🏛️ 🍛 🚕 ⚠️ ✅). Keep it under 250 words, scannable and specific.';
     if (locationLabel != null && locationLabel.trim().isNotEmpty) {
       final String loc = locationLabel.trim();
       system +=
