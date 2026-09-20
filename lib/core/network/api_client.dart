@@ -76,7 +76,9 @@ class ApiClient {
         data: body,
         options: Options(
           headers: <String, Object?>{
-            'Authorization': 'Bearer $token',
+            // Never send "Bearer null": the backend would try to verify it,
+            // get no uid and treat the call as an anonymous flood (429).
+            if (token != null) 'Authorization': 'Bearer $token',
           },
         ),
       );
@@ -97,14 +99,24 @@ class ApiClient {
   }
 
   /// GET a binary response (used for Places photos proxied by the backend).
+  ///
+  /// This MUST carry the ID token like [post] does: the backend rate-limits
+  /// per uid and rejects an anonymous bucket with 401/429 (`rateLimit(null,
+  /// 'placesPhoto')` → 429), so photos used to fail on every single device.
   Future<Uint8List> getBytes(String path) async {
     if (_skipBackend) {
       throw ApiException(ApiErrorKind.network, 'Backend unreachable.');
     }
+    final String? token = await _idToken();
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(
         path,
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: <String, Object?>{
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
+        ),
       );
       _markUp();
       final dynamic data = resp.data;

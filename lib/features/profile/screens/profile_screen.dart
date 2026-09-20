@@ -30,7 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
-  final bool _saving = false;
+  /// Real save state. This was `final bool _saving = false;` — never set to
+  /// true — so the sheet's Save button stayed enabled and a fast double tap
+  /// fired two Firestore writes (and popped the sheet twice).
+  bool _saving = false;
   bool _uploadingPhoto = false;
 
   String get profileContactName =>
@@ -149,40 +152,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
         profile: p,
         saving: _saving,
         onSave: (Profile next) async {
-          // Device-local SOS contact first — instant and never blocked by
-          // Firestore rules or auth.
-          await _c.settings.setSosContact(
-            next.emergencyContactName,
-            next.emergencyContactPhone,
-          );
+          if (_saving) return;
+          if (mounted) setState(() => _saving = true);
           try {
-            await _c.profileRepository.update(
-              next.uid,
-              name: next.name,
-              photoUrl: next.photoUrl,
-              language: next.language,
-              emergencyContactName: next.emergencyContactName,
-              emergencyContactPhone: next.emergencyContactPhone,
-              interests: next.interests,
-              budget: next.budget,
-              travelStyle: next.travelStyle,
+            // Device-local SOS contact first — instant and never blocked by
+            // Firestore rules or auth.
+            await _c.settings.setSosContact(
+              next.emergencyContactName,
+              next.emergencyContactPhone,
             );
-            // Mirror the display name into the auth profile (shows in SOS
-            // messages and SMS alerts). Best-effort.
             try {
-              await _c.authRepository.currentUser
-                  ?.updateDisplayName(next.name);
-            } catch (_) {}
-          } catch (e) {
-            if (ctx.mounted) {
-              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                  content: Text(
-                      'Saved on this device, but cloud sync failed: $e')));
+              await _c.profileRepository.update(
+                next.uid,
+                name: next.name,
+                photoUrl: next.photoUrl,
+                language: next.language,
+                emergencyContactName: next.emergencyContactName,
+                emergencyContactPhone: next.emergencyContactPhone,
+                interests: next.interests,
+                budget: next.budget,
+                travelStyle: next.travelStyle,
+              );
+              // Mirror the display name into the auth profile (shows in SOS
+              // messages and SMS alerts). Best-effort.
+              try {
+                await _c.authRepository.currentUser
+                    ?.updateDisplayName(next.name);
+              } catch (_) {}
+            } catch (e) {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                    content: Text(
+                        'Saved on this device, but cloud sync failed: $e')));
+              }
             }
+            if (ctx.mounted) Navigator.of(ctx).pop();
+          } finally {
+            // Always released — a failed write must not leave the form locked.
+            if (mounted) setState(() => _saving = false);
           }
-          if (ctx.mounted) Navigator.of(ctx).pop();
-        },
-      ),
+        },      ),
     );
   }
 
@@ -734,6 +743,10 @@ class _EditProfileSheet extends StatefulWidget {
 }
 
 class _EditProfileSheetState extends State<_EditProfileSheet> {
+  /// Local in-flight flag. `widget.saving` alone can never work: a parent
+  /// setState does not rebuild an already-open modal bottom sheet, so the Save
+  /// button stayed enabled no matter what.
+  bool _busy = false;
   late final TextEditingController _name;
   late final TextEditingController _contactName;
   late final TextEditingController _contactPhone;
@@ -792,8 +805,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       travelStyle: _style,
       updatedAt: p.updatedAt,
     );
-    setState(() {});
-    await widget.onSave(next);
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.onSave(next);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -926,8 +944,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 PrimaryButton(
                   label: 'Save changes',
                   icon: Icons.save,
-                  loading: widget.saving,
-                  onPressed: widget.saving ? null : _save,
+                  loading: widget.saving || _busy,
+                  onPressed: (widget.saving || _busy) ? null : _save,
                 ),
               ],
             ),

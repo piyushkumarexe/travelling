@@ -228,10 +228,16 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
     try {
+      // Ask for the ATTRACTION CATEGORY, not a text query: `types` routes the
+      // request through the bulk nearby sweep (Overpass + Photon + Wikipedia),
+      // which is what actually finds the Imambara-class monuments. A plain
+      // text search for "tourist attractions" only ever returns places whose
+      // NAME contains those words, so the Home card was empty in a metro.
       final List<Place> places = await _c.placesRepository.search(
         'tourist attractions',
         location: LatLng(pos.latitude, pos.longitude),
-        radiusMeters: 10000,
+        radiusMeters: 25000,
+        types: const <String>['tourist_attraction'],
       );
       if (!mounted) return;
       setState(() {

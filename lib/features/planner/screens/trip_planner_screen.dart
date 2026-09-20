@@ -447,7 +447,8 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
                 firstDate: DateTime.now(),
                 lastDate: DateTime.now().add(const Duration(days: 730)),
               );
-              if (picked != null) setState(() => _startDate = picked);
+              if (!mounted || picked == null) return;
+              setState(() => _startDate = picked);
             },
           ),
           Row(

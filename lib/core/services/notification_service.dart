@@ -31,6 +31,7 @@ class NotificationService {
           lastTappedPayload = response.payload;
         },
       );
+      await _ensureChannels();
       _ready = true;
     } catch (e) {
       debugPrint('NotificationService init failed: $e');
@@ -71,7 +72,10 @@ class NotificationService {
       final AndroidNotificationDetails details = AndroidNotificationDetails(
         channel,
         _channelName(channel),
-        channelDescription: 'Tourism $_channelName(channel.toLowerCase())',
+        // NOTE: this used to be written as 'Tourism $_channelName(...)' —
+        // interpolating the *function* instead of calling it, which printed
+        // "Tourism Closure: (String) => String" as the channel description.
+        channelDescription: _channelDescription(channel),
         importance: important ? Importance.max : Importance.high,
         priority: important ? Priority.high : Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',
@@ -97,6 +101,49 @@ class NotificationService {
         'vault' => 'Document expiry reminders',
         _ => 'General',
       };
+
+  static String _channelDescription(String id) =>
+      'YatraWise ${_channelName(id)}';
+
+  /// Android notification channels are created up-front, once.
+  ///
+  /// Without this the OS auto-creates every channel on first show with DEFAULT
+  /// importance, and channel importance can never be changed afterwards — so a
+  /// SOS or geofence alert could arrive as a silent heads-up notification even
+  /// though the code asked for max importance. Creating them here is what
+  /// actually gives 'emergency' / 'safety' their loud behaviour and puts tidy
+  /// names in System settings → App → Notifications.
+  Future<void> _ensureChannels() async {
+    final AndroidFlutterLocalNotificationsPlugin? android = _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    for (final _ChannelSpec c in _channelSpecs) {
+      try {
+        await android.createNotificationChannel(AndroidNotificationChannel(
+          c.importance,
+          c.name,
+          description: c.description,
+          channelId: c.id,
+          enableVibration: c.importance.index >= Importance.high.index,
+          playSound: true,
+        ));
+      } catch (e) {
+        debugPrint('NotificationService channel ${c.id} failed: $e');
+      }
+    }
+  }
+
+  static const List<_ChannelSpec> _channelSpecs = <_ChannelSpec>[
+    _ChannelSpec('general', 'General', Importance.defaultImportance),
+    _ChannelSpec('safety', 'Safety alerts', Importance.high),
+    _ChannelSpec('geofence', 'Geofence warnings', Importance.high),
+    _ChannelSpec('emergency', 'Emergency (SOS)', Importance.max),
+    _ChannelSpec('incident', 'Incident updates', Importance.defaultImportance),
+    _ChannelSpec('weather', 'Weather alerts', Importance.defaultImportance),
+    _ChannelSpec('vault', 'Document expiry reminders',
+        Importance.defaultImportance),
+  ];
 
   /// Schedules a one-shot notification. [at] is device-local wall-clock
   /// time. Uses inexact scheduling (no special alarm permission) and
@@ -124,7 +171,7 @@ class NotificationService {
       final AndroidNotificationDetails details = AndroidNotificationDetails(
         channel,
         _channelName(channel),
-        channelDescription: 'Tourism ${_channelName(channel.toLowerCase())}',
+        channelDescription: _channelDescription(channel),
         importance: Importance.high,
         priority: Priority.defaultPriority,
         icon: '@mipmap/ic_launcher',
@@ -153,4 +200,16 @@ class NotificationService {
       await _plugin.cancel(id);
     } catch (_) {}
   }
+}
+
+/// One Android notification channel: id, human name and the importance the
+/// channel is created with (see [_ensureChannels]).
+class _ChannelSpec {
+  const _ChannelSpec(this.id, this.name, this.importance);
+
+  final String id;
+  final String name;
+  final Importance importance;
+
+  String get description => 'YatraWise $name';
 }

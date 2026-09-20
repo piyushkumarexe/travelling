@@ -52,8 +52,18 @@ service cloud.firestore {
     // ---- Incidents: reporter reads their own; admins read/manage all ----
     match /incidents/{incidentId} {
       allow get: if isSelf(resource.data.uid) || isAdmin();
-      allow list: if isAdmin();
+      // The app's "My reports" screen runs a `where('uid', == me)` LIST query.
+      // With `list: if isAdmin()` only, that query was rejected outright and
+      // every normal traveller's history stayed empty, so a reporter is
+      // allowed to list exactly their own documents (rules evaluate the
+      // per-document predicate, and the query is constrained by uid).
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
 
+      // The client stores the coordinates nested (location.lat / location.lng)
+      // — see Incident.toMap(). Validating top-level `lat`/`lng` made this
+      // rule reference a non-existent field, which is an EVALUATION ERROR, and
+      // Firestore denies on error: no incident could ever be reported.
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'reported'
@@ -62,7 +72,10 @@ service cloud.firestore {
           'theft', 'fraud', 'assault', 'harassment', 'accident',
           'unsafe_area', 'poor_infrastructure', 'natural_hazard', 'other'
         ]
-        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && 'location' in request.resource.data
+        && request.resource.data.location is map
+        && validCoords(request.resource.data.location.lat,
+                       request.resource.data.location.lng)
         && request.resource.data.description is string
         && request.resource.data.description.size() >= 10
         && request.resource.data.description.size() <= 2000
@@ -78,7 +91,10 @@ service cloud.firestore {
     // ---- SOS emergency events: self + admins ----
     match /emergencyEvents/{eventId} {
       allow get: if isSelf(resource.data.uid) || isAdmin();
-      allow list: if isAdmin();
+      // Same reason as /incidents: the Safety screen lists the traveller's own
+      // SOS events with `where('uid', == me)`, which admin-only `list` denied.
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
 
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
@@ -109,9 +125,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ---- Digital emergency IDs: token is the only externally visible part ----
+    // ---- Digital emergency IDs ----
+    // The private record (owner + admin only). Previously `get, list: if
+    // signedIn()` let ANY signed-in user enumerate every traveller's name,
+    // emergency contact phone and verification token — the token is the whole
+    // secret of the QR, so that was a privacy hole, not a feature.
     match /digitalIds/{id} {
-      allow get, list: if signedIn();
+      allow get: if isSelf(resource.data.uid) || isAdmin();
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
 
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
@@ -127,6 +149,27 @@ service cloud.firestore {
         && request.resource.data.uid == resource.data.uid)
         || isAdmin();
       allow delete: if isSelf(resource.data.uid) || isAdmin();
+    }
+
+    // Public half of a Digital Emergency ID — what a rescuer who physically
+    // has the QR code is allowed to see. The document id IS the 64-char token,
+    // so `get` works for anyone who scanned the code while `list` stays
+    // denied: the collection cannot be enumerated or harvested.
+    // A revoked id is still readable (its status field says 'revoked'), which
+    // is exactly how the verify screen reports a revoked ID.
+    match /digitalIdPublic/{token} {
+      allow get: if signedIn()
+        && token.matches(r'^[0-9a-f]{64}$')
+        && resource.data.token == token;
+      // No list/query on purpose: tokens cannot be harvested in bulk.
+      allow list: if false;
+
+      allow create, update, delete: if signedIn()
+        && request.resource.data.token == token
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(
+             ['token', 'uid', 'ownerName', 'status', 'photoUrl',
+              'emergencyContactName', 'emergencyContactPhone', 'updatedAt']);
     }
 
     // ---- Itineraries: per-user subcollection (rules-safe ownership) ----

@@ -91,6 +91,7 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
           ? DateTimeRange(start: _from!, end: _to!)
           : null,
     );
+    if (!mounted) return;
     if (range != null) {
       setState(() {
         _from = range.start;

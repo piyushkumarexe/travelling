@@ -175,15 +175,32 @@ class GeofenceService extends ChangeNotifier {
   Future<void> stop() async {
     await _positionSub?.cancel();
     _positionSub = null;
+    // The zones stream must be released too: it was only cancelled in
+    // dispose(), so a user who turned monitoring OFF kept a live Firestore
+    // listener (and its battery/data cost) for the rest of the session.
+    await _zonesSub?.cancel();
+    _zonesSub = null;
+    _zones = const <SafetyZone>[];
     _set(GeofenceStatus.idle);
   }
 
+  /// Pauses evaluation AND the GPS stream — a "paused" monitor that still
+  /// subscribes to `watchPosition` keeps the radio and the wakelock busy.
   void pause() {
-    if (_status == GeofenceStatus.monitoring) _set(GeofenceStatus.paused);
+    if (_status != GeofenceStatus.monitoring) return;
+    unawaited(_positionSub?.cancel());
+    _positionSub = null;
+    _set(GeofenceStatus.paused);
   }
 
   void resume() {
-    if (_status == GeofenceStatus.paused) _set(GeofenceStatus.monitoring);
+    if (_status != GeofenceStatus.paused) return;
+    _positionSub ??= _locationService
+        .watchPosition(distanceFilter: 20)
+        .listen(_onPosition, onError: (Object e) {
+      debugPrint('GeofenceService position stream error: $e');
+    });
+    _set(GeofenceStatus.monitoring);
   }
 
   void _onPosition(Position p) {

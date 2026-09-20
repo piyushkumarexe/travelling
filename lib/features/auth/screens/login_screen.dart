@@ -6,6 +6,7 @@ import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_logo.dart';
 import '../../../data/repositories/auth_repository.dart'
     show AuthException;
 
@@ -132,7 +133,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final TextTheme text = Theme.of(context).textTheme;
     return Scaffold(
       body: SafeArea(
@@ -144,31 +144,10 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Center(
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: scheme.outline),
-                      boxShadow: <BoxShadow>[
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: dark ? 0.35 : 0.10),
-                          blurRadius: 28,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: Image.asset(
-                        'assets/images/yatrawise-logo.jpg',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                ),
+                // Brand mark. See AppLogo: it picks up
+                // assets/images/yatrawise-logo.png the moment that file is
+                // dropped in (the .jpg stays as the fallback).
+                const Center(child: AppLogo()),
                 const SizedBox(height: 28),
                 Text(
                   _isSignUp ? 'Create your account' : 'Welcome back',

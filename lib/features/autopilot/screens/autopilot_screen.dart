@@ -252,10 +252,10 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
               });
               if (_minutes != null) {
                 await _generate();
-              } else {
+              } else if (mounted) {
                 setState(() => _step = 1);
               }
-            } else {
+            } else if (mounted) {
               setState(() => _step = 1);
             }
           },
@@ -836,21 +836,62 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           ],
         ),
         const SizedBox(height: 14),
-        if (_svc.loading)
-          const LinearProgressIndicator(),
         Text('NEXT BEST OPTIONS',
             style: Theme.of(context)
                 .textTheme
                 .titleSmall
                 ?.copyWith(fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        for (final AutopilotSuggestion sg in _svc.suggestions.take(8))
-          _suggestionCard(sg),
+        // The header used to render on its own with nothing under it — a
+        // section that looked simply broken (reported from the live app while
+        // the dataset was still loading or came back empty). Every state now
+        // says what is happening and offers the one action that helps.
+        if (_svc.suggestions.isEmpty)
+          _nextBestPlaceholder()
+        else
+          for (final AutopilotSuggestion sg in _svc.suggestions.take(8))
+            _suggestionCard(sg),
         _notPracticalSection(),
         _budgetCardIfExists(),
         _debugPanel(),
       ],
     );
+  }
+
+  /// Loading / empty / error states for "NEXT BEST OPTIONS".
+  Widget _nextBestPlaceholder() {
+    final Widget child;
+    if (_svc.loading) {
+      child = const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          LinearProgressIndicator(),
+          SizedBox(height: 10),
+          Text('Collecting open places around you…',
+              style: TextStyle(fontSize: 12.5)),
+        ],
+      );
+    } else if (_svc.error != null) {
+      child = ErrorState(
+        message: _svc.errorMessage ??
+            'Autopilot could not read the nearby dataset.',
+        onRetry: () => _svc.recompute(),
+      );
+    } else {
+      child = EmptyState(
+        icon: Icons.place_outlined,
+        title: 'Nothing else practical right now',
+        message: _svc.atDestination
+            ? 'Everything nearby is already visited, closed, or too far for '
+                  'this leg. Change the plan (or your budget / time limit) and '
+                  'Autopilot will look again.'
+            : 'No suitable places were found near the destination yet. It can '
+                  'take a minute for the nearby data to arrive — scan again.',
+        actionLabel: 'SCAN AGAIN',
+        onAction: () => _svc.recompute(),
+      );
+    }
+    return child;
   }
 
   Widget _budgetCardIfExists() =>

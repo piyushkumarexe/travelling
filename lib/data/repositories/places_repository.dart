@@ -170,19 +170,29 @@ class PlacesRepository {
         }
       }
     }
-    if (location != null && types != null && radiusMeters != null) {
-      out = out
+    // A CATEGORY search is radius-bound: results from another state are noise,
+    // not "far away answers". A named-place search ("taj mahal") is NOT — the
+    // real monument is 300 km away and the traveller still wants it.
+    final bool categoryQuery = (types != null && types.isNotEmpty) ||
+        _free.isCategoryQuery(q, types);
+    if (location != null && categoryQuery && radiusMeters != null) {
+      final List<Place> inside = out
           .where((Place p) =>
               GeoUtils.distanceMeters(location, p.coords) <= radiusMeters)
           .toList();
+      if (inside.isNotEmpty) out = inside;
     }
 
     // Accuracy and shortest distance first. The relevance filter removes
     // foreign/generic noise only after all real providers have been merged.
     if (location != null) {
       out = PlaceRanking.rankSuggestions(out, q, location);
-      final List<Place> rel = PlaceRanking.filterRelevant(out, q, location);
-      if (rel.isNotEmpty) out = rel;
+      out = PlaceRanking.filterRelevant(out, q, location);
+      // NOTE: an EMPTY relevance result is itself the honest answer. The old
+      // `if (rel.isNotEmpty) out = rel;` fell back to the unfiltered list, so
+      // a Lucknow search for "new public college" ended up showing "New Delhi"
+      // and "Noida" — geocoder noise that had just been identified as
+      // irrelevant was served right back to the user.
     }
     return out;
   }
@@ -288,9 +298,18 @@ class PlacesRepository {
     );
     final List<Place> relevant =
         PlaceRanking.filterRelevant(ranked, q, location);
-    final List<Place> result = (relevant.isNotEmpty ? relevant : ranked)
-        .take(limit)
-        .toList();
+    // Same rule as search(): never restore results the relevance filter has
+    // already rejected as "different place entirely". Without a known GPS
+    // position there is nothing to be relevant TO, so text ranking stands.
+    final List<Place> usable = relevant.isNotEmpty
+        ? relevant
+        : (location == null
+            ? ranked
+            : ranked
+                .where((Place p) =>
+                    GeoUtils.distanceMeters(location, p.coords) <= 35000)
+                .toList());
+    final List<Place> result = usable.take(limit).toList();
     // A free-only response is deliberately not cached while the backend is
     // configured. Otherwise one temporary backend outage permanently masks
     // the Google result until the cache expires.

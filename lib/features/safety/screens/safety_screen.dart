@@ -801,6 +801,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
   Future<void> _toggleOfflineSms(bool on) async {
     if (!on) {
       await _c.settings.setOfflineEmergencySms(false);
+      if (!mounted) return;
       setState(() {});
       return;
     }

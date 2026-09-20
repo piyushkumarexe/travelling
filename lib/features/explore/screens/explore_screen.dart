@@ -41,6 +41,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   bool _locationDenied = false;
 
   List<Place> _results = const <Place>[];
+  /// Radius the last completed search actually covered — the empty state
+  /// quotes this instead of hard-coding "250 km".
+  double _searchedRadiusMeters = 0;
   bool _loading = false;
   bool _stale = false;
   String? _error;
@@ -334,6 +337,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
       if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
+        _searchedRadiusMeters = searchedRadius;
         _results = places;
         _providerWarning = _c.placesRepository.backendWarning;
         _loading = false;
@@ -513,6 +517,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (refreshLocation) {
       unawaited(_refreshExplorePosition());
     }
+  }
+
+  /// Honest description of how far the last search actually looked.
+  String get _searchedRadiusLabel {
+    final double r = _searchedRadiusMeters;
+    if (r <= 0) return 'your area';
+    final int km = (r / 1000).round();
+    return km >= 1 ? 'out to $km km' : 'within ${r.round()} m';
   }
 
   String _effectiveQuery() {
@@ -716,10 +728,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final List<String>? types = _categoryTypes(_activeCategory);
       final bool hasCategoryFilters =
           types != null || _queryHasCategoryFilter(q);
+      double searchedRadius = _scope == 'anywhere' ? 50000.0 : 25000.0;
       List<Place> places = await _c.placesRepository.search(
         q,
         location: here,
-        radiusMeters: _scope == 'anywhere' ? 50000.0 : 25000.0,
+        radiusMeters: searchedRadius,
         types: types,
       );
       // Nearby mode: keep the local metro boundary, then preserve exact and
@@ -727,9 +740,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (_scope == 'nearby' && here != null) {
         places = _keepLocalPlusStrongMatches(places, q, here);
       }
-      if (hasCategoryFilters && _scope != 'nearby') {
+      // Category searches widen (25 -> 50 -> 100 -> 250 km) until something
+      // real shows up — in BOTH scopes. Widening used to be skipped for
+      // "Nearby", so when the bulk provider throttled us the tab stayed empty
+      // after ONE 25 km query while the copy below claimed the app had looked
+      // out to 250 km.
+      if (hasCategoryFilters && here != null) {
         for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
           if (places.isNotEmpty || !mounted) break;
+          searchedRadius = r;
           places = await _c.placesRepository.search(
             q,
             location: here,
@@ -947,7 +966,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           icon: Icons.search_off,
           title: 'No ${label.toLowerCase()} found near you',
           message:
-              'We searched nearby and out to 250 km — nothing in this '
+              'We searched ${_searchedRadiusLabel} — nothing in this '
               'category is mapped there yet. Try "Anywhere" for a worldwide '
               'search, or search a bigger nearby city.',
           actionLabel: 'Search anywhere',
@@ -966,7 +985,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       title:
                           'No matches for "${_query.trim().isNotEmpty ? _query.trim() : (kExploreCategoryLabels[_activeCategory] ?? _activeCategory!)}"',
                       message:
-                          'We searched nearby, out to 250 km and across '
+                          'We searched ${_searchedRadiusLabel} and across '
                           'multiple providers — nothing matched. Try a '
                           'different spelling, a better-known landmark, or '
                           '"Anywhere" for a worldwide search.',
@@ -977,7 +996,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       icon: Icons.search_off,
                       title: 'No places found nearby',
                       message:
-                          'We searched nearby and out to 250 km of your '
+                          'We searched ${_searchedRadiusLabel} of your '
                           'location — nothing was mapped there yet. Try '
                           '"Anywhere" to search the whole world, or move to '
                           'a larger town.',

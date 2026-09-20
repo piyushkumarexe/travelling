@@ -404,6 +404,27 @@ class FreeGeoClient {
         _guard('wikipedia', () => _wikipediaNearby(near, radiusMeters))
       else
         Future<_ProviderResult>.value(_ProviderResult.skipped('wikipedia')),
+      // Photon's /reverse category sweep runs IN PARALLEL with Overpass.
+      // Overpass is the better bulk engine, but its public mirrors throttle
+      // hard (429) — and a throttled Overpass used to blank the whole
+      // category, which is exactly the "No places found nearby" the traveller
+      // saw in a big city. Bounded so a dead Photon can never hang a search.
+      _guard('photon-category', () async {
+        final List<Place> places = await photonNearby(
+          near,
+          radiusMeters:
+              radiusMeters < 25000 ? 25000 : radiusMeters,
+          categories: _photonCategoriesForFilters(filters),
+        ).timeout(const Duration(seconds: 10),
+            onTimeout: () => const <Place>[]);
+        return _ProviderResult(
+          provider: 'photon-category',
+          places: places,
+          responded: true,
+          error: null,
+          raw: places.length,
+        );
+      }),
     ]);
 
     // 3) parse (already done by the provider) → dedup → 4) actual distance
@@ -1248,6 +1269,14 @@ class FreeGeoClient {
         (p.photoUrls.isNotEmpty ? 1 : 0);
     return score(a) > score(b);
   }
+
+  /// True when the query describes a CATEGORY ("tourist attractions",
+  /// "hospitals near me", "colleges") rather than one specific place name.
+  /// Callers use this to decide whether results must stay inside the requested
+  /// radius: for a category search a match 400 km away is noise, for a named
+  /// place ("taj mahal") it is the answer.
+  bool isCategoryQuery(String query, [List<String>? types]) =>
+      _filtersFor(query, types) != null;
 
   List<(String, String)>? _filtersFor(String query, List<String>? types) {
     if (types != null) {
@@ -3191,6 +3220,27 @@ class _ProviderResult {
 class PlaceRanking {
   PlaceRanking._();
 
+  /// Words that describe a CATEGORY or a search intent, not a place name.
+  /// A nearby/category search must not require them in a result's name.
+  static const Set<String> kCategoryWords = <String>{
+    'tourist', 'tourists', 'tourism', 'attraction', 'attractions',
+    'sightseeing', 'landmark', 'landmarks', 'monument', 'monuments',
+    'place', 'places', 'poi', 'nearby', 'near', 'me', 'best', 'top',
+    'famous', 'popular', 'hidden', 'gems', 'gem', 'things', 'do', 'fun',
+    'interesting', 'must', 'see', 'visit', 'spot', 'spots', 'heritage',
+    'scenic', 'local', 'the', 'a', 'an', 'of', 'in', 'for', 'around',
+    'close', 'current', 'my', 'location', 'search', 'find', 'show', 'what',
+    'where', 'any', 'good', 'and', 'to', 'hotels', 'hotel', 'restaurants',
+    'restaurant', 'food', 'cafes', 'cafe', 'parks', 'park', 'museums',
+    'museum', 'temples', 'temple', 'mosque', 'church', 'mall', 'shopping',
+    'atm', 'bank', 'hospital', 'pharmacy', 'police', 'fuel', 'petrol',
+    'schools', 'school', 'colleges', 'college', 'universities',
+    'university', 'guesthouse', 'homestay', 'resort', 'viewpoint', 'fort',
+    'forts', 'palace', 'lake', 'river', 'gardens', 'garden', 'zoo',
+    'aquarium', 'stadium', 'market', 'emergency', 'services', 'essential',
+    'essentials',
+  };
+
   /// Lowercase + strip punctuation/extra spaces, so "Taj Mahal" ==
   /// "taj mahal" == "Taj  Mahal,".
   static String normalizeName(String s) => s
@@ -3374,7 +3424,14 @@ class PlaceRanking {
         .split(RegExp(r'\s+'))
         .where((String w) => w.isNotEmpty)
         .toList();
-    final bool specific = tokens.length >= 2;
+    // Category/stop words never identify a specific place, so they must not
+    // be required to appear in a result name. Without this, the Explore
+    // default query "tourist attractions near me" filtered OUT every real
+    // nearby attraction (none of them is literally named "attraction") and
+    // the app said "No places found nearby" in a city of 4 million people.
+    final List<String> named =
+        tokens.where((String w) => !kCategoryWords.contains(w)).toList();
+    final bool specific = named.length >= 2;
     // Far results worth keeping: the query names their locality, or the
     // query is a specific multi-word name and this place IS that name.
     bool keepFar(Place p) =>
@@ -3388,11 +3445,20 @@ class PlaceRanking {
     // queries keep the legacy behaviour (a generic word like "school" may
     // legitimately match a nearby place of the same name).
     bool nameRelevant(Place p) {
-      if (!specific) return true;
+      // Pure category query ("attractions near me", "best temples") → every
+      // provider hit is by definition relevant; keep the list.
+      if (named.isEmpty) return true;
+      if (!specific) {
+        // Single meaningful word ("college", "atm"): legacy behaviour.
+        return true;
+      }
       final String hay =
           '${p.name} ${p.address ?? ''} ${p.city ?? ''} ${p.state ?? ''}'
               .toLowerCase();
-      for (final String tok in tokens) {
+      for (final String tok in named) {
+        // 4+ chars only: short tokens like "new" would "match" the city
+        // "New Delhi" and put a 400 km admin region above the actual college
+        // the traveller searched for.
         if (tok.length >= 4 && hay.contains(tok)) return true;
       }
       return false;

@@ -80,21 +80,27 @@ const LIMITS = {
 };
 
 /** Per-uid, per-endpoint, per-minute rate limit (Firestore-backed). */
-async function rateLimit(uid, endpoint) {
+async function rateLimit(uid, endpoint, req) {
   const limit = LIMITS[endpoint];
   if (!limit) return;
-  if (!uid) {
-    throw new HttpError(429, 'Too many requests from this device. Try again shortly.', 'rate');
-  }
+  // An unauthenticated caller is NOT automatically a flood. The old code threw
+  // 429 for every request without a verified uid, and the photo proxy is
+  // fetched through a plain GET (an <img> cannot send an Authorization
+  // header), so every place photo failed with "too many requests" on every
+  // device. Anonymous traffic gets a tighter, IP-keyed bucket instead.
+  const key = uid
+    ? uid
+    : `ip:${String((req && (req.ip || (req.headers && req['x-forwarded-for']))) || 'anon').split(',')[0].trim()}`;
+  const bucketLimit = uid ? limit : Math.max(3, Math.round(limit / 3));
   const minute = Math.floor(Date.now() / 60000);
   const ref = admin
     .firestore()
     .collection('rateLimits')
-    .doc(`${uid}:${endpoint}:${minute}`);
+    .doc(`${key}:${endpoint}:${minute}`);
   await admin.firestore().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const count = (snap.exists ? snap.data().count : 0) + 1;
-    if (count > limit) {
+    if (count > bucketLimit) {
       throw new HttpError(
         429,
         'Rate limit exceeded for this action. Please wait a minute and try again.',
@@ -331,7 +337,7 @@ exports.chat = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'chat');
+    await rateLimit(uid, 'chat', req);
     const body = await readJsonBody(req);
 
     const messages = Array.isArray(body.messages) ? body.messages : null;
@@ -382,7 +388,7 @@ exports.itinerary = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'itinerary');
+    await rateLimit(uid, 'itinerary', req);
     const body = await readJsonBody(req);
 
     const destination = requireText(body.destination, 'destination', 2, 120);
@@ -453,7 +459,7 @@ exports.incidentAnalyze = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'incidentAnalyze');
+    await rateLimit(uid, 'incidentAnalyze', req);
     const body = await readJsonBody(req);
 
     const description = requireText(body.description, 'description', 10, 2000);
@@ -515,7 +521,7 @@ exports.weatherCurrent = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'weatherCurrent');
+    await rateLimit(uid, 'weatherCurrent', req);
     const body = await readJsonBody(req);
     const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
     const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);
@@ -548,7 +554,7 @@ exports.weatherForecast = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'weatherForecast');
+    await rateLimit(uid, 'weatherForecast', req);
     const body = await readJsonBody(req);
     const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
     const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);
@@ -592,7 +598,11 @@ exports.weatherForecast = onRequest(
 
 function functionBaseUrl(req) {
   const host = req && req.headers && req.headers.host;
-  if (host) return `https://${host}/functions/v2`;
+  // A 2nd-gen HTTP function (onRequest) is served at
+  //   https://REGION-PROJECT.cloudfunctions.net/<name>
+  // `/functions/v2/<name>` is the *callable* prefix — appending it here made
+  // every generated photo URL 404, so place photos could never load.
+  if (host) return `https://${host}`;
   const project =
     process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '';
   if (project) return `https://${REGION}-${project}.cloudfunctions.net`;
@@ -667,11 +677,9 @@ async function googlePlacesSearch(body, req) {
   const base = functionBaseUrl(req || {});
 
   let url;
-  let isTextSearch = false;
 
   if (query) {
     // TEXT SEARCH - best for free-form queries like "TS Mishra University", "transport nagar"
-    isTextSearch = true;
     const params = [`query=${encodeURIComponent(query)}`];
     if (hasLoc) {
       params.push(`location=${lat.toFixed(6)},${lng.toFixed(6)}`);
@@ -746,7 +754,7 @@ exports.placesSearch = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'placesSearch');
+    await rateLimit(uid, 'placesSearch', req);
     const body = await readJsonBody(req);
     if (!body.query && !(body.location && Array.isArray(body.types))) {
       throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
@@ -761,7 +769,7 @@ exports.placesDetails = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'placesDetails');
+    await rateLimit(uid, 'placesDetails', req);
     const body = await readJsonBody(req);
     const placeId = requireText(body.placeId, 'placeId', 1, 200);
     const key = googleKey();
@@ -783,7 +791,7 @@ exports.placesPhoto = onRequest(
       throw new HttpError(405, 'Method not allowed.', 'validation');
     }
     const uid = await getUid(req);
-    await rateLimit(uid, 'placesPhoto');
+    await rateLimit(uid, 'placesPhoto', req);
     const ref = requireText(req.query && req.query.photoreference, 'photoreference', 1, 300);
     const maxwidth = Math.min(
       Math.max(parseInt(req.query && req.query.maxwidth, 10) || 1200, 1),
@@ -819,7 +827,7 @@ exports.emergencyNearby = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'emergencyNearby');
+    await rateLimit(uid, 'emergencyNearby', req);
     const body = await readJsonBody(req);
     if (!body.location || typeof body.location.lat !== 'number' || typeof body.location.lng !== 'number') {
       throw new HttpError(400, 'location {lat,lng} is required.', 'validation');
@@ -875,21 +883,35 @@ exports.emergencyNearby = onRequest(
 
 /* -------------------------------- /route ------------------------------- */
 
+// Routes API (v2). The previous version of this function POSTed to
+// `directions.googleapis.com/v2/routes:computeRoutes` with the field list in
+// the BODY — that host/path does not exist and the mask is only accepted in
+// the X-Goog-FieldMask header, so every call failed and the client silently
+// fell back to straight-line/OSRM geometry.
+const ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+const ROUTES_FIELD_MASK =
+  'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration';
+
 async function googleRoute(origin, destination) {
   const key = googleKey();
-  const data = await fetchJson('https://directions.googleapis.com/v2/routes:computeRoutes', {
+  const data = await fetchJson(ROUTES_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-goog-api-key': key,
+      'X-Goog-FieldMask': ROUTES_FIELD_MASK,
     },
     body: JSON.stringify({
       origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
       destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
-      travelMode: 'DRIVING',
-      routeModifiers: { trafficModel: 'AVG_TRAFFIC_MODEL' },
-      computePolylines: true,
-      fields: 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+      // Routes API spellings: travelMode is DRIVE (not DRIVING) and the only
+      // valid trafficModel values are TRAFFIC_UNAWARE / TRAFFIC_LOW_LATENCY.
+      travelMode: 'DRIVE',
+      // trafficModel belongs to routingPreference; routeModifiers only takes
+      // avoidTolls/avoidHighways/avoidFerries. polylineEncoding is top-level.
+      routingPreference: { trafficModel: 'TRAFFIC_UNAWARE' },
+      polylineEncoding: 'COMPRESSED_MIME',
+      computeAlternativeRoutes: false,
     }),
   });
   const routes = Array.isArray(data.routes) ? data.routes : [];
@@ -919,7 +941,7 @@ exports.route = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'route');
+    await rateLimit(uid, 'route', req);
     const body = await readJsonBody(req);
     const lat1 = requireFiniteNumber(
       body.origin && body.origin.lat, 'origin.lat', -90, 90);
@@ -984,7 +1006,7 @@ exports.geocodeReverse = onRequest(
   makeHandler(async (req, res) => {
     if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
     const uid = await getUid(req);
-    await rateLimit(uid, 'geocodeReverse');
+    await rateLimit(uid, 'geocodeReverse', req);
     const body = await readJsonBody(req);
     const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
     const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);

@@ -1,0 +1,99 @@
+name: Verify (analyze + test only)
+
+# Cheap proof job for work-in-progress branches: it runs exactly the two checks
+# that decide whether the app compiles and behaves (flutter analyze,
+# flutter test) WITHOUT building an APK and WITHOUT touching the public
+# `apk-latest` GitHub Release. `build-apk.yml` publishes to that release on
+# every run, so it is not something to fire at will from a session branch.
+#
+# It also sanity-checks the security rules files, which no other job looks at.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/01a0bd53-travelling'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
+
+      - name: Analyze
+        run: |
+          set -o pipefail
+          if ! flutter analyze --no-pub 2>&1 | tee analyze.log; then
+            echo '### flutter analyze reported errors — see analyze.log' \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Test
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee test.log
+
+      - name: Sanity-check security rules
+        # No emulator/credentials needed: this catches the two classes of
+        # rules-file mistake that break a deploy — unbalanced braces and an
+        # invalid action name (e.g. `allow query:` does not exist; only
+        # read/get/list/create/update/delete/write are valid).
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const valid = new Set([
+              "get", "list", "create", "update", "delete", "read", "write",
+            ]);
+            let bad = 0;
+            for (const file of ["firestore.rules", "storage.rules"]) {
+              const src = fs.readFileSync(file, "utf8");
+              const opens = (src.match(/{/g) || []).length;
+              const closes = (src.match(/}/g) || []).length;
+              if (opens !== closes) {
+                console.error(`${file}: unbalanced braces (${opens} { vs ${closes} })`);
+                bad++;
+              }
+              for (const m of src.matchAll(/allow\s+([^:]+):/g)) {
+                for (const action of m[1].split(",").map((a) => a.trim())) {
+                  if (!valid.has(action)) {
+                    console.error(`${file}: invalid rules action "${action}"`);
+                    bad++;
+                  }
+                }
+              }
+            }
+            if (bad) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                "### Security rules sanity check failed\n");
+              process.exit(1);
+            }
+            console.log("rules OK: braces balanced, all actions valid");
+          '
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs
+          path: |
+            pub-get.log
+            analyze.log
+            test.log
+          if-no-files-found: warn
+          retention-days: 7

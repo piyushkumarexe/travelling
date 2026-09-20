@@ -122,7 +122,10 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         emergencyContactName: _contactNameController.text.trim(),
         emergencyContactPhone: contactPhone,
       );
-      // The watchMine stream refreshes the list.
+      // The watchMine stream refreshes the list. `_creating` MUST be cleared
+      // here too: it was only reset in the catch branch, so after a
+      // SUCCESSFUL cloud create the button stayed disabled forever.
+      if (mounted) setState(() => _creating = false);
     } catch (e) {
       // Cloud unavailable (rules not deployed / offline) — create a local ID
       // so the QR code still works right now.
@@ -398,7 +401,9 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Token: ${id.token.substring(0, 8)}…${id.token.substring(id.token.length - 8)}',
+                // A token shorter than 16 chars (a legacy or hand-written doc)
+                // used to throw RangeError here and red-screen the whole card.
+                'Token: ${_shortToken(id.token)}',
                 style: TextStyle(
                     color: scheme.onSurfaceVariant, fontSize: 12),
               ),
@@ -491,4 +496,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
       ),
     );
   }
+}
+
+/// "a1b2c3d4…9f8e7d6c" for a normal 64-char token, and a safe truncation for
+/// anything shorter (a legacy or partially written document used to throw
+/// RangeError here and blank the whole ID card).
+String _shortToken(String token) {
+  const int edge = 8;
+  if (token.length <= edge * 2) return token;
+  return '${token.substring(0, edge)}…${token.substring(token.length - edge)}';
 }

@@ -252,9 +252,11 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
       final XFile? f = pdf
           ? await _c.storageService.pickVaultPdf()
           : await _c.storageService.pickVaultImage();
+      if (!mounted) return;
       if (f == null) return;
       setState(() => _file = f);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _error =
           'Could not open the file picker. Check the app has the needed '
           'permission on this device.');

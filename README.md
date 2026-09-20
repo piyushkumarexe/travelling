@@ -630,6 +630,85 @@ do. We'll help you figure out what to do next."**
 - Blockchain is intentionally **not** claimed or used; the Digital ID is
   modular so a chain-based anchoring could be added later.
 
+## Bug-fix pass (2026-09-20) — **deploy required**
+
+Fixed after a full read of the shipped code. Both of these commands must be run
+once by the project owner for the fixes to reach installed apps:
+
+```bash
+bash scripts/deploy-rules.sh     # Firestore + Storage security rules
+bash scripts/deploy-backend.sh   # Cloud Functions (photo proxy, Routes API)
+```
+
+**Server-side (rules) — these were silently breaking whole features:**
+- `incidents` create validated top-level `lat`/`lng` while the app writes
+  `location.lat`/`location.lng`. A rule that reads a missing field is an
+  **evaluation error → deny**, so *no incident could ever be reported*.
+- `incidents` and `emergencyEvents` had `allow list: if isAdmin()` only, but the
+  app lists them with `where('uid', == me)` → every traveller's **incident
+  history and SOS history were permission-denied (always empty)**. Both now also
+  allow the owner's own documents.
+- `digitalIds` was `get, list: if signedIn()` — any signed-in user could
+  enumerate **every** traveller's name, emergency contact and 64-char
+  verification token. The record is now split:
+  * `digitalIds/{id}` — private (owner + admin),
+  * `digitalIdPublic/{token}` — the document id **is** the token, `get` only,
+    `list` denied: a rescuer with the QR can read it, the collection cannot be
+    harvested. The app writes/maintains both and `verify()` reads the public
+    half (with a legacy fallback while rules are still being deployed).
+- `verify.yml` (new) also sanity-checks both rules files in CI (balanced braces,
+  valid actions only), because an invalid action such as `allow query:` breaks the
+  whole deploy.
+
+**Cloud Functions:**
+- `placesPhoto` URLs were built as `https://<host>/functions/v2/placesPhoto` —
+  `/functions/v2/` is the *callable* prefix, a 2nd-gen HTTP function lives at
+  `https://<host>/placesPhoto`, so every place photo 404'd. Fixed.
+- Rate limiting hard-failed with **429 for every request without a verified uid**
+  (and the photo GET sent no auth header at all). Anonymous traffic now gets a
+  tighter IP-keyed bucket instead of an instant 429, and the client now sends
+  the ID token on binary GETs.
+- `/route` (Google Routes) was POSTing to a non-existent host/path with the
+  field mask in the body; it now uses
+  `routes.googleapis.com/directions/v2:computeRoutes` + `X-Goog-FieldMask`,
+  `travelMode: DRIVE` and `routingPreference.trafficModel`.
+
+**Client:**
+- Notification channels are created up-front with their real importance
+  (`emergency` = max) — before that Android auto-created them at DEFAULT, so a
+  SOS alert could arrive silent. The channel description was also literally
+  `Tourism Closure: (String) => String` (an interpolated *function*, not a call).
+- Explore/Home/Autopilot "no places nearby" false negatives: category queries
+  (`tourist attractions near me`) were run through the *name*-relevance filter,
+  which dropped every real result because no attraction is literally named
+  "attraction". Category words are now excluded from name matching, Nearby
+  searches widen (25→250 km) like the copy always promised, the empty state
+  reports the radius actually searched, `_nearbyPois()` sweeps Photon in
+  parallel so a throttled Overpass mirror can no longer blank a category, and a
+  rejected "noise" list is no longer served back to the user (the Lucknow
+  "new Public college" search that returned New Delhi / Noida).
+- Home's Nearby-attractions card now asks for the `tourist_attraction`
+  category (bulk OSM sweep) instead of free-text matching.
+- Map: the search-results card is stacked under the search bar in one column, so
+  it can no longer cover the travel-mode selector (was pinned to a guessed
+  `top: 148`).
+- Autopilot: "NEXT BEST OPTIONS" had a header with nothing under it while
+  loading or when the dataset came back empty — it now has real loading, empty
+  and error states with a `SCAN AGAIN` action.
+- Digital ID: after a *successful* cloud create `_creating` was never cleared,
+  leaving the Create button disabled until you left the screen; a short/legacy
+  token also threw `RangeError` in the token label.
+- Profile: `_saving` was `final bool = false`, so Save stayed enabled the whole
+  time (double submit). There is now a real in-flight flag inside the sheet.
+- Geofence: `stop()` left the zones listener alive, and `pause()` kept the GPS
+  stream running (battery). Both now release what they claim to.
+- `LocationService` call sites: `mounted` guards after `await` gaps in the
+  expense/vault/safety/planner/autopilot sheets.
+- Android/CI: removed the AGP-8-obsolete `android.enableR8` Gradle flag; the
+  release job's "Analyze (fatal warnings)" step is now named after what it runs;
+  **publishing to the public `apk-latest` release is gated to pushes on `main`**
+  (a PR from any branch used to overwrite what testers download).
+
 ## License
 
 Proprietary — all rights reserved.

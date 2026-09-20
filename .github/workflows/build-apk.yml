@@ -43,7 +43,11 @@ jobs:
           MSG=$(sed 's/%/%25/g' /tmp/surf.txt | awk '{printf "%s%%0A", $0}' | head -c 3500)
           echo "::error::$MSG"
 
-      - name: Analyze (fatal warnings)
+      - name: Analyze
+        # `--fatal-warnings` is deliberately NOT used: `deprecated_member_use`
+        # is set to `ignore` in analysis_options.yaml and a strict pass would
+        # fail on every dependency bump. The step is named after what it
+        # actually runs (it used to claim "fatal warnings").
         run: set -o pipefail; flutter analyze 2>&1 | tee analyze.log
 
       - name: Surface analyze errors as annotations
@@ -454,6 +458,10 @@ jobs:
       # tag gives testers DIRECT download links — no ZIP, no extraction,
       # just install.
       - name: Publish APKs to GitHub Release (direct phone download)
+        # A PR run used to publish too — any branch (or fork) that opened a PR
+        # overwrote the public `apk-latest` release that testers install from.
+        # Release publication is exclusively a main-branch push concern.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}

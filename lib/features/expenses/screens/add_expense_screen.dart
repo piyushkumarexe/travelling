@@ -221,6 +221,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Future<void> _pickReceipt({bool camera = true}) async {
     final XFile? picked = await _c.storageService.pickReceipt(
         source: camera ? ImageSource.camera : ImageSource.gallery);
+    // The picker runs over an await gap — the sheet can already be gone.
+    if (!mounted) return;
     if (picked == null) return;
     setState(() {
       _receiptPath = picked.path;

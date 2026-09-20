@@ -1140,7 +1140,29 @@ class _MapScreenState extends State<MapScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: _topBar(),
+            // The search card, the travel-mode selector, the category chips
+            // AND the results sheet live in ONE column: stacking them instead
+            // of pinning the sheet to a hand-guessed `top: 148` is what keeps
+            // the results list from covering the mode selector (reported from
+            // the live app: the walk/bike/car row was cut in half by the
+            // "Search results" card).
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _topBar(),
+                if (_resultsVisible)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 76, 0),
+                    child: _resultsSheet(),
+                  ),
+                if (_tileNotice != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _tileNoticeBanner(_tileNotice!),
+                  ),
+              ],
+            ),
           ),
           // Live location sharing status (only visible while active) with a
           // Stop button — a share must never be invisible to the traveler.
@@ -1180,29 +1202,12 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
-          if (_resultsVisible)
-            Positioned(
-              top: 148,
-              left: 12,
-              // Indent past the floating control column (FAB 56 + margin 16
-              // + gap 4) so "Go" / "Clear" are never covered by the zoom,
-              // follow and my-location buttons.
-              right: 76,
-              child: _resultsSheet(),
-            ),
           if (_permissionDenied)
             Positioned(
               top: 200,
               left: 12,
               right: 12,
               child: _permissionBanner(),
-            ),
-          if (_tileNotice != null)
-            Positioned(
-              top: 148,
-              left: 12,
-              right: 12,
-              child: _tileNoticeBanner(_tileNotice!),
             ),
           if (_selected != null)
             Positioned(
