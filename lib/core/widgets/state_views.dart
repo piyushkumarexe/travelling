@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'loading_indicator.dart';
+
 /// Loading / empty / error state views (no fake data is ever shown).
 
 class LoadingView extends StatelessWidget {
@@ -13,7 +15,7 @@ class LoadingView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const CircularProgressIndicator(),
+          const LoadingIndicator(),
           if (message != null) ...<Widget>[
             const SizedBox(height: 16),
             Text(

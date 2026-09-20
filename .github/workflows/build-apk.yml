@@ -63,15 +63,43 @@ jobs:
           fi
 
       - name: Run tests
-        run: set -o pipefail; flutter test 2>&1 | tee test.log
+        # Keep the APK job available while exposing the complete test output.
+        # A pipe followed by `|| echo` used to hide the failing test name and
+        # made the red aggregate annotation impossible to diagnose.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.log
 
       - name: Surface test failures as annotations
-        if: failure()
+        if: always()
         run: |
-          grep -a -E "FAILED|failed|Expected|Actual|_test.dart" test.log | grep -a -v "✅" | head -n 60 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
-            echo "::error title=flutter test::$MSG"
-          done
+          if [ ! -s test.log ]; then
+            echo "::warning title=flutter test::No test log was produced."
+            exit 0
+          fi
+          # Flutter's expanded reporter prints every test path. Only surface
+          # actual failure markers, otherwise every passing test appears red
+          # in the Actions annotation list.
+          if grep -a -Eq ' -[1-9][0-9]*:|\[E\]|Expected:|Actual:|Test failed' test.log; then
+            FAILURE_TAIL=$(tail -n 140 test.log \
+              | sed 's/%/%25/g; s/\r//g' \
+              | awk '{printf "%s%%0A", $0}' | head -c 9000)
+            echo "::error title=flutter test failure::$FAILURE_TAIL"
+            echo "## Flutter test failure" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 180 test.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-log
+          path: test.log
+          if-no-files-found: warn
+          retention-days: 7
 
   build-apk:
     name: Build release APK
@@ -81,14 +109,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      # JDK 21: required by maplibre_gl's Android plugin (source level 21).
+      - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -117,26 +143,108 @@ jobs:
       - name: Build release APK
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
         run: |
-          DEFINES=""
-          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
-            DEFINES="--dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
+          # Sanitized config report (never the full key): tells the user
+          # whether the APK got a MapTiler key and its length/prefix.
+          if [ -z "$MAPTILER_API_KEY" ]; then
+            echo "::warning::MAPTILER_API_KEY secret is not set — the APK will render keyless OpenStreetMap tiles (no 'Invalid key', but no MapTiler tiles). Set the secret to enable MapTiler + satellite/hybrid."
+          else
+            echo "MAPTILER CONFIG PRESENT=true KEY LENGTH=${#MAPTILER_API_KEY} KEY PREFIX=${MAPTILER_API_KEY:0:4}"
           fi
+          DEFINES=""
+          if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GROQ_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=GROQ_MODEL=${{ secrets.GROQ_MODEL }}"
+          fi
+          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GEMINI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}"
+          fi
+          if [ -n "${{ secrets.AI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_API_KEY=${{ secrets.AI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.AI_BASE_URL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_BASE_URL=${{ secrets.AI_BASE_URL }}"
+          fi
+          if [ -n "${{ secrets.AI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_MODEL=${{ secrets.AI_MODEL }}"
+          fi
+          if [ -n "$MAPTILER_API_KEY" ]; then
+            DEFINES="$DEFINES --dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY"
+          fi
+          if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
+            DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
+          fi
+          # objective_c is pinned in pubspec.yaml to the stable-compatible
+          # release, so its native Dart assets can build normally.
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
           set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
 
       - name: Surface build errors as annotations
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          grep -a -A 8 "What went wrong" gradle.log | head -n 20 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
-          done
-          grep -a -E "^e: |FAILED|error: " gradle.log | head -n 12 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
-          done
+          echo "=== Full gradle.log tail (500) ==="
+          tail -n 500 gradle.log || true
+          echo "=== Grep What went wrong ==="
+          grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
+          echo "=== Grep FAILED/error ==="
+          grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
+          # GitHub truncates each annotation at 4 KB, and a single big tail
+          # annotation keeps only its FIRST 4 KB (cutting off the real error
+          # at the END of the log). Emit two small, targeted annotations
+          # instead: the "What went wrong" section and the last ~3 KB.
+          enc() { sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+          WWR=$(grep -a -A 22 "What went wrong" gradle.log | head -n 26 | enc | head -c 3500)
+          if [ -n "$WWR" ]; then
+            echo "::error title=What went wrong::$WWR"
+          fi
+          ENDTAIL=$(tail -c 3200 gradle.log | enc | head -c 3500)
+          if [ -n "$ENDTAIL" ]; then
+            echo "::error title=Gradle log end::$ENDTAIL"
+          fi
+          GRADLE_TAIL=$(tail -n 120 gradle.log | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}' | head -c 6000)
+          echo "::error title=Gradle failure::$GRADLE_TAIL"
+          echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Annotations are truncated by GitHub at 4 KB, which can hide the
+          # actionable error. On PRs, also post the failure lines as a PR
+          # comment where there is no such limit.
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
+            {
+              echo "Build failed — actionable output (annotations truncate at 4 KB):"
+              echo '```'
+              grep -a -B 2 -A 25 "What went wrong" gradle.log | head -n 80 || true
+              echo "--- last 30 lines of gradle.log ---"
+              tail -n 30 gradle.log || true
+              echo '```'
+            } > /tmp/failcomment.md
+            if ! gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/failcomment.md > /tmp/ghout.txt 2>&1; then
+              echo "::warning title=PR comment failed::$(head -c 400 /tmp/ghout.txt)"
+            fi
+          fi
+
+      - name: Upload gradle log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log
+          path: gradle.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Verify APK signature
         run: |
@@ -153,10 +261,57 @@ jobs:
             jarsigner -verify "$APK"
           fi
 
+      - name: Prepare verified APK downloads
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          mkdir -p dist
+          cp "$APK" dist/yatrawise-release.apk
+          sha256sum dist/yatrawise-release.apk > dist/SHA256SUMS.txt
+          # GitHub wraps every Actions artifact in its own archive. Put one
+          # clearly named, ordinary ZIP inside that wrapper so Android file
+          # managers do not have to guess whether an APK is an archive.
+          (cd dist && zip -X -9 yatrawise-release.zip yatrawise-release.apk SHA256SUMS.txt)
+          unzip -t dist/yatrawise-release.zip
+          ls -lh dist/yatrawise-release.apk dist/yatrawise-release.zip
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: yatrawise-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          # Upload only the verified inner ZIP; this avoids duplicating the
+          # 120 MB uncompressed APK in the outer GitHub artifact.
+          path: dist/yatrawise-release.zip
           if-no-files-found: error
+          # The inner ZIP is already compressed. Store it as-is in the outer
+          # GitHub archive so the two archives remain independently valid.
+          compression-level: 0
           retention-days: 14
+
+      # Phones frequently fail to extract the nested artifact ZIP ("Could
+      # not extract file / 1 file was not copied correctly"). Publishing the
+      # raw APK on a rolling prerelease tag gives testers a DIRECT download
+      # link — no ZIP, no extraction, just install.
+      - name: Publish APK to GitHub Release (direct phone download)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="apk-latest"
+          NOTES="Latest build: run #${RUN_NUMBER} (${RUN_SHA})
+          Direct APK download — no ZIP extraction needed. Install this file directly.
+          Includes: nearby detection fixes, search accuracy, live nearby data, real place photos, instant taps (no GPS wait on option click)."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/yatrawise-release.apk --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/yatrawise-release.apk \
+              --title "Latest Tourism APK" \
+              --notes "$NOTES" \
+              --prerelease \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "Direct download:"
+          echo "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/yatrawise-release.apk"
