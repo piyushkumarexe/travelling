@@ -77,6 +77,13 @@ class AutopilotService extends ChangeNotifier {
   String? _errorMessage;
   LatLng? _lastHere;
 
+  /// Resolved destination name (null when exploring around the current
+  /// position only).
+  String? get destinationName {
+    final String? n = _brief.endName;
+    return (n != null && n.trim().isNotEmpty) ? n.trim() : null;
+  }
+
   /// Session interest learning: category → accepted/visited count.
   final Map<String, int> _learned = <String, int>{};
 
@@ -115,10 +122,68 @@ class AutopilotService extends ChangeNotifier {
   // ---------------- Location ----------------
   Future<LatLng?> _here() async {
     if (_debugPosition != null) return _debugPosition;
-    final Position? p = await _location.currentPosition();
+    // Explicit accuracy path first (never a stale cache) — the dataset
+    // centre must follow the traveller's REAL position. Falls back to the
+    // fast last-known fix so a slow cold start still gets results.
+    Position? p;
+    try {
+      p = await _location.refreshPosition(timeout: const Duration(seconds: 8));
+    } catch (_) {
+      p = null;
+    }
+    if (p == null) {
+      try {
+        p = await _location.lastKnown();
+      } catch (_) {
+        p = null;
+      }
+    }
     if (p == null) return null;
     _lastHere = LatLng(p.latitude, p.longitude);
     return _lastHere;
+  }
+
+  // ---------------- Destination (end point) ----------------
+  /// True while the traveller has effectively arrived at the selected
+  /// destination (dataset then follows the live position as usual).
+  bool _atDestination = false;
+  double _destinationDistanceMeters = 0;
+
+  /// Distance from the current position to the selected destination (0 when
+  /// none / already there) — surfaced in the UI.
+  double get destinationDistanceMeters => _destinationDistanceMeters;
+  bool get atDestination => _atDestination;
+
+  /// Resolves a destination the traveller asked for: the explicit "End
+  /// destination" field, or a place named inside the free-text request
+  /// ("I want to explore Ayodhya"). Geocoding uses the existing
+  /// PlacesRepository — no second geocoding stack. On any failure the brief
+  /// is returned UNCHANGED (nearby mode around the current position).
+  Future<AutopilotBrief> _resolveDestination(AutopilotBrief brief) async {
+    if (brief.endLat != null && brief.endLng != null) return brief;
+    String? name = brief.endName;
+    if ((name == null || name.trim().isEmpty) && brief.freeText != null) {
+      name = AutopilotEngine.destinationCandidate(brief.freeText!);
+    }
+    final String q = (name ?? '').trim();
+    if (q.length < 3) return brief;
+    try {
+      final LatLng? here = await _here();
+      final List<Place> found = await _places
+          .search(q, location: here, radiusMeters: 300000)
+          .timeout(const Duration(seconds: 12));
+      if (found.isEmpty) return brief;
+      final Place d = found.first;
+      // If the geocode lands on the spot the traveller already stands at,
+      // there is nothing to redirect — stay in local nearby mode.
+      if (here != null &&
+          GeoUtils.distanceMeters(here, LatLng(d.lat, d.lng)) < 2000) {
+        return brief;
+      }
+      return brief.copyWith(endName: d.name, endLat: d.lat, endLng: d.lng);
+    } catch (_) {
+      return brief;
+    }
   }
 
   // ---------------- Persistence ----------------
@@ -187,18 +252,30 @@ class AutopilotService extends ChangeNotifier {
 
   /// "What do you want to do?" → time → [GENERATE].
   /// Works with ZERO itinerary: only location (+ optional time) required.
+  ///
+  /// A destination ("End destination" field or a place named in the free
+  /// text, e.g. "I want to explore Ayodhya") is geocoded FIRST: while the
+  /// traveller is still far from it, suggestions come from THAT place —
+  /// not from whatever street the GPS happens to be on.
   Future<bool> start(AutopilotBrief brief) async {
-    _brief = brief;
+    _loading = true;
     _error = null;
     _errorMessage = null;
     _plan = null;
     _recovery = null;
+    _suggestions = const <AutopilotSuggestion>[];
+    _notPractical = const <(AutopilotSuggestion, String)>[];
+    _dataset = const <Place>[];
+    _datasetKey = null;
+    _realTravel = const <String, int>{};
+    notifyListeners();
+    _brief = await _resolveDestination(brief);
     if (brief.availableMinutes != null) {
       final DateTime endsAt =
           now().add(Duration(minutes: brief.availableMinutes!));
       _session ??= AutopilotSession(
         id: 'ap-${now().millisecondsSinceEpoch}',
-        brief: brief,
+        brief: _brief,
         startedAt: now(),
         endsAt: endsAt,
         stops: const <AutopilotStop>[],
@@ -208,7 +285,13 @@ class AutopilotService extends ChangeNotifier {
     return recompute();
   }
 
-  /// Core engine run: location → cached dataset → rank → (real OSRM times).
+  /// Core engine run: location → (destination?) → cached dataset → rank →
+  /// (real OSRM times).
+  ///
+  /// Dataset centre: the SELECTED DESTINATION while the traveller is still
+  /// more than 25 km from it (planning a trip to e.g. Ayodhya — suggestions
+  /// must come from Ayodhya, not from the current street); once within 25 km
+  /// (arrived / on the way's last leg) the live position takes over.
   Future<bool> recompute() async {
     _loading = true;
     _error = null;
@@ -223,23 +306,41 @@ class AutopilotService extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+      final double? endLat = _brief.endLat;
+      final double? endLng = _brief.endLng;
+      final LatLng? dest = (endLat != null && endLng != null)
+          ? LatLng(endLat, endLng)
+          : null;
+      final double destDist = dest == null
+          ? 0
+          : GeoUtils.distanceMeters(here, dest);
+      _atDestination = dest == null || destDist <= 25000;
+      _destinationDistanceMeters = destDist;
+      final LatLng center = _atDestination ? here : dest!;
+      _center = center;
+      final String? originLabel = _atDestination
+          ? null
+          : 'from ${(_brief.endName ?? 'destination').trim()}';
       // Cached dataset (instant when available; SWR refresh lands later).
       final NearbyResult r =
-          await _places.nearbyAround(here, force: _dataset.isEmpty);
+          await _places.nearbyAround(center, force: _dataset.isEmpty);
       _dataset = r.places;
       _datasetKey = r.key;
       if (_dataset.isEmpty) {
         _loading = false;
         _error = AutopilotErrorKind.noResults;
-        _errorMessage = 'No suitable places found nearby.';
+        _errorMessage = _atDestination
+            ? 'No suitable places found nearby.'
+            : 'No suitable places found near '
+                '${(_brief.endName ?? 'your destination').trim()}.';
         notifyListeners();
         return false;
       }
-      _rank(here);
+      _rank(center, originLabel: originLabel);
       _loading = false;
       notifyListeners();
       // Progressive: upgrade estimates to real OSRM times in one request.
-      unawaited(_upgradeWithRealRoutes(here));
+      unawaited(_upgradeWithRealRoutes(center));
       return true;
     } on ApiException catch (e) {
       _loading = false;
@@ -269,12 +370,15 @@ class AutopilotService extends ChangeNotifier {
     }
   }
 
-  void _rank(LatLng here) {
+  /// Ranking base point (destination while remote, live position otherwise).
+  LatLng? _center;
+
+  void _rank(LatLng center, {String? originLabel}) {
     final List<Place> candidates = AutopilotEngine.candidatesFor(
       _dataset,
       _brief,
-      excludeLat: here.latitude,
-      excludeLng: here.longitude,
+      excludeLat: center.latitude,
+      excludeLng: center.longitude,
     );
     // Already-visited/skipped/removed places never come back.
     final Set<String> used = <String>{
@@ -287,11 +391,12 @@ class AutopilotService extends ChangeNotifier {
     final AutopilotRanking ranking = AutopilotEngine.rankPlaces(
       candidates: fresh,
       brief: _brief,
-      here: here,
+      here: center,
       now: now(),
       minutesLeft: minutesLeft(),
       realTravelMinutes: _realTravel,
       learnedInterest: _learned,
+      originLabel: originLabel,
     );
     _suggestions = ranking.practical;
     _notPractical = ranking.notPractical;
@@ -299,7 +404,12 @@ class AutopilotService extends ChangeNotifier {
 
   /// One OSRM table request for the top candidates → real road minutes.
   /// Best-effort: on failure the distance estimates stay (labeled "~").
-  Future<void> _upgradeWithRealRoutes(LatLng here) async {
+  ///
+  /// SANITY GUARD: a "real" road time that would imply an impossible speed
+  /// (the public OSRM server occasionally returns a short hop for a
+  /// far destination — that is how "4.9 km away (~1 min ride)" appeared)
+  /// is DISCARDED and the labelled estimate is kept instead.
+  Future<void> _upgradeWithRealRoutes(LatLng center) async {
     final List<AutopilotSuggestion> top = _suggestions.take(12).toList();
     if (top.isEmpty) return;
     try {
@@ -309,21 +419,24 @@ class AutopilotService extends ChangeNotifier {
         AutopilotMode.drive => 'car',
       };
       final List<int> minutes = await _osrm.tableMinutes(
-        origin: here,
+        origin: center,
         destinations:
             top.map((AutopilotSuggestion s) => LatLng(s.lat, s.lng)).toList(),
         mode: mode,
       );
       final Map<String, int> real = <String, int>{..._realTravel};
       for (int i = 0; i < top.length && i < minutes.length; i++) {
-        if (minutes[i] > 0) {
-          real[top[i].placeId] = minutes[i];
-          _routeCache[top[i].placeId] = minutes[i];
-        }
+        final int m = minutes[i];
+        if (m <= 0) continue;
+        final double distM = top[i].distanceMeters;
+        final double impliedKmh = distM * 60 / (1000 * m);
+        if (impliedKmh > 110) continue; // physically impossible — drop
+        real[top[i].placeId] = m;
+        _routeCache[top[i].placeId] = m;
       }
       _realTravel = real;
       if (_realTravel.isNotEmpty) {
-        _rank(here);
+        _rank(center, originLabel: _originLabelFor(center));
         notifyListeners();
       }
     } on OsrmException {
@@ -331,6 +444,12 @@ class AutopilotService extends ChangeNotifier {
     } catch (_) {
       // Never let ranking upgrade break the feature.
     }
+  }
+
+  String? _originLabelFor(LatLng center) {
+    if (_atDestination) return null;
+    final String name = (_brief.endName ?? 'destination').trim();
+    return 'from $name';
   }
 
   // ---------------- Flow: choose / next ----------------
@@ -477,6 +596,9 @@ class AutopilotService extends ChangeNotifier {
     final AutopilotBrief b = _brief;
     final LatLng? here = _lastHere;
     if (b.endLat == null || b.endLng == null || here == null) return 0;
+    // While travelling TO the destination the time budget is for the day at
+    // the place — the journey itself must not eat the plan's stops.
+    if (!_atDestination) return 0;
     return AutopilotEngine.estimateTravelMinutes(
       GeoUtils.distanceMeters(here, LatLng(b.endLat!, b.endLng!)),
       b.mode,
@@ -573,14 +695,14 @@ class AutopilotService extends ChangeNotifier {
 
   /// Nearby cafe/park options for a break, straight from the cached dataset.
   List<AutopilotSuggestion> breakOptions() {
-    final LatLng? here = _lastHere;
+    final LatLng? here = _center ?? _lastHere;
     if (here == null) return const <AutopilotSuggestion>[];
     final List<Place> calm = _dataset
         .where((Place p) =>
             p.category == 'cafe' || p.category == 'park' ||
             p.category == 'restaurant')
         .toList();
-    final AutopilotRanking r = AutopilotEngine.rankPlaces(
+      final AutopilotRanking r = AutopilotEngine.rankPlaces(
       candidates: AutopilotEngine.candidatesFor(calm, const AutopilotBrief(),
           excludeLat: here.latitude, excludeLng: here.longitude),
       brief: const AutopilotBrief(maxTravelMinutes: 20),
@@ -588,6 +710,7 @@ class AutopilotService extends ChangeNotifier {
       now: now(),
       minutesLeft: minutesLeft(),
       realTravelMinutes: _realTravel,
+      originLabel: _originLabelFor(here),
     );
     return r.practical.take(5).toList();
   }
@@ -623,10 +746,17 @@ class AutopilotService extends ChangeNotifier {
     await _arrivalSub?.cancel();
     _arrivalSub = null;
     _session = null;
+    _brief = const AutopilotBrief();
     _suggestions = const <AutopilotSuggestion>[];
     _notPractical = const <(AutopilotSuggestion, String)>[];
     _plan = null;
     _recovery = null;
+    _dataset = const <Place>[];
+    _datasetKey = null;
+    _realTravel = const <String, int>{};
+    _center = null;
+    _atDestination = false;
+    _destinationDistanceMeters = 0;
     await _save();
     notifyListeners();
   }

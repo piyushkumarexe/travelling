@@ -1066,6 +1066,12 @@ class _MapScreenState extends State<MapScreen> {
     // never shows MapTiler's "Invalid key" error tiles and never goes blank.
     final bool useMaptiler = AppConfig.mapTilerConfigured && !_maptilerRejected;
     return Scaffold(
+      // The keyboard must NOT resize the map body: when it did, the
+      // bottom-anchored floating control column (zoom / follow / my-location)
+      // was pushed up on top of the search results and covered the "Go"
+      // buttons and the "Clear" label. The search field sits at the TOP of
+      // the screen, so it never needs the keyboard inset.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: <Widget>[
           FlutterMap(
@@ -1178,7 +1184,10 @@ class _MapScreenState extends State<MapScreen> {
             Positioned(
               top: 148,
               left: 12,
-              right: 12,
+              // Indent past the floating control column (FAB 56 + margin 16
+              // + gap 4) so "Go" / "Clear" are never covered by the zoom,
+              // follow and my-location buttons.
+              right: 76,
               child: _resultsSheet(),
             ),
           if (_permissionDenied)

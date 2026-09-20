@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/geo.dart';
 import '../../../core/widgets/state_views.dart';
 import '../autopilot_engine.dart';
 import '../autopilot_models.dart';
@@ -882,6 +883,22 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
               ],
             ),
             const SizedBox(height: 6),
+            if (_svc.destinationName != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  _svc.atDestination
+                      ? '🎯 ${_svc.destinationName} — planning around '
+                          'your current position'
+                      : '🎯 ${_svc.destinationName} · '
+                          '${GeoUtils.formatDistance(_svc.destinationDistanceMeters)} '
+                          'from you — suggestions come from there',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
             Text(
                 'CURRENT: ${focus == null ? '📍 Pick your first stop' : '📍 ${focus.name}'}',
                 style: Theme.of(context).textTheme.bodyMedium),

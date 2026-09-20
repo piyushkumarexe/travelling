@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
@@ -133,6 +134,11 @@ class MainActivity : FlutterActivity() {
                             result.error("permission", "SEND_SMS not granted", null)
                         } else {
                             try {
+                                // "queued" = handed to the radio (callbacks follow);
+                                // "composer" = the device's SMS app was opened with
+                                // the message pre-filled (user presses Send) — an
+                                // HONEST hand-off used when the OEM security layer
+                                // blocks direct SmsManager sends.
                                 result.success(queueSmsTracked(ref, destination, body))
                             } catch (e: Exception) {
                                 // Never swallow the OS reason — Dart shows it
@@ -207,8 +213,10 @@ class MainActivity : FlutterActivity() {
     // until a callback arrives the state is simply "pending".
 
     @SuppressLint("UnsafeProtectedBroadcastReceiver")
-    private fun queueSmsTracked(ref: String, destination: String, body: String): Boolean {
-        val sms = smsManager() ?: return false
+    private fun queueSmsTracked(ref: String, destination: String, body: String): String {
+        // No SmsManager at all is a hard failure — propagate so Dart shows
+        // the exact reason instead of pretending the send was queued.
+        val sms = smsManager() ?: throw Exception("No SMS manager available")
         // ONE receiver per tracked message: re-registered for THIS ref so a
         // follow-up send (new ref) still receives its own sent/delivery
         // callbacks instead of the previous message's filter.
@@ -260,15 +268,61 @@ class MainActivity : FlutterActivity() {
             Intent("$ref.delivered").setPackage(packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        try {
-            return sendOn(sms, destination, body, sentIntent, deliveryIntent)
-        } catch (e: SecurityException) {
-            // OEM / Android-14 security layer blocking the subscription-
-            // specific send (getGroupIdLevel1 class). The BASE manager is a
-            // different code path and often still works.
-            val base = baseSmsManager() ?: throw e
-            if (base === sms) throw e
-            return sendOn(base, destination, body, sentIntent, deliveryIntent)
+        // Try EVERY distinct SmsManager variant before giving up: on
+        // some OEM builds the subscription-specific instance throws where
+        // the base one works (and vice versa).
+        val managers = LinkedHashSet<SmsManager>()
+        managers.add(sms)
+        baseSmsManager()?.let { managers.add(it) }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            try {
+                @Suppress("DEPRECATION")
+                managers.add(SmsManager.getDefault())
+            } catch (_: Exception) {
+            }
+        }
+        var lastSecurity: SecurityException? = null
+        for (m in managers) {
+            try {
+                if (sendOn(m, destination, body, sentIntent, deliveryIntent)) {
+                    return "queued"
+                }
+            } catch (e: SecurityException) {
+                lastSecurity = e
+            }
+        }
+        // Direct send is blocked by the phone's SECURITY LAYER even with
+        // SEND_SMS granted (getGroupIdLevel1 class — known on Xiaomi/MIUI
+        // and several Android 14 builds). The default SMS app holds the
+        // system's own SMS privileges: hand the FULL message off there,
+        // pre-filled, and report it honestly as a "composer" hand-off.
+        if (sendViaSmsApp(destination, body)) return "composer"
+        throw lastSecurity ?: Exception("All SMS send paths failed")
+    }
+
+    /**
+     * Opens the device's DEFAULT SMS app with [body] pre-filled for
+     * [destination].
+     *
+     * This is the honest last-resort path when the OEM security layer blocks
+     * direct SmsManager sends even though SEND_SMS is granted (the
+     * getGroupIdLevel1 SecurityException class). The SMS app itself holds
+     * the system's SMS privileges, so the message goes out the moment the
+     * traveler taps Send in the SMS app. Returns true only when the app
+     * actually opened.
+     */
+    private fun sendViaSmsApp(destination: String, body: String): Boolean {
+        return try {
+            val intent =
+                Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$destination")).apply {
+                    putExtra(Intent.EXTRA_SUBJECT, "YatraWise emergency location")
+                    putExtra(Intent.EXTRA_SMSP_BODY, body)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -369,9 +423,11 @@ class MainActivity : FlutterActivity() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Queues the message with the radio. True when handed off successfully.
+    /** Queues the message with the radio. True when handed off successfully
+     *  — either to the radio directly or (when the OEM security layer blocks
+     *  direct sends) to the default SMS app with the message pre-filled.
      *  Handles the Xiaomi/Android-14 SecurityException(getGroupIdLevel1) by
-     *  falling back from subscription-specific to base SmsManager. */
+     *  falling back across SmsManager variants, then to the SMS app. */
     private fun queueSms(destination: String, body: String): Boolean {
         val sms: SmsManager? = smsManager()
         if (sms == null) return false
@@ -386,18 +442,22 @@ class MainActivity : FlutterActivity() {
         } catch (e: SecurityException) {
             // Subscription-specific manager blocked by OEM security layer.
             val base = baseSmsManager()
-            if (base == null || base === sms) return false
-            try {
-                val parts = base.divideMessage(body)
-                if (parts.size <= 1) {
-                    base.sendTextMessage(destination, null, body, null, null)
-                } else {
-                    base.sendMultipartTextMessage(destination, null, parts, null, null)
+            if (base != null && base !== sms) {
+                try {
+                    val parts = base.divideMessage(body)
+                    if (parts.size <= 1) {
+                        base.sendTextMessage(destination, null, body, null, null)
+                    } else {
+                        base.sendMultipartTextMessage(destination, null, parts, null, null)
+                    }
+                    return true
+                } catch (_: Exception) {
+                    // Fall through to the SMS-app hand-off.
                 }
-                true
-            } catch (_: Exception) {
-                false
             }
+            // Honest last resort: the default SMS app holds the system's
+            // own SMS privileges (see sendViaSmsApp).
+            return sendViaSmsApp(destination, body)
         } catch (_: Exception) {
             false
         }

@@ -262,6 +262,39 @@ void main() {
           <Place>[vilhelmina, tustin], 'transport', null);
       expect(kept.length, 2);
     });
+
+    test('specific query: geocoder fuzzy noise (Nepal / New Delhi) is dropped',
+        () {
+      // User-reported: "new public college lucknow" from Mau (UP) returned
+      // Nepal (347 km), New Delhi (425 km) and नेपाल instead of the college.
+      final gm.LatLng mau = const gm.LatLng(26.9742, 82.5244);
+      final Place nepal = _p('Nepal', 28.3949, 84.1241,
+          address: 'Nepal', country: 'Nepal');
+      final Place newDelhi = _p('New Delhi', 28.6519, 77.2315,
+          address: 'New Delhi, India', state: 'Delhi', country: 'India');
+      final Place nepalDevanagari = _p('नेपाल', 28.3949, 84.1241,
+          country: 'Nepal');
+      final Place realCollege = _p('New Public College', 26.8467, 80.9462,
+          address: 'Near Hazratganj, Lucknow', city: 'Lucknow',
+          state: 'Uttar Pradesh', country: 'India');
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[nepal, newDelhi, nepalDevanagari, realCollege],
+          'new public college lucknow',
+          mau);
+      expect(kept.map((Place p) => p.name).toList(),
+          <String>['New Public College']);
+    });
+
+    test('specific query: a real nearby match with a shared token is kept',
+        () {
+      final gm.LatLng mau = const gm.LatLng(26.9742, 82.5244);
+      final Place publicCollege = _p('Public College', 26.98, 82.53,
+          address: 'Mau', city: 'Mau', country: 'India');
+      final List<Place> kept = PlaceRanking.filterRelevant(
+          <Place>[publicCollege], 'new public college lucknow', mau);
+      expect(kept.map((Place p) => p.name).toList(),
+          <String>['Public College']);
+    });
   });
 
   group('PlaceRanking — specific-place accuracy (user-reported bug)', () {

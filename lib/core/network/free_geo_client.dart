@@ -3374,14 +3374,35 @@ class PlaceRanking {
         .split(RegExp(r'\s+'))
         .where((String w) => w.isNotEmpty)
         .toList();
+    final bool specific = tokens.length >= 2;
     // Far results worth keeping: the query names their locality, or the
     // query is a specific multi-word name and this place IS that name.
     bool keepFar(Place p) =>
         queryNamesLocality(p, t) ||
-        (tokens.length >= 2 && isExactNameMatch(p, t));
+        (specific && isExactNameMatch(p, t));
+    // A SPECIFIC multi-word place-name query ("new public college lucknow")
+    // only keeps a result when the place actually MATCHES the query — the
+    // place name/address shares a significant token with it. Without this,
+    // geocoder fuzzy-matching filled the list with admin noise: "Nepal",
+    // "New Delhi" and "नेपाल" for a college search in Lucknow. Single-word
+    // queries keep the legacy behaviour (a generic word like "school" may
+    // legitimately match a nearby place of the same name).
+    bool nameRelevant(Place p) {
+      if (!specific) return true;
+      final String hay =
+          '${p.name} ${p.address ?? ''} ${p.city ?? ''} ${p.state ?? ''}'
+              .toLowerCase();
+      for (final String tok in tokens) {
+        if (tok.length >= 4 && hay.contains(tok)) return true;
+      }
+      return false;
+    }
+
     // Keep all nearby places within 35km (covering the entire metro area)
     List<Place> within35 = all
-        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 35000)
+        .where((Place p) =>
+            GeoUtils.distanceMeters(near, p.coords) <= 35000 &&
+            nameRelevant(p))
         .toList();
     if (within35.isNotEmpty) {
       final List<Place> keep = List<Place>.from(within35);
@@ -3394,7 +3415,9 @@ class PlaceRanking {
       return keep;
     }
     List<Place> within100 = all
-        .where((Place p) => GeoUtils.distanceMeters(near, p.coords) <= 100000)
+        .where((Place p) =>
+            GeoUtils.distanceMeters(near, p.coords) <= 100000 &&
+            nameRelevant(p))
         .toList();
     if (within100.isNotEmpty) {
       final List<Place> keep = List<Place>.from(within100);
@@ -3411,16 +3434,10 @@ class PlaceRanking {
           GeoUtils.distanceMeters(near, p.coords) <= 500000;
       (isClose ? close : far).add(p);
     }
-    if (close.isNotEmpty) {
-      final List<Place> keep = List<Place>.from(close);
+    if (close.isNotEmpty || specific) {
+      final List<Place> keep = close.where(nameRelevant).toList();
       keep.addAll(far.where(keepFar));
       return keep;
-    }
-    if (tokens.length >= 2) {
-      final List<Place> exact = far
-          .where((Place p) => p.name.toLowerCase().trim() == t)
-          .toList();
-      if (exact.isNotEmpty) return exact;
     }
     return const <Place>[];
   }

@@ -31,6 +31,11 @@ enum EmergencySmsStatus {
   noSim('No SIM card'),
   noCellular('No cellular service'),
   queued('Handed to the radio…'),
+  // The phone's security layer blocked the direct SmsManager send, so the
+  // device's own SMS app was opened with the FULL message pre-filled. The
+  // SMS app holds the system's SMS privileges — one tap of Send in that
+  // app delivers it. This is an honest hand-off, not a "sent" claim.
+  smsAppOpened('Opened your SMS app — press Send there'),
   sent('Sent (radio accepted)'),
   delivered('Delivered (carrier confirmed)'),
   failed('Failed');
@@ -201,12 +206,15 @@ class EmergencySmsService {
 
     // 3) Location: bounded fresh-fix attempt, then the cached last-known
     //    fix (LocationService already persists it on-device). GPS itself
-    //    needs no internet — only satellite signal.
+    //    needs no internet — only satellite signal. refreshPosition is the
+    //    explicit ACCURACY path (never returns a stale cache): an emergency
+    //    message must carry a real GPS fix, accepting the shortest
+    //    available error within the bounded wait.
     await _setStatus(EmergencySmsStatus.acquiringLocation);
     Position? pos;
     bool fresh = false;
     try {
-      pos = await _location.getCurrentLocation(timeout: gpsTimeout);
+      pos = await _location.refreshPosition(timeout: gpsTimeout);
     } catch (_) {
       pos = null;
     }
@@ -295,12 +303,14 @@ class EmergencySmsService {
       }
     });
 
-    await _setStatus(EmergencySmsStatus.queued);
-    bool queued = false;
+    // Native returns "queued" (radio hand-off, callbacks follow) or
+    // "composer" (direct sends blocked by the phone's security layer — the
+    // device's SMS app was opened with the message pre-filled instead).
+    String outcome = '';
     try {
-      queued = await _channel.invokeMethod<bool>('sendSmsTracked',
+      outcome = await _channel.invokeMethod<String>('sendSmsTracked',
               <String, dynamic>{'ref': ref, 'to': phone, 'text': text}) ??
-          false;
+          '';
     } on PlatformException catch (e) {
       if (e.code == 'permission') {
         await _setStatus(EmergencySmsStatus.permissionDenied);
@@ -315,26 +325,44 @@ class EmergencySmsService {
         return EmergencySmsResult(
             status: EmergencySmsStatus.failed,
             detail: securityBlocked
-                ? 'Blocked by your phone\'s security layer '
-                    '($reason). Fix: open Android Settings → Apps → this app '
-                    '→ Permissions → SMS = Allow (on Xiaomi/MIUI also enable '
-                    'it in Security app → Permissions), then send the test '
-                    'again. We retried on both SIM managers before showing '
-                    'this.'
+                ? 'Blocked by your phone\'s security layer ($reason) AND '
+                    'no SMS app could be opened to pre-fill the message. '
+                    'The SMS permission IS granted at the Android level — '
+                    'this is the OEM layer: on Xiaomi/MIUI enable Settings '
+                    '→ Apps → this app → Permissions → SMS (send) = Allow '
+                    'AND Security app → Permissions → SMS permissions → '
+                    'this app = Allow, then force-stop this app and test '
+                    'again. We tried every SmsManager variant before '
+                    'showing this.'
                 : 'Android refused the SMS send ($reason). This is the exact '
                     'OS/radio error.');
       }
-      queued = false;
+      outcome = '';
     } catch (_) {
-      queued = false;
+      outcome = '';
     }
-    if (!queued) {
+    if (outcome == 'composer') {
+      // Honest hand-off: the full message is pre-filled in the device's
+      // own SMS app — the traveler presses Send there. Until then we do
+      // NOT claim "sent".
+      await _setStatus(EmergencySmsStatus.smsAppOpened);
+      return const EmergencySmsResult(
+          status: EmergencySmsStatus.smsAppOpened,
+          detail:
+              'Your phone blocks direct app SMS even though the SMS '
+              'permission is granted (OEM security layer). Your SMS app '
+              'was opened with the full message pre-filled — press Send '
+              'there to deliver it. On Xiaomi/MIUI you can also allow: '
+              'Settings → Apps → this app → Permissions → SMS (send), '
+              'then force-stop this app and retest.');
+    }
+    if (outcome != 'queued') {
       await _setStatus(EmergencySmsStatus.noCellular);
       return const EmergencySmsResult(
           status: EmergencySmsStatus.noCellular,
           detail:
-              'The message could not be handed to the radio (no service or '
-              'no SIM).');
+              'The message could not be handed to the radio (no service, '
+              'no SIM) and no SMS app was available to pre-fill it.');
     }
 
     // Radio callbacks usually arrive within ~10 s; not guaranteed at all.

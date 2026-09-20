@@ -134,6 +134,12 @@ class LocationService {
     return pos;
   }
 
+  /// Precision target: a fix at or better than this is accepted INSTANTLY.
+  /// Coarser fixes are only used when the timeout expires — but even then
+  /// the BEST (smallest reported error) fix seen is returned, never an
+  /// arbitrary first emission.
+  static const double _acceptableAccuracyMeters = 50;
+
   Future<Position?> _obtainFresh({Duration timeout = const Duration(seconds: 8)}) async {
     try {
       final bool serviceOn = await Geolocator.isLocationServiceEnabled();
@@ -146,30 +152,47 @@ class LocationService {
           p == LocationPermission.deniedForever) {
         return null;
       }
-      // Three quick tiers instead of a long ladder:
-      //   1. the position STREAM's first emission — on most devices the
-      //      fused provider already knows roughly where we are and emits
-      //      within a second or two (this is what the blue dot on the map
-      //      uses), far faster than a blocking high-accuracy fix;
-      //   2. a blocking best-accuracy fix;
-      //   3. the OS location-manager fallback for devices whose fused
-      //      provider is unreliable.
-      // None of these ever stalls the UI for minutes on a cold start.
-      try {
-        final Position streamed = await Geolocator.getPositionStream(
-          locationSettings: LocationSettings(
-            accuracy: LocationAccuracy.best,
-            distanceFilter: 0,
-          ),
-        )
-            .first
-            .timeout(const Duration(seconds: 5));
-        _cached = streamed;
-        await _writeCache(streamed);
-        return streamed;
-      } catch (_) {
-        // Fall through to the blocking tiers.
+      // Accuracy-aware collection on the fused position stream:
+      //   - the stream's first emission is often a coarse NETWORK fix
+      //     (±100–500 m — this used to be returned blindly, which made
+      //     "current location" jump around and put nearby/search results
+      //     in the wrong street or even the wrong city);
+      //   - a fix already within [_acceptableAccuracyMeters] is returned
+      //     instantly (fast path, same behaviour as before for good GPS);
+      //   - otherwise we keep listening within the HARD timeout, tracking
+      //     the best (smallest error) fix seen, and return that — the GPS
+      //     fix typically arrives within 2–6 s of the network fix.
+      // At the deadline we return the best fix seen (even coarse — callers
+      // like the SOS path label honesty via age/accuracy) or null when
+      // nothing was emitted.
+      final Completer<Position?> accepted = Completer<Position?>();
+      Position? best;
+      final StreamSubscription<Position> sub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          distanceFilter: 0,
+        ),
+      ).listen((Position p) {
+        if (best == null || (p.accuracy > 0 && p.accuracy < best.accuracy)) {
+          best = p;
+        }
+        if (p.accuracy <= _acceptableAccuracyMeters && !accepted.isCompleted) {
+          accepted.complete(p);
+        }
+      }, onError: (Object _) {});
+
+      final Position? result = await accepted.future.timeout(
+        timeout,
+        onTimeout: () => best,
+      );
+      await sub.cancel();
+      if (result != null) {
+        _cached = result;
+        await _writeCache(result);
+        return result;
       }
+      // No stream emission in time — the legacy blocking tiers as a last
+      // resort (bounded so the hard cap still holds).
       for (final (LocationAccuracy accuracy, int seconds, bool forceManager)
           in const <(LocationAccuracy, int, bool)>[
         (LocationAccuracy.best, 10, false),

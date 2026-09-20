@@ -109,6 +109,68 @@ class AutopilotEngine {
   }
 
   /// ----------------------------------------------
+  /// Destination extraction from free text ("I want to explore Ayodhya").
+  /// ----------------------------------------------
+  static final Set<String> _destinationStopwords = <String>{
+    // pronouns / auxiliaries
+    'i', 'we', 'my', 'me', 'mine', 'you', 'your', 'is', 'are', 'was', 'be',
+    'want', 'wanted', 'would', 'will', 'like', 'likes', 'love', 'going',
+    'go', 'get', 'got', 'plan', 'planning', 'make', 'makes', 'need',
+    // prepositions / articles / conjunctions
+    'for', 'in', 'at', 'near', 'around', 'to', 'the', 'a', 'an', 'of',
+    'and', 'or', 'with', 'from', 'by', 'about', 'some', 'something', 'else',
+    // activity words (parseBrief already turns these into interests/modes)
+    'explore', 'exploring', 'visit', 'visiting', 'see', 'seeing',
+    'sightseeing', 'sightsee', 'travel', 'travelling', 'traveling',
+    'eat', 'eating', 'food', 'shopping', 'shop', 'relax', 'relaxing',
+    'chill', 'entertainment', 'historical', 'history', 'family', 'friends',
+    'friend', 'solo', 'alone', 'work', 'working', 'laptop', 'road', 'trip',
+    'biking', 'cycling', 'bike', 'driving', 'drive', 'walking', 'walk',
+    'cycle', 'cyclo',
+    // time / budget words
+    'hours', 'hour', 'hrs', 'hr', 'minutes', 'minute', 'mins', 'min',
+    'day', 'days', 'morning', 'afternoon', 'evening', 'night', 'today',
+    'tomorrow', 'budget', 'rupees', 'rupee', 'rs', 'cost', 'cheap',
+    'expensive', 'km', 'kilometer', 'kilometers',
+    // generic place words
+    'places', 'place', 'spots', 'spot', 'somewhere', 'anywhere', 'here',
+    'there', 'things', 'thing', 'attractions', 'attraction', 'tour', 'tours',
+    'sight', 'sights',
+    // common Hindi/Hinglish fillers ("main Ayodhya jaana chahta hoon")
+    'main', 'maine', 'hain', 'hai', 'jaana', 'jaane', 'jaau', 'jaun', 'ja',
+    'chahta', 'chahata', 'chahati', 'chahti', 'hoon', 'ho', 'karna', 'karo',
+    'kare', 'chahiye', 'thoda', 'thodi', 'ke', 'ka', 'ki', 'ko', 'se',
+    'mein', 'me', 'par', 'liye', 'kuch', 'kisi', 'aur', 'yahan', 'wahan',
+    'dekha', 'dekhe', 'dikhao', 'lejaao',
+  };
+
+  /// The place-name candidate inside a free-text request, or null when the
+  /// text names no place. Strips stopwords / interest words / pure numbers
+  /// so "I want to explore Ayodhya in 2 hours with friends" → "ayodhya".
+  /// The SERVICE geocodes the result — the engine never invents coordinates.
+  ///
+  /// Generic fragments ("old city", "some market") are NOT candidates: at
+  /// least one kept token must be long enough to be a real place name,
+  /// otherwise a geocode could redirect the whole session somewhere random.
+  static String? destinationCandidate(String freeText) {
+    final List<String> tokens = freeText
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9\u0900-\u097F]+'))
+        .where((String t) => t.isNotEmpty)
+        .toList();
+    final List<String> kept = <String>[];
+    for (final String t in tokens) {
+      if (RegExp(r'^\d+$').hasMatch(t)) continue; // pure number = a duration
+      if (t.length < 3) continue;
+      if (_destinationStopwords.contains(t)) continue;
+      kept.add(t);
+    }
+    if (kept.isEmpty) return null;
+    if (!kept.any((String t) => t.length >= 5)) return null;
+    return kept.join(' ');
+  }
+
+  /// ----------------------------------------------
   /// Natural-language brief parsing (deterministic — no fake AI).
   /// ----------------------------------------------
   static AutopilotBrief parseBrief(String input, {AutopilotBrief? base}) {
@@ -245,6 +307,9 @@ class AutopilotEngine {
   /// when the route request succeeded (missing → distance estimate, always
   /// displayed with "~").
   /// ----------------------------------------------
+  /// [originLabel] replaces the plain "away" in the distance reason when the
+  /// ranking base is NOT the traveller's nose (e.g. exploring a destination
+  /// city from a distance: "4.9 km from Ayodhya").
   static AutopilotRanking rankPlaces({
     required List<Place> candidates,
     required AutopilotBrief brief,
@@ -253,6 +318,7 @@ class AutopilotEngine {
     required int minutesLeft,
     Map<String, int> realTravelMinutes = const <String, int>{},
     Map<String, int> learnedInterest = const <String, int>{},
+    String? originLabel,
     int limit = 24,
   }) {
     final int? maxTravel = brief.maxTravelMinutes;
@@ -316,7 +382,8 @@ class AutopilotEngine {
       if (realKnown) score += 4; // real route data is more trustworthy
 
       final List<String> reasons = <String>[
-        '${GeoUtils.formatDistance(dist)} away (~$travelMin min ${_modeWord(brief.mode)})',
+        '${GeoUtils.formatDistance(dist)} ${originLabel ?? 'away'} '
+            '(~$travelMin min ${_modeWord(brief.mode)})',
         if (visitFits && openUntil != null)
           'Open until ${_hhmm(openUntil)} — enough time to visit'
         else if (hoursKnown && openUntil != null)
@@ -364,7 +431,40 @@ class AutopilotEngine {
     }
     ok.sort((AutopilotSuggestion a, AutopilotSuggestion b) =>
         b.score.compareTo(a.score));
-    return AutopilotRanking(ok.take(limit).toList(), rejected);
+    return AutopilotRanking(diversify(ok.take(limit).toList()), rejected);
+  }
+
+  /// Light category diversity for the visible top of the list.
+  ///
+  /// In places where one tag dominates the OSM data (a temple town where
+  /// nearly every "attraction" is a temple or mosque) a pure score sort
+  /// shows one monotone card stack. In the first [topN] slots at most [cap]
+  /// entries per category are allowed; capped entries are NOT discarded —
+  /// they slide down in score order and the rest of the list keeps its
+  /// original ranking. When the area genuinely has only one category the
+  /// output is identical to a plain sort (honest, no invented variety).
+  static List<AutopilotSuggestion> diversify(
+    List<AutopilotSuggestion> ranked, {
+    int topN = 9,
+    int cap = 3,
+  }) {
+    if (ranked.length <= cap) return ranked;
+    final Map<String, int> counts = <String, int>{};
+    final List<AutopilotSuggestion> head = <AutopilotSuggestion>[];
+    final List<AutopilotSuggestion> tail = <AutopilotSuggestion>[];
+    for (final AutopilotSuggestion s in ranked) {
+      if (head.length < topN) {
+        final String cat = s.category.isEmpty ? '_' : s.category;
+        final int c = counts[cat] ?? 0;
+        if (c < cap) {
+          counts[cat] = c + 1;
+          head.add(s);
+          continue;
+        }
+      }
+      tail.add(s);
+    }
+    return <AutopilotSuggestion>[...head, ...tail];
   }
 
   /// ----------------------------------------------

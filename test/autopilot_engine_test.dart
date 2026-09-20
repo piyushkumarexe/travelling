@@ -198,4 +198,84 @@ void main() {
     expect(
         AutopilotEngine.transportEstimateRs(5000, AutopilotMode.walk), 0);
   });
+
+  test('DESTINATION: free text names the place it wants to explore', () {
+    expect(AutopilotEngine.destinationCandidate('I want to explore ayodhya'),
+        'ayodhya');
+    expect(
+        AutopilotEngine.destinationCandidate(
+            'I want to explore Ayodhya in 2 hours with friends'),
+        'ayodhya');
+    expect(
+        AutopilotEngine.destinationCandidate('2 hours in lucknow old city'),
+        'lucknow old city');
+    // No place named → null (local nearby mode).
+    expect(AutopilotEngine.destinationCandidate('I want to eat food'), isNull);
+    expect(AutopilotEngine.destinationCandidate('explore'), isNull);
+    // Hindi fillers are stripped, the place name survives.
+    expect(
+        AutopilotEngine.destinationCandidate('main ayodhya jaana chahta hoon'),
+        'ayodhya');
+  });
+
+  test('originLabel: remote planning says "from <destination>"', () {
+    final List<Place> dataset = <Place>[
+      _p('1', 'Garden Cafe', 'cafe', 1.2, <String, dynamic>{}),
+    ];
+    final AutopilotRanking r = AutopilotEngine.rankPlaces(
+      candidates: dataset,
+      brief: const AutopilotBrief(),
+      here: here,
+      now: now,
+      minutesLeft: 240,
+      originLabel: 'from Ayodhya',
+    );
+    expect(r.practical.first.reasons.first, contains('from Ayodhya'));
+    // No label → legacy wording.
+    final AutopilotRanking r2 = AutopilotEngine.rankPlaces(
+      candidates: dataset,
+      brief: const AutopilotBrief(),
+      here: here,
+      now: now,
+      minutesLeft: 240,
+    );
+    expect(r2.practical.first.reasons.first, contains('away'));
+  });
+
+  test('DIVERSITY: a temple town\'s top list is not one monotone category',
+      () {
+    AutopilotSuggestion s(String id, String cat, double score) =>
+        AutopilotSuggestion(
+          placeId: id,
+          name: id,
+          lat: 25.7,
+          lng: 82.6,
+          category: cat,
+          score: score,
+          reasons: const <String>[],
+          travelMinutes: 5,
+          distanceMeters: 1000,
+          estimated: true,
+          visitMinutes: 30,
+        );
+    final List<AutopilotSuggestion> ranked = <AutopilotSuggestion>[
+      s('t1', 'attraction', 90),
+      s('t2', 'attraction', 89),
+      s('t3', 'attraction', 88),
+      s('t4', 'attraction', 87),
+      s('t5', 'attraction', 86),
+      s('c1', 'cafe', 85),
+      s('p1', 'park', 84),
+      s('t6', 'attraction', 83),
+    ];
+    final List<AutopilotSuggestion> out = AutopilotEngine.diversify(ranked);
+    // Nothing is lost.
+    expect(out.length, ranked.length);
+    // The capped category slides down; nothing is re-ordered arbitrarily.
+    expect(
+        out.map((AutopilotSuggestion x) => x.placeId).toList(),
+        <String>['t1', 't2', 't3', 'c1', 'p1', 't4', 't5', 't6']);
+    // Small lists pass through untouched.
+    expect(AutopilotEngine.diversify(ranked.take(3).toList()).length, 3);
+  });
 }
