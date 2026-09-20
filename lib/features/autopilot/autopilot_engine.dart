@@ -140,7 +140,7 @@ class AutopilotEngine {
     'main', 'maine', 'hain', 'hai', 'jaana', 'jaane', 'jaau', 'jaun', 'ja',
     'chahta', 'chahata', 'chahati', 'chahti', 'hoon', 'ho', 'karna', 'karo',
     'kare', 'chahiye', 'thoda', 'thodi', 'ke', 'ka', 'ki', 'ko', 'se',
-    'mein', 'me', 'par', 'liye', 'kuch', 'kisi', 'aur', 'yahan', 'wahan',
+    'mein', 'par', 'liye', 'kuch', 'kisi', 'aur', 'yahan', 'wahan',
     'dekha', 'dekhe', 'dikhao', 'lejaao',
   };
 

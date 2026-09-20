@@ -173,7 +173,11 @@ class LocationService {
           distanceFilter: 0,
         ),
       ).listen((Position p) {
-        if (best == null || (p.accuracy > 0 && p.accuracy < best.accuracy)) {
+        // Local copy so the analyzer can promote the nullable (a captured
+        // mutable local does not promote across the closure boundary).
+        final Position? previousBest = best;
+        if (previousBest == null ||
+            (p.accuracy > 0 && p.accuracy < previousBest.accuracy)) {
           best = p;
         }
         if (p.accuracy <= _acceptableAccuracyMeters && !accepted.isCompleted) {
