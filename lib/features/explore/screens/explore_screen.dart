@@ -337,7 +337,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
       if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
-        _searchedRadiusMeters = searchedRadius;
         _results = places;
         _providerWarning = _c.placesRepository.backendWarning;
         _loading = false;
@@ -759,6 +758,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
       if (!mounted || requestGeneration != _queryGeneration) return;
       setState(() {
+        _searchedRadiusMeters = searchedRadius;
         // A background refresh (GPS re-run) that comes back empty must never
         // wipe out results the user is already looking at. Explicit searches
         // clear results up-front, so this only applies to that re-run.
@@ -966,7 +966,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           icon: Icons.search_off,
           title: 'No ${label.toLowerCase()} found near you',
           message:
-              'We searched ${_searchedRadiusLabel} — nothing in this '
+              'We searched $_searchedRadiusLabel — nothing in this '
               'category is mapped there yet. Try "Anywhere" for a worldwide '
               'search, or search a bigger nearby city.',
           actionLabel: 'Search anywhere',
@@ -985,7 +985,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       title:
                           'No matches for "${_query.trim().isNotEmpty ? _query.trim() : (kExploreCategoryLabels[_activeCategory] ?? _activeCategory!)}"',
                       message:
-                          'We searched ${_searchedRadiusLabel} and across '
+                          'We searched $_searchedRadiusLabel and across '
                           'multiple providers — nothing matched. Try a '
                           'different spelling, a better-known landmark, or '
                           '"Anywhere" for a worldwide search.',
@@ -996,7 +996,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       icon: Icons.search_off,
                       title: 'No places found nearby',
                       message:
-                          'We searched ${_searchedRadiusLabel} of your '
+                          'We searched $_searchedRadiusLabel of your '
                           'location — nothing was mapped there yet. Try '
                           '"Anywhere" to search the whole world, or move to '
                           'a larger town.',

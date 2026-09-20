@@ -120,14 +120,18 @@ class NotificationService {
     if (android == null) return;
     for (final _ChannelSpec c in _channelSpecs) {
       try {
-        await android.createNotificationChannel(AndroidNotificationChannel(
-          c.importance,
-          c.name,
-          description: c.description,
-          channelId: c.id,
-          enableVibration: c.importance.index >= Importance.high.index,
-          playSound: true,
-        ));
+        await android.createNotificationChannel(
+          // flutter_local_notifications v17: (channelId, name, {…}) —
+          // importance/description are NAMED parameters.
+          AndroidNotificationChannel(
+            c.id,
+            c.name,
+            description: c.description,
+            // v17 defaults are already playSound: true / enableVibration: true,
+            // so only the importance that matters per channel type is set.
+            importance: c.importance,
+          ),
+        );
       } catch (e) {
         debugPrint('NotificationService channel ${c.id} failed: $e');
       }
