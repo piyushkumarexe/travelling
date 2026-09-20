@@ -134,7 +134,7 @@ jobs:
           # installed". The permanent upload key MUST exist before anything
           # is published to the release.
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set — refusing to publish a debug-signed release APK. Add the single secret (see android/RELEASE_SIGNING_BACKUP.txt) and re-run."
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set — refusing to publish a debug-signed release APK. Add the single secret (see android/RELEASE_SIGNING.md) and re-run."
             exit 1
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.p12

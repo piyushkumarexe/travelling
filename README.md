@@ -270,7 +270,7 @@ Release builds are signed with ONE permanent certificate from the
 secret is missing, so a debug-signed APK can never be published by
 mistake (its ever-changing signature would break all updates with "App
 not installed"). Maintainer setup/rotation notes:
-[`android/RELEASE_SIGNING_BACKUP.txt`](android/RELEASE_SIGNING_BACKUP.txt).
+[`android/RELEASE_SIGNING.md`](android/RELEASE_SIGNING.md).
 
 ### Locally
 
