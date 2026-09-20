@@ -83,16 +83,29 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'active'
-        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && validCoords(request.resource.data.location.lat,
+                       request.resource.data.location.lng)
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 120;
 
-      // Owners may cancel their own active SOS; admins may resolve/cancel.
-      allow update: if (isSelf(resource.data.uid)
-        && resource.data.status == 'active'
-        && request.resource.data.status in ['cancelled', 'resolved']
-        && request.resource.data.uid == resource.data.uid)
-        || isAdmin();
+      // Owners may cancel/resolve their own active SOS; while an event is
+      // active the owner may also refresh its live location fields (live
+      // location sharing). Field changes other than the whitelisted live
+      // keys are still rejected; admins may manage everything.
+      allow update: if (
+        (isSelf(resource.data.uid)
+          && resource.data.status == 'active'
+          && request.resource.data.uid == resource.data.uid
+          && (
+            request.resource.data.status in ['cancelled', 'resolved']
+            || (
+              request.resource.data.status == resource.data.status
+              && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['status', 'kind', 'reason', 'location', 'updatedAt', 'lastLocationAt'])
+            )
+          )
+        )
+        || isAdmin());
       allow delete: if isAdmin();
     }
 
@@ -163,6 +176,102 @@ service cloud.firestore {
         && request.resource.data.body.size() <= 600;
       allow update: if isSelf(uid)
         && request.resource.data.uid == resource.data.uid;
+      allow delete: if isSelf(uid);
+    }
+
+    // ---- Travel Expense Guard: strictly owner-only expense records ----
+    // Nested under users/{uid} like itineraries; the authenticated UID must
+    // match {uid} and the document's own userId field must match too, so a
+    // user can never create/read/modify another user's expenses.
+    match /users/{uid}/expenses/{expenseId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == expenseId
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 10000000
+        && request.resource.data.currency is string
+        && request.resource.data.currency.size() >= 3
+        && request.resource.data.currency.size() <= 8
+        && request.resource.data.category in [
+          'food', 'transport', 'stay', 'tickets', 'shopping', 'fuel',
+          'activities', 'medical', 'emergency', 'other'
+        ]
+        && request.resource.data.merchant is string
+        && request.resource.data.merchant.size() <= 200
+        && request.resource.data.expenseDate is number
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number;
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 10000000;
+      allow delete: if isSelf(uid);
+    }
+
+    // Optional budget configuration (single doc per user).
+    match /users/{uid}/expenseData/{docId} {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid)
+        && (!('daily' in request.resource.data)
+            || request.resource.data.daily == null
+            || (request.resource.data.daily is number
+                && request.resource.data.daily > 0
+                && request.resource.data.daily <= 10000000));
+    }
+
+    // ---- Travel Booking Hub: user-saved booking references ----
+    // Only metadata the user enters manually (provider, reference/PNR,
+    // route text). Ownership strictly enforced; no credentials stored.
+    match /users/{uid}/bookingRefs/{bookingId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.bookingId == bookingId
+        && request.resource.data.provider is string
+        && request.resource.data.provider.size() >= 1
+        && request.resource.data.provider.size() <= 60
+        && request.resource.data.category in ['ride','flight','train','bus','hotel','carRental','activities']
+        && request.resource.data.status in ['saved','confirmed','cancelled']
+        && (!('externalReference' in request.resource.data)
+            || (request.resource.data.externalReference is string
+                && request.resource.data.externalReference.size() <= 60));
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSelf(uid);
+    }
+
+    // ---- Travel Document & Booking Vault: private per user ----
+    // Metadata only — files live in Storage (see storage.rules).
+    match /users/{uid}/travelDocuments/{documentId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.documentId == documentId
+        && request.resource.data.type in [
+          'passport', 'visa', 'idProof', 'flightTicket', 'trainTicket',
+          'busTicket', 'hotelBooking', 'cabRental', 'activityTicket',
+          'travelInsurance', 'other'
+        ]
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.uploadStatus in ['none', 'uploaded', 'uploadFailed']
+        && (!('tripId' in request.resource.data)
+            || request.resource.data.tripId == null
+            || request.resource.data.tripId is string)
+        && (!('notes' in request.resource.data)
+            || request.resource.data.notes == null
+            || (request.resource.data.notes is string
+                && request.resource.data.notes.size() <= 2000));
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.documentId == documentId;
       allow delete: if isSelf(uid);
     }
 

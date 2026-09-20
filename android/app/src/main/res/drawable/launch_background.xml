@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- YatraWise splash: warm cream background (matches brand logo) -->
+    <!-- Tourism splash: warm cream background (matches brand logo) -->
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#FEFAF1" />

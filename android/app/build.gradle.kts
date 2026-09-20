@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val localProperties = java.util.Properties()
+val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
@@ -16,10 +18,13 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 android {
     namespace = "app.roamio.tourism"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications, google_maps, geolocator, etc.
+        // which use java.time and other Java 8+ APIs on minSdk < 26.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -31,7 +36,7 @@ android {
     defaultConfig {
         applicationId = "app.roamio.tourism"
         minSdk = 23
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutterVersionCode
         versionName = flutterVersionName
         // Google Maps Android key: injected from the MAPS_ANDROID_API_KEY
@@ -48,7 +53,7 @@ android {
     // versions install directly over old ones. Local builds without the
     // keystore fall back to the debug key (development only).
     val keystorePropsFile = rootProject.file("keystore.properties")
-    val keystoreProps = java.util.Properties()
+    val keystoreProps = Properties()
     if (keystorePropsFile.exists()) {
         keystorePropsFile.inputStream().use { keystoreProps.load(it) }
     }
@@ -83,6 +88,12 @@ android {
             if (uploadStorePassword != null) storePassword = uploadStorePassword
             if (uploadKeyAlias != null) keyAlias = uploadKeyAlias
             if (uploadKeyPassword != null) keyPassword = uploadKeyPassword
+            // Installable on EVERY API 23+ device: v1 (JAR) signatures are
+            // REQUIRED on Android 6.0 (API 23, our minSdk), which cannot
+            // verify v2+ at all — a v2-only APK fails to install there.
+            // v2 keeps modern devices fast + tamper-proof.
+            isV1SigningEnabled = true
+            isV2SigningEnabled = true
         }
     }
 
@@ -97,6 +108,10 @@ android {
             isShrinkResources = false
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

@@ -1,10 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/utils/eco_math.dart';
+import '../local/eco_local_store.dart';
 import '../models/eco.dart';
 
+/// Eco score + activities. Primary store is Firestore (synced across the
+/// user's devices); when Firestore is unavailable or its rules reject the
+/// request, callers fall back to [local] so measurement still works.
 class EcoRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final EcoLocalStore local = EcoLocalStore();
 
   DocumentReference<Map<String, dynamic>> _scoreRef(String uid) =>
       _db.collection('ecoScores').doc(uid);
@@ -25,8 +30,9 @@ class EcoRepository {
           .map((d) => EcoActivity.fromMap(d.id, d.data()))
           .toList());
 
-  /// Logs an activity and atomically-ish recomputes the score for this user
-  /// (single user writes their own score doc — last write wins is fine here).
+  /// Logs an activity and recomputes the score for this user. Throws
+  /// [FirebaseException] when the cloud rejects the write — callers then use
+  /// [localAddActivity] so nothing is lost.
   Future<void> addActivity(
     String uid,
     EcoActivity activity,
@@ -48,33 +54,23 @@ class EcoRepository {
         await _scoreRef(uid).get();
     final EcoScore current =
         EcoScore.fromMap(uid, snap.exists ? snap.data() : null);
-    final EcoScore updated = _apply(current, activity);
-    await _scoreRef(uid).set(updated.toMap());
+    await _scoreRef(uid).set(EcoMath.applyActivity(current, activity).toMap());
   }
 
-  EcoScore _apply(EcoScore s, EcoActivity a) {
-    final int score = s.score + EcoMath.activityPoints(a.mode, a.distanceMeters);
-    final Map<String, double> byMode = Map<String, double>.from(s.byMode)
-      ..update(
-        a.mode,
-        (double v) => v + a.distanceMeters,
-        ifAbsent: () => a.distanceMeters,
-      );
-    final int sessions = s.sessions + 1;
-    final List<String> badges = EcoMath.badgesFor(
-      walkKm: (byMode['walk'] ?? 0) / 1000,
-      cycleKm: (byMode['cycle'] ?? 0) / 1000,
-      transitKm: (byMode['transit'] ?? 0) / 1000,
-      score: score,
-      sessions: sessions,
-    );
-    return EcoScore(
-      uid: s.uid,
-      score: score,
-      byMode: byMode,
-      badges: badges,
-      sessions: sessions,
-      updatedAt: DateTime.now(),
-    );
+  /// On-device fallback: same score math, stored locally. Returns the
+  /// updated score so the UI can refresh immediately.
+  Future<EcoScore> localAddActivity(String uid, EcoActivity activity) =>
+      local.addActivity(uid, activity);
+
+  /// True when [e] means the cloud rejected the request (rules/offline) and a
+  /// local fallback is the right move.
+  static bool shouldFallback(Object e) {
+    if (e is FirebaseException) {
+      final String code = e.code.toLowerCase();
+      return code.contains('permission-denied') ||
+          code.contains('unavailable') ||
+          code.contains('unauthenticated');
+    }
+    return false;
   }
 }
