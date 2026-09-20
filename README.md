@@ -630,6 +630,20 @@ do. We'll help you figure out what to do next."**
 - Blockchain is intentionally **not** claimed or used; the Digital ID is
   modular so a chain-based anchoring could be added later.
 
+### Housekeeping (optional, no code impact)
+
+`rateLimits/{uid}:{endpoint}:{minute}` documents are written on every proxied
+call and carry an `expiresAt` field, but nothing deletes them. Firestore TTL is
+the right tool and is a one-time project command (no deploy needed):
+
+```bash
+gcloud firestore fields ttls update expiresAt --collection-group=rateLimits \
+  --database=(default) --project=tourism-39425
+```
+
+Until that is run the collection simply grows ~1 small doc per active minute per
+user — harmless for correctness, only storage cost.
+
 ## Bug-fix pass (2026-09-20) — **deploy required**
 
 Fixed after a full read of the shipped code. Both of these commands must be run

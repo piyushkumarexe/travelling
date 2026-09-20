@@ -44,10 +44,13 @@ jobs:
           echo "::error::$MSG"
 
       - name: Analyze
-        # `--fatal-warnings` is deliberately NOT used: `deprecated_member_use`
-        # is set to `ignore` in analysis_options.yaml and a strict pass would
-        # fail on every dependency bump. The step is named after what it
-        # actually runs (it used to claim "fatal warnings").
+        # No flag needed: `flutter analyze` already treats WARNINGS and ERRORS
+        # as fatal (that is what fails this step), while INFO-level lints do
+        # not. `deprecated_member_use` is set to `ignore` in
+        # analysis_options.yaml, so dependency drift shows up only when a
+        # deprecated API is removed from the SDK — that is the one strictness
+        # this repo deliberately trades away. (The step used to be labelled
+        # "fatal warnings", which described the default rather than an option.)
         run: set -o pipefail; flutter analyze 2>&1 | tee analyze.log
 
       - name: Surface analyze errors as annotations
