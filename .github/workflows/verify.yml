@@ -37,32 +37,51 @@ jobs:
       - name: Analyze
         id: analyze
         run: |
-          set -o pipefail
-          flutter analyze --no-pub 2>&1 | tee analyze.log || STATUS=1
-          # The artifact storage host is not reachable from every dev sandbox,
-          # so the issues are surfaced as ANNOTATIONS (readable through the
-          # checks API) as well as in the log.
-          if [ -s analyze.log ]; then
-            grep -E '(error|warning|info)( +)•' analyze.log | head -n 60 | while IFS= read -r line; do
-              MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-              case "$line" in
-                *' error •'*) echo "::error::$MSG" ;;
-                *) echo "::warning::$MSG" ;;
-              esac
-            done
+          set +e
+          flutter analyze --no-pub > analyze.log 2>&1
+          CODE=$?
+          if [ "$CODE" != 0 ]; then
+            flutter analyze > analyze-plain.log 2>&1
+            echo "flutter analyze (no --no-pub) exit=$CODE" >> analyze.log
+            cat analyze-plain.log >> analyze.log
           fi
-          echo "status=${STATUS:-0}" >> "$GITHUB_OUTPUT"
+          # Every issue line becomes an annotation: the artifact store is not
+          # reachable from every dev sandbox, so annotations are the reliable
+          # channel for reading CI results.
+          tail -n 55 analyze.log | while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
+            case "$line" in
+              *'error •'*) echo "::error::$MSG" ;;
+              *'warning •'*) echo "::warning::$MSG" ;;
+              *) echo "::notice::$MSG" ;;
+            esac
+          done
+          if [ "$CODE" = 0 ]; then
+            echo "status=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
 
       - name: Test
         id: test
         run: |
-          set -o pipefail
-          flutter test 2>&1 | tee test.log || STATUS=1
-          grep -E '\[E\]|Failed to load|Some tests failed|Expected:|Actual:' test.log \
-            | head -n 40 | while IFS= read -r line; do
-              echo "::error::$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')"
-            done
-          echo "status=${STATUS:-0}" >> "$GITHUB_OUTPUT"
+          set +e
+          flutter test > test.log 2>&1
+          CODE=$?
+          tail -n 45 test.log | while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
+            echo "::notice::$MSG"
+          done
+          if [ "$CODE" = 0 ]; then
+            echo "All tests passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "status=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
 
       - name: Sanity-check security rules
         # No emulator/credentials needed: this catches the two classes of
