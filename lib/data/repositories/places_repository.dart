@@ -62,15 +62,22 @@ class PlacesRepository {
   List<Place> _lucknowFallback(String query, LatLng? location) =>
       _free.lucknowFallback(query, location);
 
+  /// [biasToUserLocation] decides whether the traveller's position is allowed
+  /// to influence *which* places qualify. Explore turns it off for "Anywhere":
+  /// searching beaches from Lucknow must still be able to return Goa. The
+  /// position is then used only to sort and label results by distance — never
+  /// as a search bias for the backend or a radius filter.
   Future<List<Place>> search(
     String query, {
     LatLng? location,
     double? radiusMeters,
     List<String>? types,
     bool forceFresh = false,
+    bool biasToUserLocation = true,
   }) async {
     final String q = query.trim();
     if (q.isEmpty) return const <Place>[];
+    final double? biasRadius = biasToUserLocation ? radiusMeters : null;
 
     // Keep the verified local fallback for the (rare) case where every live
     // provider fails, but never mix it into live results — directory records
@@ -89,7 +96,7 @@ class PlacesRepository {
         q,
         near: location,
         types: types,
-        radiusMeters: radiusMeters ?? 25000,
+        radiusMeters: biasRadius ?? 0.0,
         forceFresh: forceFresh,
       )),
       if (configured)
@@ -97,8 +104,8 @@ class PlacesRepository {
           try {
             final List<Place> places = await _backendSearch(
               q,
-              location,
-              radiusMeters,
+              biasToUserLocation ? location : null,
+              biasRadius,
               types,
             ).timeout(const Duration(seconds: 8));
             _recordBackendSuccess();
@@ -144,7 +151,7 @@ class PlacesRepository {
       for (final String t in types) {
         datasetCats.addAll(_datasetCategoriesFor(t) ?? const <String>{});
       }
-      if (datasetCats.isNotEmpty) {
+      if (datasetCats.isNotEmpty && biasToUserLocation) {
         try {
           final double radius =
               radiusMeters ?? FreeGeoClient.kNearbyRadiusMeters;
@@ -175,10 +182,10 @@ class PlacesRepository {
     // real monument is 300 km away and the traveller still wants it.
     final bool categoryQuery = (types != null && types.isNotEmpty) ||
         _free.isCategoryQuery(q, types);
-    if (location != null && categoryQuery && radiusMeters != null) {
+    if (location != null && categoryQuery && biasRadius != null) {
+      final double cap = biasRadius;
       final List<Place> inside = out
-          .where((Place p) =>
-              GeoUtils.distanceMeters(location, p.coords) <= radiusMeters)
+          .where((Place p) => GeoUtils.distanceMeters(location, p.coords) <= cap)
           .toList();
       if (inside.isNotEmpty) out = inside;
     }

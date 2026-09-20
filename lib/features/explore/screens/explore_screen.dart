@@ -733,6 +733,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
         location: here,
         radiusMeters: searchedRadius,
         types: types,
+        // "Anywhere" must not be anchored to the traveller's position — a
+        // search for beaches from Lucknow should still be able to return Goa.
+        biasToUserLocation: _scope != 'anywhere',
       );
       // Nearby mode: keep the local metro boundary, then preserve exact and
       // prefix text matches above merely-nearby names. Distance is a tie-break.
@@ -744,7 +747,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
       // "Nearby", so when the bulk provider throttled us the tab stayed empty
       // after ONE 25 km query while the copy below claimed the app had looked
       // out to 250 km.
-      if (hasCategoryFilters && here != null) {
+      // Only worth retrying when a radius was actually applied: in "Anywhere"
+      // mode nothing is anchored to the position, so a wider radius would be
+      // the identical request re-sent up to four times.
+      if (hasCategoryFilters && here != null && _scope != 'anywhere') {
         for (final double r in const <double>[50000.0, 100000.0, 250000.0]) {
           if (places.isNotEmpty || !mounted) break;
           searchedRadius = r;
@@ -962,15 +968,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (_activeCategory != null) {
         final String label =
             kExploreCategoryLabels[_activeCategory] ?? _activeCategory!;
+        // "Anywhere" is not anchored to the user, so this branch must not
+        // claim "near you" or offer a scope the user already picked.
+        final bool global = _scope == 'anywhere';
         return EmptyState(
           icon: Icons.search_off,
-          title: 'No ${label.toLowerCase()} found near you',
-          message:
-              'We searched $_searchedRadiusLabel — nothing in this '
-              'category is mapped there yet. Try "Anywhere" for a worldwide '
-              'search, or search a bigger nearby city.',
-          actionLabel: 'Search anywhere',
-          onAction: () => _setScope('anywhere'),
+          title: 'No ${label.toLowerCase()} '
+              '${global ? 'matched worldwide' : 'found near you'}',
+          message: global
+              ? 'Every provider we have (MapTiler, Photon, OpenStreetMap, '
+                  'Wikipedia) returned nothing for this category. Try a '
+                  'broader word — "temple" instead of "ancient temple" — or '
+                  'search a specific place name.'
+              : 'We searched $_searchedRadiusLabel — nothing in this '
+                  'category is mapped there yet. Try "Anywhere" for a '
+                  'worldwide search, or search a bigger nearby city.',
+          actionLabel: global ? 'Clear category' : 'Search anywhere',
+          onAction: () =>
+              global ? _setCategory(null) : _setScope('anywhere'),
         );
       }
       if (_scope == 'nearby') {

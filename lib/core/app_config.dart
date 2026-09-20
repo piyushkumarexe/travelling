@@ -10,12 +10,13 @@ class AppConfig {
 
   /// Human-readable app version, shown on the login screen so users can
   /// confirm they are running the latest build. Keep in sync with pubspec.
-  static const String appVersion = '1.0.10';
+  static const String appVersion = '1.0.11';
 
   /// Region where the Tourism backend Cloud Functions are deployed.
   ///
-  /// Must match the `region` setting in `functions/src/index.js` and the
-  /// region used when running `firebase deploy`.
+  /// Must match the region the functions were deployed to (see
+  /// `scripts/deploy-backend.sh`) — `firebase deploy --only functions`
+  /// defaults to this region.
   static const String functionsRegion = 'us-central1';
 
   /// Base URL of the Tourism backend, derived from the active Firebase

@@ -723,6 +723,23 @@ bash scripts/deploy-backend.sh   # Cloud Functions (photo proxy, Routes API)
   **publishing to the public `apk-latest` release is gated to pushes on `main`**
   (a PR from any branch used to overwrite what testers download).
 
+### Brand mark (logo)
+
+`AppLogo` renders `assets/images/yatrawise-logo.png` when present and falls
+back to the committed `yatrawise-logo.jpg`. To install a new logo everywhere
+it belongs (login screen + all Android launcher densities, legacy and adaptive)
+without any image tooling:
+
+```bash
+python3 tools/install_logo.py ~/Pictures/yatrawise-logo.png
+```
+
+The script square-centre-crops the source, writes the asset and regenerates
+`ic_launcher.png`, `ic_launcher_round.png` and `ic_launcher_foreground.png` in
+every `mipmap-*` folder (artwork kept inside the 66/108 adaptive safe zone).
+It is pure stdlib: the source must be a non-interlaced 8-bit PNG.
+`tools/gen_icons.py` remains available for the drawn fallback artwork.
+
 ## License
 
 Proprietary — all rights reserved.
