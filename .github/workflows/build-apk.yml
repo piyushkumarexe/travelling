@@ -191,6 +191,8 @@ jobs:
 
       - name: Surface build errors as annotations
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "=== Full gradle.log tail (500) ==="
           tail -n 500 gradle.log || true
@@ -198,9 +200,19 @@ jobs:
           grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
           echo "=== Grep FAILED/error ==="
           grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
-          # Keep the actionable Gradle tail visible even when GitHub's raw log
-          # viewer is unavailable to the caller. Use one annotation so the
-          # runner does not discard it after its per-step annotation limit.
+          # GitHub truncates each annotation at 4 KB, and a single big tail
+          # annotation keeps only its FIRST 4 KB (cutting off the real error
+          # at the END of the log). Emit two small, targeted annotations
+          # instead: the "What went wrong" section and the last ~3 KB.
+          enc() { sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+          WWR=$(grep -a -A 22 "What went wrong" gradle.log | head -n 26 | enc | head -c 3500)
+          if [ -n "$WWR" ]; then
+            echo "::error title=What went wrong::$WWR"
+          fi
+          ENDTAIL=$(tail -c 3200 gradle.log | enc | head -c 3500)
+          if [ -n "$ENDTAIL" ]; then
+            echo "::error title=Gradle log end::$ENDTAIL"
+          fi
           GRADLE_TAIL=$(tail -n 120 gradle.log | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}' | head -c 6000)
           echo "::error title=Gradle failure::$GRADLE_TAIL"
           echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
@@ -220,7 +232,9 @@ jobs:
               tail -n 30 gradle.log || true
               echo '```'
             } > /tmp/failcomment.md
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/failcomment.md 2>/dev/null || true
+            if ! gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/failcomment.md > /tmp/ghout.txt 2>&1; then
+              echo "::warning title=PR comment failed::$(head -c 400 /tmp/ghout.txt)"
+            fi
           fi
 
       - name: Upload gradle log on failure
