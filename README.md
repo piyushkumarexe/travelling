@@ -247,6 +247,12 @@ Always re-download the **same** file for updates — switching files
 needs a one-time uninstall + fresh install (universal → split is the
 only switch that upgrades cleanly).
 
+> ⚠️ **Actions → Artifacts wala ZIP phone par download/extract mat karo**
+> — usme se "Could not extract file" error aata hai. Hamesha **Releases →
+> `apk-latest`** se seedha APK lo: koi ZIP nahi, koi extract nahi, bas
+> tap → Install. APK ko kabhi "extract" mat karo (APK khud ek package
+> hai, uske andar se kuch nikaalna nahi hota).
+
 Install failing? See
 **[`docs/INSTALL_APK_TROUBLESHOOTING.md`](docs/INSTALL_APK_TROUBLESHOOTING.md)**
 (Hindi + English: parse error, "App not installed", Play Protect…).

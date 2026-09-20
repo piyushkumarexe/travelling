@@ -422,29 +422,28 @@ jobs:
           mkdir -p dist
           # Clear per-device names: most phones (2017+) are arm64. The
           # universal APK is the fallback for anything unusual.
+          # NOTE: deliberately NO inner ZIP here anymore — GitHub already
+          # wraps artifacts in one archive, and nested ZIPs fail on phones
+          # ("Could not extract file"). One extraction must yield APKs.
           cp "$SPLIT/app-arm64-v8a-release.apk"  dist/yatrawise-arm64-v8a.apk
           cp "$SPLIT/app-armeabi-v7a-release.apk" dist/yatrawise-armeabi-v7a.apk
           cp "$SPLIT/app-x86_64-release.apk"     dist/yatrawise-x86_64.apk
           cp "$UNI/app-release.apk"              dist/yatrawise-universal.apk
           (cd dist && sha256sum yatrawise-*.apk > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
-          # GitHub wraps every Actions artifact in its own archive. Put one
-          # clearly named, ordinary ZIP inside that wrapper so the files stay
-          # usable no matter how they are downloaded.
-          (cd dist && zip -X -9 yatrawise-apks.zip yatrawise-*.apk SHA256SUMS.txt)
-          unzip -t dist/yatrawise-apks.zip
           ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: yatrawise-release-apk
-          # Upload only the verified inner ZIP; this avoids duplicating the
-          # ~200 MB of uncompressed APKs in the outer GitHub artifact.
-          path: dist/yatrawise-apks.zip
+          # Raw files (no inner ZIP): GitHub wraps them in ONE archive, so
+          # phones extract once and get installable APKs directly.
+          path: |
+            dist/yatrawise-*.apk
+            dist/SHA256SUMS.txt
           if-no-files-found: error
-          # The inner ZIP is already compressed. Store it as-is in the outer
-          # GitHub archive so the two archives remain independently valid.
+          # APKs are already compressed; store as-is for a faster upload.
           compression-level: 0
           retention-days: 14
 

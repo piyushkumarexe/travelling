@@ -2,12 +2,28 @@
 
 > Har release APK ko CI me `apksigner` + `aapt` (Android ka apna parser) +
 > `zipalign` se verify karke hi publish kiya jaata hai. Isliye agar install
-> fail ho raha hai to wajah 99% phone-side hai (adhuri download, purani
-> install, ya setting) — neeche wala checklist follow karein.
+> fail ho raha hai to wajah 99% phone-side hai (galat file, adhuri
+> download, purani install, ya setting) — neeche wala checklist follow
+> karein.
+
+## 0. Sabse pehle: sahi file lo (ZIP bilkul mat lo!)
+
+> ⚠️ **GitHub Actions → Artifacts se ZIP download MAT karo.** Us ZIP ke
+> andar ek aur ZIP hota hai, phone usko extract nahi kar paata aur
+> **"Could not extract file / 1 file was not copied correctly"** error
+> aata hai — yehi sabse common galti hai.
+
+Sahi jagah: **GitHub → Releases → `apk-latest`** ("Latest Tourism APK").
+Wahan seedhi **`.apk`** files hain — **inko extract NAHI karna hota.**
+Download karo → file par tap karo → Install. Bas.
+
+APK ko kabhi "extract" / "open as archive" mat karo (APK khud ek
+ready-to-install package hai; ZArchiver-jaise apps me khologe to
+confusion hogi).
 
 ## 1. Kaunsi file download karein? (Which file?)
 
-Releases → **`apk-latest`** ("Latest Tourism APK") me ye files hoti hain:
+Releases → **`apk-latest`** me ye files hoti hain:
 
 | File | Kiske liye |
 | --- | --- |
@@ -16,6 +32,12 @@ Releases → **`apk-latest`** ("Latest Tourism APK") me ye files hoti hain:
 | `yatrawise-x86_64.apk` | Emulator / rare x86 devices ke liye. |
 | `yatrawise-universal.apk` | Fallback — har device par chalti hai, lekin sabse badi file (~120 MB). |
 | `SHA256SUMS.txt` | Download verify karne ke hash. |
+
+Direct link (arm64, recommended):
+
+```text
+https://github.com/piyushkumarexe/travelling/releases/download/apk-latest/yatrawise-arm64-v8a.apk
+```
 
 **Hamesha update ke liye WAHI file dobara download karein** jo pehli baar ki
 thi. File badalne par Android use "downgrade" samajh kar "App not
@@ -30,13 +52,24 @@ Requirements: **Android 7.0+** (minSdk 24) aur ~300 MB free space.
 
 1. Phone me purana "Tourism" app ho to use **uninstall** kar dein
    (Settings → Apps → Tourism → Uninstall). Ek baar ka kaam hai.
-2. **WiFi par** sahi APK download karein (mobile data par badi file
-   beech me toot jaati hai).
-3. File manager me APK par tap karein.
+2. Upar wale direct link se **WiFi par** `yatrawise-arm64-v8a.apk`
+   download karein (mobile data par badi file beech me toot jaati hai).
+3. Download poora hone ke baad file manager me APK par **tap** karein —
+   **extract/long-press/archive mat karo, seedha tap.**
 4. **"Install unknown apps" → Allow** karein (browser/file-manager ke liye).
 5. **Install** dabayein.
 
 ## 3. Error-wise fix
+
+### "Could not extract file / 1 file was not copied correctly"
+
+Matlab: **tum ZIP file ko extract karne ki koshish kar rahe ho.** Ya to
+Actions se artifact ZIP download kiya hai, ya APK ko kisi archiver app
+(ZArchiver wagairah) se khol rahe ho.
+
+Fix: sab delete karo aur [section 0](#0-sabse-pehle-sahi-file-lo-zip-bilkul-mat-lo)
+wale tareeke se Releases se **seedha `.apk`** lo. APK par **sirf tap**
+karna hai — extract naam ki koi step nahi hoti.
 
 ### "There was a problem parsing the package" (Parse error)
 
@@ -77,21 +110,23 @@ par sahi hai (CI gate se verified), phone tak poori nahi pahunchi.
 
 1. **arm64 wali chhoti APK** (~50 MB) use karein, universal (~120 MB) nahi.
 2. WiFi par karein, battery-saver / data-saver off rakhein.
-3. GitHub release page se seedha download karein
-   (`.../releases/download/apk-latest/yatrawise-arm64-v8a.apk`),
-   WhatsApp/Drive forward ki hui file par bharosa na karein.
+3. GitHub release page se seedha download karein (section 1 ka direct
+   link), WhatsApp/Drive forward ki hui file par bharosa na karein.
 
 ## 4. Ab bhi na ho? (Report karein)
 
 Maintainer ko ye 4 cheezein bhejein — bina inke diagnose nahi ho sakta:
 
 1. Exact error message ka **screenshot**.
-2. Kaunsi **file** download ki (poora naam) + uska **size** (bytes me).
+2. Kaunsi **file** download ki (poora naam + kahan se: Release ya Actions).
 3. Phone ka **Android version** (Settings → About phone).
 4. Kya phone me Tourism **pehle se installed** hai/thi?
 
-> English summary: every APK is verified installable in CI before publish.
-> A parse error almost always means a truncated download — re-download on
-> WiFi and compare size/SHA-256 with the release notes. "App not installed"
-> over an old copy means a signature change or file switch — uninstall the
-> old app once, then install fresh. Android 7.0+ required.
+> English summary: never download the Actions artifact ZIP on a phone
+> (nested archives fail to extract) — use the direct `.apk` from the
+> `apk-latest` release and just tap it; never "extract" an APK. Every APK
+> is verified installable in CI before publish. A parse error almost always
+> means a truncated download — re-download on WiFi and compare size/SHA-256
+> with the release notes. "App not installed" over an old copy means a
+> signature change or file switch — uninstall the old app once, then
+> install fresh. Android 7.0+ required.
