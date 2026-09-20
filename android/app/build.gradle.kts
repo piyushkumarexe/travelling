@@ -88,6 +88,12 @@ android {
             if (uploadStorePassword != null) storePassword = uploadStorePassword
             if (uploadKeyAlias != null) keyAlias = uploadKeyAlias
             if (uploadKeyPassword != null) keyPassword = uploadKeyPassword
+            // Installable on EVERY API 23+ device: v1 (JAR) signatures are
+            // REQUIRED on Android 6.0 (API 23, our minSdk), which cannot
+            // verify v2+ at all — a v2-only APK fails to install there.
+            // v2 keeps modern devices fast + tamper-proof.
+            isV1SigningEnabled = true
+            isV2SigningEnabled = true
         }
     }
 
