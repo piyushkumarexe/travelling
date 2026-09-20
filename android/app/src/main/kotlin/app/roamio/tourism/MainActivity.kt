@@ -10,7 +10,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.provider.Telephony
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -317,7 +316,11 @@ class MainActivity : FlutterActivity() {
             val intent =
                 Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$destination")).apply {
                     putExtra(Intent.EXTRA_SUBJECT, "YatraWise emergency location")
-                    putExtra(Telephony.Sms.Intents.EXTRA_SMSP_BODY, body)
+                    // smsto: intents carry the pre-filled body in the
+                    // "sms_body" extra (Telephony.Sms.Intents.EXTRA_SMSP_BODY's
+                    // value) — some SMS apps also read the generic "text".
+                    putExtra("sms_body", body)
+                    putExtra(Intent.EXTRA_TEXT, body)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             startActivity(intent)
