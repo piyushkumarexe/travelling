@@ -67,8 +67,10 @@ class FreeGeoClient {
   /// meant the bulk provider was counted as "skipped" on almost every search:
   /// Explore answered "No places found nearby" in cities full of mapped
   /// places, and a 400 km-away city name from a geocoder was left as the only
-  /// "result". Overpass now gets its full budget; once it has timed out the
-  /// next minute's searches skip it instead of making the user wait again.
+  /// "result". Overpass now gets its full budget, and once it has timed out
+  /// the next 15 seconds of retries (the radius-widening loop, the fallback
+  /// that runs straight after a failed sweep) skip it instead of stacking
+  /// another 22 s of waiting on a mirror that just proved it is busy.
   Future<_ProviderResult> _bounded(
     String name,
     Future<_ProviderResult> request, {
