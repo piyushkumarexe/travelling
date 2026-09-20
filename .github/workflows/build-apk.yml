@@ -287,54 +287,83 @@ jobs:
       # user prove it.
       - name: Verify APKs are signed + installable
         run: |
-          set -euo pipefail
+          # NOTE: deliberately NO `set -e` here — every failure below
+          # reports a precise ::error annotation (with tool output) instead
+          # of dying silently with an bare exit code.
+          set -uo pipefail
+          FAIL=0
+          fail() { echo "::error::$1"; FAIL=1; }
           SPLIT=build-out/split
           UNI=build-out/universal
           for f in app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-x86_64-release.apk; do
             if [ ! -f "$SPLIT/$f" ]; then
-              echo "::error::Expected APK is missing: $SPLIT/$f (have: $(ls -m "$SPLIT" 2>/dev/null || echo EMPTY))"
-              exit 1
+              fail "Expected APK is missing: $SPLIT/$f (have: $(ls -m "$SPLIT" 2>/dev/null || echo EMPTY))"
             fi
           done
           if [ ! -f "$UNI/app-release.apk" ]; then
-            echo "::error::Expected APK is missing: $UNI/app-release.apk (have: $(ls -m "$UNI" 2>/dev/null || echo EMPTY))"
-            exit 1
+            fail "Expected APK is missing: $UNI/app-release.apk (have: $(ls -m "$UNI" 2>/dev/null || echo EMPTY))"
           fi
-          BT="$(dirname "$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)")"
-          APKSIGNER="$BT/apksigner"
-          AAPT="$BT/aapt"
-          AAPT2="$BT/aapt2"
-          ZIPALIGN="$BT/zipalign"
-          echo "build-tools: $BT"
+          [ "$FAIL" = "0" ] || exit 1
+          APKSIGNER_BIN="$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)"
+          if [ -z "$APKSIGNER_BIN" ]; then
+            fail "apksigner not found under \$ANDROID_HOME/build-tools"; exit 1
+          fi
+          BT="$(dirname "$APKSIGNER_BIN")"
+          echo "::notice::build-tools: $(basename "$BT")"
+          for t in apksigner aapt aapt2 zipalign; do
+            [ -x "$BT/$t" ] || fail "missing build tool: $BT/$t"
+          done
+          [ "$FAIL" = "0" ] || exit 1
+          APKSIGNER="$BT/apksigner"; AAPT="$BT/aapt"; AAPT2="$BT/aapt2"; ZIPALIGN="$BT/zipalign"
           # Permanent-key fingerprint (colons stripped, uppercase) — every
           # published APK must match this exact certificate.
-          EXPECTED_CERT="$(keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "YatraWise-Upload-2026" 2>/dev/null | grep -m1 'SHA256:' | sed 's/.*SHA256: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
+          EXPECTED_CERT="$(keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "YatraWise-Upload-2026" 2>/dev/null | grep -m1 'SHA256:' | sed 's/.*SHA256: *//; s/://g; s/ //g' | tr 'a-f' 'A-F' || true)"
           if [ -z "$EXPECTED_CERT" ]; then
-            echo "::error::Could not read the upload-keystore SHA-256 fingerprint."
-            exit 1
+            fail "Could not read the upload-keystore SHA-256 fingerprint (wrong password? corrupt keystore?)"; exit 1
           fi
           echo "Expected signer SHA-256: $EXPECTED_CERT"
-          FAIL=0
+          # zipalign -p (16 KB page-alignment check) needs build-tools 35+;
+          # fall back to a plain alignment check on older runners.
+          ZA_EXTRA="-p"
+          if "$ZIPALIGN" -c -p 4 "$UNI/app-release.apk" >/dev/null 2>/tmp/zap.txt; then
+            echo "zipalign (incl. 16 KB page alignment): supported"
+          elif grep -qi "invalid option" /tmp/zap.txt; then
+            echo "::warning::zipalign predates build-tools 35 — 16 KB page check skipped, plain alignment check used."
+            ZA_EXTRA=""
+          else
+            fail "zipalign FAILED for universal APK: $(head -c 400 /tmp/zap.txt)"
+          fi
           for APK in "$SPLIT"/app-arm64-v8a-release.apk "$SPLIT"/app-armeabi-v7a-release.apk "$SPLIT"/app-x86_64-release.apk "$UNI"/app-release.apk; do
             TAG="$(basename "$APK" .apk)"
             echo "=== Verifying $APK ($(du -h "$APK" | cut -f1)) ==="
-            "$APKSIGNER" verify --print-certs --min-sdk-version 23 "$APK" | tee "/tmp/certs-$TAG.txt"
-            ACTUAL_CERT="$(grep -m1 'SHA-256 digest' "/tmp/certs-$TAG.txt" | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
-            if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
-              echo "::error::$APK is NOT signed by the permanent upload key (got $ACTUAL_CERT). Refusing to publish."
-              FAIL=1
+            if ! CERT_OUT="$("$APKSIGNER" verify --print-certs --min-sdk-version 23 "$APK" 2>&1)"; then
+              fail "apksigner verify FAILED for $APK: $(printf '%s' "$CERT_OUT" | head -c 500)"
+              continue
             fi
-            "$ZIPALIGN" -c -p 4 "$APK" && echo "zipalign (incl. 16 KB page alignment): OK"
-            "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt"
+            printf '%s\n' "$CERT_OUT" | tee "/tmp/certs-$TAG.txt" | head -n 8
+            ACTUAL_CERT="$(printf '%s' "$CERT_OUT" | grep -m1 'SHA-256 digest' | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F' || true)"
+            if [ -z "$ACTUAL_CERT" ]; then
+              fail "$APK: could not parse signer SHA-256 from apksigner output."
+            elif [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+              fail "$APK is NOT signed by the permanent upload key (got $ACTUAL_CERT). Refusing to publish."
+            fi
+            if ! ZA_OUT="$("$ZIPALIGN" -c $ZA_EXTRA 4 "$APK" 2>&1)"; then
+              fail "zipalign FAILED for $APK: $(printf '%s' "$ZA_OUT" | head -c 400)"
+            else
+              echo "zipalign: OK"
+            fi
+            if ! "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt" 2>/tmp/aapt-err.txt; then
+              fail "aapt dump badging FAILED for $APK (Android itself could not parse it): $(head -c 400 /tmp/aapt-err.txt)"
+              continue
+            fi
             BAD="/tmp/badging-$TAG.txt"
-            grep -q "package: name='app.roamio.tourism'" "$BAD" || { echo "::error::$APK badging: package name mismatch."; FAIL=1; }
-            grep -Eq "versionCode='[0-9]+'" "$BAD" || { echo "::error::$APK badging: versionCode missing."; FAIL=1; }
-            grep -q "sdkVersion:'23'" "$BAD" || { echo "::error::$APK badging: minSdk is not 23 (Android 6.0)."; FAIL=1; }
-            grep -Eq "targetSdkVersion:'[0-9]+'" "$BAD" || { echo "::error::$APK badging: targetSdk missing."; FAIL=1; }
-            grep -q "launchable-activity:" "$BAD" || { echo "::error::$APK badging: no launchable activity."; FAIL=1; }
+            grep -q "package: name='app.roamio.tourism'" "$BAD" || fail "$APK badging: package name mismatch."
+            grep -Eq "versionCode='[0-9]+'" "$BAD" || fail "$APK badging: versionCode missing."
+            grep -q "sdkVersion:'23'" "$BAD" || fail "$APK badging: minSdk is not 23 (Android 6.0)."
+            grep -Eq "targetSdkVersion:'[0-9]+'" "$BAD" || fail "$APK badging: targetSdk missing."
+            grep -q "launchable-activity:" "$BAD" || fail "$APK badging: no launchable activity."
             if "$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml 2>/dev/null | grep -qi 'testOnly'; then
-              echo "::error::$APK manifest is marked testOnly — it can never install normally."
-              FAIL=1
+              fail "$APK manifest is marked testOnly — it can never install normally."
             fi
             grep -E "^package:|^sdkVersion:|^targetSdkVersion:|^application-label:|launchable-activity:" "$BAD" || true
           done
