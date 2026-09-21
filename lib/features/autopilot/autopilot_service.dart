@@ -911,7 +911,7 @@ class AutopilotService extends ChangeNotifier {
         break;
       }
     }
-    final int late = now().difference(s.startedAt + due).inMinutes;
+    final int late = now().difference(s.startedAt.add(due)).inMinutes;
     return late < 0 ? 0 : late;
   }
 
