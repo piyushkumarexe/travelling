@@ -37,6 +37,22 @@ class PlacesRepository {
   /// Google response.
   String? get backendWarning => _backendWarning;
 
+  /// Set by [search] when the place the traveller named could not be found and
+  /// the list below is actually the nearest places of that KIND. The UI shows
+  /// it verbatim, so a substitution can never pass for an exact match.
+  String? get lastSearchNote => _lastSearchNote;
+  String? _lastSearchNote;
+
+  /// The first word of [q] that describes a category of place (college,
+  /// hospital, temple, …) rather than a name.
+  String? _categoryWordIn(String q) {
+    for (final String raw in q.toLowerCase().split(RegExp(r'[^a-z0-9]+'))) {
+      if (raw.length < 3) continue;
+      if (_free.isCategoryQuery(raw)) return raw;
+    }
+    return null;
+  }
+
   void _recordBackendSuccess() => _backendWarning = null;
 
   void _recordBackendFailure() {
@@ -74,8 +90,12 @@ class PlacesRepository {
     List<String>? types,
     bool forceFresh = false,
     bool biasToUserLocation = true,
+    bool includeCategoryFallback = false,
   }) async {
     final String q = query.trim();
+    // Cleared on every entry: a note left over from an earlier query must
+    // never describe the rows of this one.
+    _lastSearchNote = null;
     if (q.isEmpty) return const <Place>[];
     final double? biasRadius = biasToUserLocation ? radiusMeters : null;
 
@@ -200,6 +220,29 @@ class PlacesRepository {
       // a Lucknow search for "new public college" ended up showing "New Delhi"
       // and "Noida" — geocoder noise that had just been identified as
       // irrelevant was served right back to the user.
+    }
+    if (out.isEmpty && includeCategoryFallback && location != null) {
+      // Nothing near the traveller carries the name they typed. The worst
+      // answer is a city 400 km away; the second worst is a blank screen.
+      // When the query names a KIND of place (school / college / hospital /
+      // temple …), give them the real ones nearby and say plainly that this
+      // is a category list, not their exact match.
+      final String? category = _categoryWordIn(q);
+      if (category != null) {
+        final double r =
+            radiusMeters ?? FreeGeoClient.kNearbyRadiusMeters;
+        final List<Place> nearby = await _freeSearchWithCache(
+          category,
+          near: location,
+          types: null,
+          radiusMeters: r,
+        );
+        if (nearby.isNotEmpty) {
+          _lastSearchNote = 'No place named “$q” was found within '
+              '${(r / 1000).round()} km — these are $category places near you.';
+          out = PlaceRanking.rankSuggestions(nearby, category, location);
+        }
+      }
     }
     return out;
   }

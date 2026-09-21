@@ -134,6 +134,11 @@ class _MapScreenState extends State<MapScreen> {
   bool _searchLoading = false;
   String? _searchError;
 
+  /// Set when the traveller's exact name could not be found and the rows below
+  /// are the nearest places of that KIND — the sheet says so out loud instead
+  /// of letting a substitution look like a match.
+  String? _searchNote;
+
   List<SafetyZone> _zones = const <SafetyZone>[];
   bool _showZones = true;
 
@@ -394,6 +399,7 @@ class _MapScreenState extends State<MapScreen> {
         q,
         location: loc,
         radiusMeters: 25000,
+        includeCategoryFallback: true,
       );
       if (_isCategoryQuery(q)) {
         for (final double r in const <double>[50000, 100000, 250000]) {
@@ -402,12 +408,18 @@ class _MapScreenState extends State<MapScreen> {
             q,
             location: loc,
             radiusMeters: r,
+            includeCategoryFallback: true,
           );
         }
       }
+      // Read the note AFTER the last request: it describes exactly what the
+      // rows on screen are (a real name match, or the nearest places of that
+      // kind because the named one does not exist here).
+      final String? note = _c.placesRepository.lastSearchNote;
       if (!mounted) return;
       setState(() {
         _results = places;
+        _searchNote = note;
         _resultsVisible = true;
         _searchLoading = false;
       });
@@ -439,6 +451,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _searchLoading = true;
       _resultsVisible = true;
+      _searchNote = null;
     });
     try {
       // Proximity = real GPS fix when available (camera only as fallback).
@@ -1687,6 +1700,24 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
+          if (_searchNote != null && !_searchLoading && _results.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(Icons.info_outline, size: 15, color: scheme.tertiary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _searchNote!,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_searchLoading)
             const Padding(
               padding: EdgeInsets.all(14),

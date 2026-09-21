@@ -61,6 +61,17 @@ class AutopilotService extends ChangeNotifier {
   StreamSubscription<NearbyUpdate>? _updatesSub;
   StreamSubscription<Position>? _arrivalSub;
 
+  // ── live tracking ────────────────────────────────────────────────────────
+  // The other half of Autopilot: not only "what should I do now" but "where
+  // are you right now, and where did the plan expect you at this minute".
+  // Every GPS fix while a stop is in progress updates these, and the status
+  // card reads them (distance to the stop, GPS age, behind-plan minutes).
+  double? _liveDistanceMeters;
+  double? _livePrevDistanceMeters;
+  DateTime? _liveFixAt;
+  bool _liveMovingAway = false;
+  Timer? _liveTicker;
+
   // --- Session state ---
   AutopilotSession? _session;
   AutopilotBrief _brief = const AutopilotBrief();
@@ -273,17 +284,20 @@ class AutopilotService extends ChangeNotifier {
     _realTravel = const <String, int>{};
     notifyListeners();
     _brief = await _resolveDestination(brief);
-    if (brief.availableMinutes != null) {
-      final DateTime endsAt =
-          now().add(Duration(minutes: brief.availableMinutes!));
-      _session ??= AutopilotSession(
-        id: 'ap-${now().millisecondsSinceEpoch}',
-        brief: _brief,
-        startedAt: now(),
-        endsAt: endsAt,
-        stops: const <AutopilotStop>[],
-      );
-    }
+    // A session exists from the first GENERATE whether or not the traveller
+    // filled in "available time": the live monitor (where you are vs where the
+    // plan expects you) is driven by the session, and tying it to an optional
+    // field meant that leaving the field blank gave suggestions with no
+    // tracking at all.
+    final DateTime endsAt =
+        now().add(Duration(minutes: brief.availableMinutes ?? 120));
+    _session ??= AutopilotSession(
+      id: 'ap-${now().millisecondsSinceEpoch}',
+      brief: _brief,
+      startedAt: now(),
+      endsAt: endsAt,
+      stops: const <AutopilotStop>[],
+    );
     notifyListeners();
     return recompute();
   }
@@ -325,17 +339,57 @@ class AutopilotService extends ChangeNotifier {
           ? null
           : 'from ${(_brief.endName ?? 'destination').trim()}';
       // Cached dataset (instant when available; SWR refresh lands later).
-      final NearbyResult r =
-          await _places.nearbyAround(center, force: _dataset.isEmpty);
-      _dataset = r.places;
-      _datasetKey = r.key;
+      // A provider outage or a city with nothing cached yet used to kill the
+      // whole GENERATE tap with "no suitable places found nearby" — the
+      // traveller was left with an empty screen and no plan. Sweep the
+      // providers for the traveller's own interests instead and rank
+      // whatever answers; only a genuinely empty area is reported as empty.
+      NearbyResult? near;
+      Object? nearbyError;
+      try {
+        near = await _places.nearbyAround(center, force: _dataset.isEmpty);
+      } catch (e) {
+        nearbyError = e;
+        // Providers down / cache empty — the wide sweep below takes over.
+      }
+      _dataset = near?.places ?? const <Place>[];
+      _datasetKey = near?.key;
       if (_dataset.isEmpty) {
+        try {
+          _dataset =
+              await _wideSweep(center).timeout(const Duration(seconds: 45));
+        } catch (_) {
+          // Timeout or total outage — reported as an empty area below.
+        }
+      }
+      if (_dataset.isEmpty) {
+        final Object? failed = nearbyError;
         _loading = false;
-        _error = AutopilotErrorKind.noResults;
-        _errorMessage = _atDestination
-            ? 'No suitable places found nearby.'
-            : 'No suitable places found near '
-                '${(_brief.endName ?? 'your destination').trim()}.';
+        if (failed is ApiException) {
+          // The sweep ran and the providers answered with an error (or
+          // nothing at all) — say so, instead of implying the area is empty.
+          _error = switch (failed.kind) {
+            ApiErrorKind.rateLimited => AutopilotErrorKind.rateLimited,
+            ApiErrorKind.network ||
+            ApiErrorKind.timeout =>
+              AutopilotErrorKind.networkError,
+            _ => AutopilotErrorKind.invalidData,
+          };
+          _errorMessage = switch (_error!) {
+            AutopilotErrorKind.rateLimited =>
+              'Nearby search is temporarily limited. Try again shortly.',
+            AutopilotErrorKind.networkError =>
+              'Fresh nearby information is temporarily unavailable. '
+                  'Check your internet connection and retry.',
+            _ => 'Could not load nearby places right now.',
+          };
+        } else {
+          _error = AutopilotErrorKind.noResults;
+          _errorMessage = _atDestination
+              ? 'No suitable places found nearby.'
+              : 'No suitable places found near '
+                  '${(_brief.endName ?? 'your destination').trim()}.';
+        }
         notifyListeners();
         return false;
       }
@@ -508,6 +562,9 @@ class AutopilotService extends ChangeNotifier {
     ));
     unawaited(_arrivalSub?.cancel());
     _arrivalSub = null;
+    _liveTicker?.cancel();
+    _liveTicker = null;
+    _liveReset();
     _save();
     notifyListeners();
   }
@@ -646,6 +703,65 @@ class AutopilotService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// What to ask the place providers for when a traveller picked an interest.
+  /// The enum names ("eat", "relax") are UI words, not searchable place
+  /// types — searching them verbatim returns nothing useful.
+  static const Map<AutopilotInterest, String> _interestSearchTerm =
+      <AutopilotInterest, String>{
+    AutopilotInterest.eat: 'restaurant',
+    AutopilotInterest.explore: 'tourist attraction',
+    AutopilotInterest.shopping: 'shopping mall',
+    AutopilotInterest.relax: 'park',
+    AutopilotInterest.entertainment: 'cinema',
+    AutopilotInterest.sightseeing: 'viewpoint',
+    AutopilotInterest.historical: 'monument',
+    AutopilotInterest.family: 'amusement park',
+    AutopilotInterest.work: 'cafe',
+    AutopilotInterest.roadtrip: 'tourist attraction',
+    AutopilotInterest.other: 'tourist attraction',
+  };
+
+  /// Interest-by-interest radius search, used when the cached nearby dataset
+  /// came back empty (fresh city, cache off, or every tile provider timing
+  /// out together). Sequential on purpose: Nominatim and Overpass rate-limit
+  /// hard, and six parallel searches would simply get refused. Duplicates are
+  /// dropped by name + position so a place found under two interests counts
+  /// once.
+  Future<List<Place>> _wideSweep(LatLng center) async {
+    final List<String> wanted = <String>[
+      ..._brief.interests
+          .map((AutopilotInterest i) => _interestSearchTerm[i] ?? 'attraction'),
+      'tourist attraction',
+      'viewpoint',
+      'museum',
+      'park',
+      'restaurant',
+    ];
+    final List<Place> out = <Place>[];
+    final Set<String> seen = <String>{};
+    for (final String label in wanted.take(5)) {
+      try {
+        final List<Place> found = await _places
+            .search(label, location: center, radiusMeters: 25000)
+            .timeout(const Duration(seconds: 16));
+        for (final Place p in found) {
+          if (p.category == 'locality' ||
+              p.category == 'administrative' ||
+              p.category == 'country') {
+            continue;
+          }
+          final String k = '${p.name.toLowerCase()}'
+              '@${p.lat.toStringAsFixed(3)},${p.lng.toStringAsFixed(3)}';
+          if (!seen.add(k)) continue;
+          out.add(p);
+        }
+      } catch (_) {
+        // One interest failing must not sink the whole sweep.
+      }
+    }
+    return out;
+  }
+
   // ---------------- 🛟 FIX MY TRIP (recovery) ----------------
 
   void fixMyTrip() {
@@ -748,6 +864,9 @@ class AutopilotService extends ChangeNotifier {
   Future<void> stopAutopilot() async {
     await _arrivalSub?.cancel();
     _arrivalSub = null;
+    _liveTicker?.cancel();
+    _liveTicker = null;
+    _liveReset();
     _session = null;
     _brief = const AutopilotBrief();
     _suggestions = const <AutopilotSuggestion>[];
@@ -764,21 +883,100 @@ class AutopilotService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---------------- Arrival geofence ----------------
+  // ---------------- Arrival geofence + live tracking ----------------
 
+  /// Straight-line distance from the traveller to the stop the plan expects
+  /// them at right now (null until a GPS fix has been seen this hop).
+  double? get liveDistanceMeters => _liveDistanceMeters;
+
+  /// When the last fix landed, so the UI can admit a stale GPS signal.
+  DateTime? get liveFixAt => _liveFixAt;
+
+  /// The distance to the stop grew by more than 60 m on the last fix — the
+  /// traveller is heading away from it (wrong turn, detour, or done early).
+  bool get liveMovingAway => _liveMovingAway;
+
+  /// Minutes behind the plan for the current hop. The schedule is the plan
+  /// itself: session start + everything planned up to and including this
+  /// stop's travel. Zero while on time, so the UI can stay quiet.
+  int get liveLagMinutes {
+    final AutopilotSession? s = _session;
+    final AutopilotStop? cur = s?.currentStop;
+    if (s == null || cur == null) return 0;
+    Duration due = Duration.zero;
+    for (final AutopilotStop st in s.stops) {
+      due += Duration(minutes: (st.travelMinutes ?? 0) + st.visitMinutes);
+      if (st.id == cur.id) {
+        due -= Duration(minutes: st.visitMinutes);
+        break;
+      }
+    }
+    final int late = now().difference(s.startedAt + due).inMinutes;
+    return late < 0 ? 0 : late;
+  }
+
+  /// Travel minutes still planned for the current hop (0 once its window has
+  /// passed — the lag counter takes over from there).
+  int get liveEtaMinutes {
+    final AutopilotStop? cur = currentStop;
+    if (cur == null || liveLagMinutes > 0) return 0;
+    return cur.travelMinutes ?? 0;
+  }
+
+  /// Where the traveller should be by now, for the status card's "you are
+  /// here / you should be here" line. Null when nothing is in progress.
+  AutopilotStop? get liveExpectedStop => _session?.currentStop;
+
+  void _liveReset() {
+    _liveDistanceMeters = null;
+    _livePrevDistanceMeters = null;
+    _liveFixAt = null;
+    _liveMovingAway = false;
+  }
+
+  /// Geofences arrival at the current stop AND keeps the live readout fresh.
+  /// Called whenever the in-progress stop changes (choose, plan, restore).
   void _watchArrival() {
     unawaited(_arrivalSub?.cancel());
     _arrivalSub = null;
-    if (_session?.currentStop == null || _debugPosition != null) return;
+    _liveTicker?.cancel();
+    _liveTicker = null;
+    _liveReset();
+    final AutopilotStop? first = currentStop;
+    if (first == null) return;
+    if (_debugPosition != null) {
+      // Simulated position (developer mode) — no GPS stream to follow, but
+      // the readout must still say what the plan expects.
+      _liveDistanceMeters = GeoUtils.distanceMetersLL(_debugPosition!.latitude,
+          _debugPosition!.longitude, first.lat, first.lng);
+      _liveFixAt = now();
+      return;
+    }
     _arrivalSub = _location
-        .watchPosition(distanceFilter: 40)
+        .watchPosition(distanceFilter: 25)
         .listen((Position p) {
       final AutopilotStop? cur = currentStop;
       if (cur == null) return;
       final double d = GeoUtils.distanceMetersLL(
           p.latitude, p.longitude, cur.lat, cur.lng);
-      if (d <= 80) markArrived();
+      _livePrevDistanceMeters = _liveDistanceMeters;
+      _liveDistanceMeters = d;
+      _liveFixAt = now();
+      final double? prev = _livePrevDistanceMeters;
+      _liveMovingAway = prev != null && prev > 250 && d > prev + 60;
+      if (d <= 80) {
+        markArrived();
+        return;
+      }
+      notifyListeners();
     }, onError: (Object _) {});
+    // Aging, not polling: with the phone in a pocket and no movement past the
+    // distance filter there are no new fixes, yet "5 min left" must not sit
+    // on screen claiming freshness for an hour.
+    _liveTicker = Timer.periodic(const Duration(seconds: 20), (Timer _) {
+      if (currentStop == null) return;
+      notifyListeners();
+    });
   }
 
   // ---------------- Debug / developer simulation ----------------
@@ -836,6 +1034,7 @@ class AutopilotService extends ChangeNotifier {
   void dispose() {
     unawaited(_updatesSub?.cancel());
     unawaited(_arrivalSub?.cancel());
+    _liveTicker?.cancel();
     super.dispose();
   }
 }

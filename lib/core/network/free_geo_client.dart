@@ -3359,27 +3359,68 @@ class PlaceRanking {
     return tokens >= 2 && n.startsWith('$t ');
   }
 
+  /// Words in a query that actually identify a place, i.e. everything that is
+  /// not a category/intent word. Shared by `filterRelevant` and by callers
+  /// that need to re-check a list (the Map tab) so the two can never drift.
+  static List<String> meaningfulNameTokens(String query) {
+    final List<String> tokens = query
+        .toLowerCase()
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((String w) => w.isNotEmpty)
+        .toList();
+    return tokens.where((String w) => !kCategoryWords.contains(w)).toList();
+  }
+
+  /// True when this result can honestly ANSWER the query.
+  /// A category query ("college", "temples near me") accepts whatever the
+  /// providers found; a NAME query accepts only rows that share a real word
+  /// with it (4+ letters, so a 3-letter fragment cannot resurrect a city
+  /// name) or that the query explicitly locates.
+  static bool nameMatchesQuery(Place p, String query) {
+    final List<String> named = meaningfulNameTokens(query);
+    if (named.isEmpty) return true;
+    final String hay = normalizeName(
+        '${p.name} ${p.address ?? ''} ${p.city ?? ''} ${p.state ?? ''}');
+    for (final String tok in named) {
+      if (tok.length >= 4 && hay.contains(tok)) return true;
+    }
+    return queryNamesLocality(p, normalizeName(query));
+  }
+
   /// True when the query EXPLICITLY names a place's locality (e.g.
   /// "Taj Mahal Agra" — 'agra' appears among the candidate's city / state /
-  /// country / address). Such a result must outrank same-named places from
-  /// the traveller's own area: the user asked for THAT city.
+  /// country). Such a result must outrank same-named places from the
+  /// traveller's own area: the user asked for THAT city.
+  ///
+  /// Only the administrative fields count, and only as whole words: matching
+  /// against a free-form address let the mere prefix of a display name
+  /// ("new" in "new public college") vouch for "New Delhi" — which is how
+  /// unrelated cities ended up presented as search results.
   static bool queryNamesLocality(Place p, String normalizedQuery) {
+    final List<String> queryWords = normalizedQuery
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((String w) => w.length >= 4)
+        .toList();
     final List<String> areas = <String>[
       p.city ?? '',
       p.state ?? '',
       p.country ?? '',
-      p.address ?? '',
     ];
     for (final String a in areas) {
-      final String lo = a.toLowerCase().trim();
+      final String lo = normalizeName(a);
       if (lo.length < 3) continue;
-      final RegExp boundary = RegExp('\\b${RegExp.escape(lo)}');
-      if (boundary.hasMatch(normalizedQuery)) return true;
-      // City names often appear as a query token ("agra" inside
-      // "taj mahal agra").
-      for (final String token in normalizedQuery.split(RegExp(r'\s+'))) {
-        if (token.length >= 4 && (lo == token || lo.startsWith(token))) {
-          return true;
+      // Whole words only. A plain `contains` looked clever until "Indian
+      // Coffee House" started vouching for every place whose country field
+      // reads "India" — the locality has to be named, not merely hinted at.
+      final RegExp whole = RegExp('\\b${RegExp.escape(lo)}\\b');
+      if (whole.hasMatch(normalizedQuery)) return true;
+      for (final String word in lo.split(' ')) {
+        if (word.length < 4) continue;
+        for (final String q in queryWords) {
+          // Query word may be an abbreviation of the city ("agra" for
+          // "Agra Cantt"), but never the other way round.
+          if (word.startsWith(q)) return true;
         }
       }
     }
@@ -3512,17 +3553,12 @@ class PlaceRanking {
     final List<Place> all = List<Place>.from(places);
     if (near == null || all.isEmpty) return all;
     final String t = query.toLowerCase().trim();
-    final List<String> tokens = t
-        .split(RegExp(r'\s+'))
-        .where((String w) => w.isNotEmpty)
-        .toList();
-    // Category/stop words never identify a specific place, so they must not
-    // be required to appear in a result name. Without this, the Explore
-    // default query "tourist attractions near me" filtered OUT every real
-    // nearby attraction (none of them is literally named "attraction") and
-    // the app said "No places found nearby" in a city of 4 million people.
-    final List<String> named =
-        tokens.where((String w) => !kCategoryWords.contains(w)).toList();
+    // Category/stop words never identify a specific place, so they must not be
+    // required to appear in a result name. Without this, the Explore default
+    // query "tourist attractions near me" filtered OUT every real nearby
+    // attraction (none of them is literally named "attraction") and the app
+    // said "No places found nearby" in a city of 4 million people.
+    final List<String> named = meaningfulNameTokens(query);
     final bool specific = named.length >= 2;
     // Far results worth keeping: the query names their locality, or the
     // query is a specific multi-word name and this place IS that name.
@@ -3552,16 +3588,10 @@ class PlaceRanking {
         // Single meaningful word ("college", "atm"): legacy behaviour.
         return true;
       }
-      final String hay =
-          '${p.name} ${p.address ?? ''} ${p.city ?? ''} ${p.state ?? ''}'
-              .toLowerCase();
-      for (final String tok in named) {
-        // 4+ chars only: short tokens like "new" would "match" the city
-        // "New Delhi" and put a 400 km admin region above the actual college
-        // the traveller searched for.
-        if (tok.length >= 4 && hay.contains(tok)) return true;
-      }
-      return false;
+      // 4+ characters only (see nameMatchesQuery): a short fragment like
+      // "new" must not "match" the city "New Delhi" and put a 400 km admin
+      // region above the actual college the traveller searched for.
+      return nameMatchesQuery(p, query);
     }
 
     // Keep all nearby places within 35km (covering the entire metro area)

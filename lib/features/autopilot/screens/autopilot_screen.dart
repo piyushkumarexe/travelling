@@ -839,6 +839,21 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           ],
         ),
         const SizedBox(height: 14),
+        // GENERATE used to drop the traveller straight onto a list of
+        // suggestions with no way to turn them into an ORDERED plan — the
+        // "kya kab karna hai" they actually asked Autopilot for. The button
+        // lives here, on the dashboard, next to the suggestions it uses.
+        if (_svc.plan == null && _svc.suggestions.isNotEmpty) ...<Widget>[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => setState(() => _svc.generatePlan()),
+              icon: const Icon(Icons.auto_mode),
+              label: const Text('⚡ AUTO PLAN (best order)'),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Text('NEXT BEST OPTIONS',
             style: Theme.of(context)
                 .textTheme
@@ -902,6 +917,22 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
 
   Widget _statusCard(int left, AutopilotStop? focus) {
     final bool onTrack = left > 20;
+    // Live monitoring values are read once so the null checks below promote.
+    final double? liveDist = _svc.liveDistanceMeters;
+    final DateTime? liveFix = _svc.liveFixAt;
+    final int liveLag = _svc.liveLagMinutes;
+    final int liveEta = _svc.liveEtaMinutes;
+    final int fixAgeSec =
+        liveFix == null ? 0 : DateTime.now().difference(liveFix).inSeconds;
+    final String liveTravel =
+        liveEta > 0 ? '~$liveEta min of travel left' : 'travel window is up';
+    final String liveSchedule =
+        liveLag >= 3 ? '⚠ $liveLag min behind plan' : '🟢 on schedule';
+    final String liveDrift =
+        _svc.liveMovingAway ? ' · 🔴 moving away from it' : '';
+    final String fixAge = fixAgeSec >= 3600
+        ? '${(fixAgeSec / 3600).floor()} h'
+        : '${(fixAgeSec / 60).ceil()} min';
     return Card(
       color: onTrack
           ? AppTheme.success.withValues(alpha: 0.10)
@@ -946,6 +977,38 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
             Text(
                 'CURRENT: ${focus == null ? '📍 Pick your first stop' : '📍 ${focus.name}'}',
                 style: Theme.of(context).textTheme.bodyMedium),
+            // ── live monitoring: where you are vs where the plan expects
+            // you at this minute. The traveller asked for exactly this — the
+            // plan must be watched, not just generated once.
+            if (focus != null && liveDist != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🧭 ${GeoUtils.formatDistance(liveDist)} to ${focus.name}'
+                  ' · $liveTravel · $liveSchedule$liveDrift',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              )
+            else if (focus != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🧭 Reading your position to track ${focus.name}…',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if (focus != null && fixAgeSec > 120)
+              Text(
+                '📡 GPS last seen $fixAge ago — '
+                'tracking may lag while you move',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.orangeAccent),
+              ),
             if (focus != null && focus.category.isNotEmpty)
               Text('Estimated visit: ${focus.visitMinutes} min',
                   style: Theme.of(context).textTheme.bodySmall),

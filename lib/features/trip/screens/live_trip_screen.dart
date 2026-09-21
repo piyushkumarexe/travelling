@@ -23,6 +23,7 @@ import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
 import '../../../data/models/trip_plan.dart';
+import '../../autopilot/autopilot_service.dart';
 import 'nav_map_3d.dart';
 
 /// Live Trip mode: tracks the traveler in real time toward a destination,
@@ -758,6 +759,49 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
     return _fullCard();
   }
 
+  /// Autopilot's "where you are vs where the plan wants you" line. Shown
+  /// only while a stop is actually in progress, so a plain navigation trip
+  /// keeps its card clean.
+  Widget _autopilotLine() {
+    final AutopilotService ap = _c.autopilotService;
+    return ListenableBuilder(
+      listenable: ap,
+      builder: (BuildContext context, Widget? _) {
+        final AutopilotStop? stop = ap.liveExpectedStop;
+        final double? d = ap.liveDistanceMeters;
+        if (stop == null || d == null) return const SizedBox.shrink();
+        final int lag = ap.liveLagMinutes;
+        final ColorScheme scheme = Theme.of(context).colorScheme;
+        final String status =
+            lag >= 3 ? '⚠ $lag min behind plan' : '🟢 on plan';
+        final String drift =
+            ap.liveMovingAway ? ' · 🔴 moving away' : '';
+        final String text =
+            '${GeoUtils.formatDistance(d)} to ${stop.name} · $status$drift';
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.auto_mode, size: 13, color: scheme.primary),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: lag >= 3 ? AppTheme.danger : null,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _compactBar() {
     final RouteInfo? r = _route;
     final String summary = r == null
@@ -809,6 +853,7 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                                     .colorScheme
                                     .onSurfaceVariant),
                       ),
+                      _autopilotLine(),
                     ],
                   ),
                 ),

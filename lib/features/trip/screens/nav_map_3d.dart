@@ -255,13 +255,15 @@ class _NavMap3DState extends State<NavMap3D> {
         ];
         // Fade buildings in as the camera reaches a useful 3D zoom. This
         // avoids the flat pop-in effect when the user zooms toward a place.
+        // Starting one zoom level earlier is what turns "one extruded block
+        // in front of the car" into an actual 3D city around the route.
         final List<dynamic> scaledHeight = <dynamic>[
           'interpolate',
           <dynamic>['linear'],
           <dynamic>['zoom'],
-          14.0,
+          13.0,
           0.0,
-          15.5,
+          15.0,
           heightExpression,
         ];
         // Planet v3 does not consistently provide a building class. Use
@@ -332,7 +334,7 @@ class _NavMap3DState extends State<NavMap3D> {
           ),
           belowLayerId: 'nav_route_casing',
           sourceLayer: 'building',
-          minzoom: 14,
+          minzoom: 13,
           filter: buildingFilter,
           enableInteraction: false,
         );
@@ -382,7 +384,7 @@ class _NavMap3DState extends State<NavMap3D> {
           ),
           belowLayerId: 'nav_route_casing',
           sourceLayer: 'building',
-          minzoom: 14,
+          minzoom: 13,
           filter: buildingFilter,
           enableInteraction: false,
         );
@@ -438,9 +440,9 @@ class _NavMap3DState extends State<NavMap3D> {
             'interpolate',
             <dynamic>['linear'],
             <dynamic>['zoom'],
-            14.0,
+            13.0,
             0.0,
-            15.5,
+            15.0,
             detailHeight,
           ];
           final List<dynamic> detailBase = <dynamic>[
@@ -520,7 +522,7 @@ class _NavMap3DState extends State<NavMap3D> {
             ),
             belowLayerId: 'nav_route_casing',
             sourceLayer: 'building',
-            minzoom: 14,
+          minzoom: 13,
             filter: detailFilter,
             enableInteraction: false,
           );
@@ -563,7 +565,7 @@ class _NavMap3DState extends State<NavMap3D> {
             ),
             belowLayerId: 'nav_route_casing',
             sourceLayer: 'building',
-            minzoom: 14,
+          minzoom: 13,
             filter: detailFilter,
             enableInteraction: false,
           );
@@ -585,6 +587,183 @@ class _NavMap3DState extends State<NavMap3D> {
         } catch (_) {
           // The detailed tileset is an enhancement, never a map prerequisite.
         }
+
+      // ── the street network over the imagery ────────────────────────────
+      // MapTiler's "hybrid" style is aerial imagery plus a few big-road
+      // labels. Under a tilted 3D camera that leaves buildings standing on a
+      // photo with no lane, service road or footpath under them — exactly the
+      // "chhoti sadkein render nahi ho rahin" complaint. The Planet tileset
+      // already loaded above carries a full transportation layer, so draw it
+      // (casing + fill, then the fine classes up close) and label the
+      // streets. Everything is inserted BELOW the building extrusions: roads
+      // painted over rooftops look worse than no roads at all.
+      if (widget.satellite) {
+        // Buildings are optional, so the anchor layer may not exist — fall
+        // back to the route casing, which always does.
+        Future<void> addLine(
+          String id,
+          ml.LineLayerProperties props, {
+          required String sourceLayer,
+          double? minzoom,
+          List<dynamic>? filter,
+        }) async {
+          for (final String below in <String>[
+            'nav_buildings_3d',
+            'nav_route_casing',
+          ]) {
+            try {
+              await c.addLineLayer(
+                'nav_buildings_src',
+                id,
+                props,
+                belowLayerId: below,
+                sourceLayer: sourceLayer,
+                minzoom: minzoom,
+                filter: filter,
+                enableInteraction: false,
+              );
+              return;
+            } catch (_) {
+              // Try the next anchor.
+            }
+          }
+        }
+
+        try {
+          final List<dynamic> roadWidth = <dynamic>[
+            'interpolate',
+            <dynamic>['linear'],
+            <dynamic>['zoom'],
+            11.5,
+            <dynamic>[
+              'match',
+              <dynamic>['get', 'class'],
+              'motorway', 1.1,
+              'trunk', 1.0,
+              'primary', 0.9,
+              'secondary', 0.8,
+              0.45,
+            ],
+            14.0,
+            <dynamic>[
+              'match',
+              <dynamic>['get', 'class'],
+              'motorway', 3.4,
+              'trunk', 3.0,
+              'primary', 2.7,
+              'secondary', 2.3,
+              'tertiary', 1.8,
+              1.15,
+            ],
+            16.5,
+            <dynamic>[
+              'match',
+              <dynamic>['get', 'class'],
+              'motorway', 8.2,
+              'trunk', 7.2,
+              'primary', 6.4,
+              'secondary', 5.4,
+              'tertiary', 4.3,
+              3.0,
+            ],
+          ];
+          await addLine(
+            'nav_roads_casing',
+            ml.LineLayerProperties(
+              lineColor: '#1D232B',
+              lineWidth: <dynamic>['*', roadWidth, 1.85],
+              lineOpacity: 0.55,
+              lineJoin: 'round',
+              lineCap: 'round',
+            ),
+            sourceLayer: 'transportation',
+            minzoom: 11,
+          );
+          await addLine(
+            'nav_roads_fill',
+            ml.LineLayerProperties(
+              lineColor: '#F5F7FA',
+              lineWidth: roadWidth,
+              lineOpacity: 0.94,
+              lineJoin: 'round',
+              lineCap: 'round',
+            ),
+            sourceLayer: 'transportation',
+            minzoom: 11,
+          );
+          // Lanes, service roads and footpaths only exist in the tiles from
+          // ~z14 up. Pulling them in earlier would bury the map under every
+          // field track in the district.
+          await addLine(
+            'nav_roads_minor',
+            ml.LineLayerProperties(
+              lineColor: '#EDEFF3',
+              lineWidth: <dynamic>[
+                'interpolate',
+                <dynamic>['linear'],
+                <dynamic>['zoom'],
+                14.0,
+                0.7,
+                17.0,
+                2.6,
+              ],
+              lineOpacity: 0.9,
+              lineJoin: 'round',
+            ),
+            sourceLayer: 'transportation',
+            minzoom: 14,
+            filter: <dynamic>[
+              'any',
+              <dynamic>['==', <dynamic>['get', 'class'], 'service'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'minor'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'residential'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'track'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'path'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'footway'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'cycleway'],
+              <dynamic>['==', <dynamic>['get', 'class'], 'pedestrian'],
+            ],
+          );
+          // Street names follow the road, with a halo: white text on an
+          // aerial photo is unreadable without one.
+          for (final String below in <String>[
+            'nav_buildings_3d',
+            'nav_route_casing',
+          ]) {
+            try {
+              await c.addSymbolLayer(
+                'nav_buildings_src',
+                'nav_street_labels',
+                ml.SymbolLayerProperties(
+                  symbolPlacement: 'line',
+                  textField: '{name}',
+                  textSize: <dynamic>[
+                    'interpolate',
+                    <dynamic>['linear'],
+                    <dynamic>['zoom'],
+                    14.5,
+                    10.0,
+                    17.0,
+                    13.0,
+                  ],
+                  textColor: '#FFFFFF',
+                  textHaloColor: '#111820',
+                  textHaloWidth: 1.5,
+                ),
+                belowLayerId: below,
+                sourceLayer: 'transportation_name',
+                minzoom: 14.5,
+                enableInteraction: false,
+              );
+              break;
+            } catch (_) {
+              // Try the next anchor.
+            }
+          }
+        } catch (_) {
+          // A style without those source layers simply keeps the imagery.
+        }
+      }
       }
     }
   }

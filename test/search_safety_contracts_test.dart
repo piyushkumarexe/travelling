@@ -94,6 +94,79 @@ void main() {
     });
   });
 
+  group('the relevance rule is one rule (map search reported bug)', () {
+    // MapScreen re-checks the rows PlacesRepository returns, so the two must
+    // share `nameMatchesQuery` — a second, slightly different copy of the
+    // token rule is how "new public college" kept showing Noida.
+    test('a name match needs a real word, not a 3-letter fragment', () {
+      final Place college = Place(
+        placeId: 'osm-1',
+        name: 'New Public College',
+        lat: 26.8700,
+        lng: 80.9400,
+        address: 'Ashok Marg, Lucknow',
+        city: 'Lucknow',
+        primaryType: 'college',
+        types: const <String>['college'],
+      );
+      final Place noida = Place(
+        placeId: 'osm-2',
+        name: 'Noida',
+        lat: 28.5355,
+        lng: 77.3910,
+        address: 'Noida, Uttar Pradesh, India',
+        city: 'New Delhi',
+        state: 'Uttar Pradesh',
+        primaryType: 'city',
+        types: const <String>['administrative_area'],
+      );
+      expect(PlaceRanking.nameMatchesQuery(college, 'new Public college'),
+          isTrue);
+      expect(PlaceRanking.nameMatchesQuery(noida, 'new Public college'), isFalse,
+          reason: '"new" is 3 letters — it must never vouch for New Delhi');
+      expect(PlaceRanking.nameMatchesQuery(noida, 'noida'), isTrue,
+          reason: 'searching for the city itself must still find the city');
+    });
+
+    test('a category query accepts results that do not carry the word', () {
+      final Place cafe = Place(
+        placeId: 'osm-3',
+        name: 'Sahu Chai Corner',
+        lat: 26.8500,
+        lng: 80.9410,
+        primaryType: 'cafe',
+        types: const <String>['cafe'],
+      );
+      expect(PlaceRanking.nameMatchesQuery(cafe, 'cafes near me'), isTrue,
+          reason: '"cafe" and "near me" are category words, not a name');
+    });
+
+    test('an address alone no longer makes a place "explicitly located"', () {
+      // The old rule matched the query against the free-form address too, so
+      // any college whose address sat in New Delhi was accepted for "new
+      // public college". Only the administrative fields may vouch now.
+      final Place delhiCollege = Place(
+        placeId: 'osm-4',
+        name: 'Holy Child School',
+        lat: 28.6100,
+        lng: 77.2100,
+        address: 'New Delhi, Delhi, India',
+        city: 'Delhi',
+        primaryType: 'school',
+        types: const <String>['school'],
+      );
+      expect(
+          PlaceRanking.queryNamesLocality(
+              delhiCollege, PlaceRanking.normalizeName('new public college')),
+          isFalse);
+      expect(
+          PlaceRanking.queryNamesLocality(
+              delhiCollege, PlaceRanking.normalizeName('school new delhi')),
+          isTrue,
+          reason: 'naming the city in the query must still work');
+    });
+  });
+
   group('admin regions are not answers (map search reported bug)', () {
     // Typing "new Public college" into the Map tab offered "Noida — Noida,
     // Ut…" as the only result: a 470 km-away CITY, because the geocoders
