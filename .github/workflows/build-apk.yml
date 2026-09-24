@@ -439,6 +439,31 @@ jobs:
           (cd dist && sha256sum yatrawise-*.apk > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
           ls -lh dist/
+          # Sizes as annotations: they are the only channel readable from a
+          # sandbox that cannot download artifacts, and they make a size
+          # regression (or a shrink-resources win) visible without a download.
+          for f in dist/*.apk; do
+            echo "::notice::apk-size $(basename "$f") $(du -h "$f" | cut -f1)"
+          done
+
+      # The combined artifact is ~280 MB (three per-ABI APKs + the universal
+      # fallback). A tester on a phone wants exactly ONE of them, so each
+      # per-device APK is uploaded on its own too — a 45 MB download instead
+      # of 280 MB, which is what used to break on mobile data with "problem
+      # parsing the package". The universal APK stays in the combined
+      # artifact and in the release.
+      - name: Upload per-device APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yatrawise-phone-apk
+          path: |
+            dist/yatrawise-arm64-v8a.apk
+            dist/yatrawise-armeabi-v7a.apk
+            dist/yatrawise-x86_64.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

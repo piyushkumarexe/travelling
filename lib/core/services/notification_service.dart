@@ -102,8 +102,10 @@ class NotificationService {
         _ => 'General',
       };
 
+  // The app is Tourism — channel names are visible in Android's
+  // notification settings, so they must match the launcher label.
   static String _channelDescription(String id) =>
-      'YatraWise ${_channelName(id)}';
+      'Tourism ${_channelName(id)}';
 
   /// Android notification channels are created up-front, once.
   ///
@@ -215,5 +217,5 @@ class _ChannelSpec {
   final String name;
   final Importance importance;
 
-  String get description => 'YatraWise $name';
+  String get description => 'Tourism $name';
 }

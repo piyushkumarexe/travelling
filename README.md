@@ -742,8 +742,14 @@ python3 tools/install_logo.py /tmp/emblem.png --only icons
 
 Both are already applied for the current logo (`assets/images/yatrawise-logo.png`
 + all five `mipmap-*` densities), so nothing has to be re-run unless the
-artwork changes. `convert -strip -define png:compression-level=9` shrinks the
-generated PNG by ~10% — the encoder here favours simplicity over size.
+artwork changes. Then shrink it for shipping: the app only ever draws the mark at
+152 dp, so 512 px is already more than a 3x device needs, and quantising to
+256 colours is invisible on this artwork while cutting 330 KB to 64 KB:
+
+```bash
+convert assets/images/yatrawise-logo.png -resize 512x512 -colors 256 \
+        -strip -define png:compression-level=9 assets/images/yatrawise-logo.png
+```
 
 The script square-centre-crops the source, writes the asset and regenerates
 `ic_launcher.png`, `ic_launcher_round.png` and `ic_launcher_foreground.png` in

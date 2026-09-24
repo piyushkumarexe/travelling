@@ -357,7 +357,7 @@ class AutopilotService extends ChangeNotifier {
       if (_dataset.isEmpty) {
         try {
           _dataset =
-              await _wideSweep(center).timeout(const Duration(seconds: 45));
+              await _wideSweep(center).timeout(const Duration(seconds: 30));
         } catch (_) {
           // Timeout or total outage — reported as an empty area below.
         }
@@ -740,10 +740,13 @@ class AutopilotService extends ChangeNotifier {
     final List<Place> out = <Place>[];
     final Set<String> seen = <String>{};
     for (final String label in wanted.take(5)) {
+      // Ten good options is plenty for a plan — stopping here is what keeps
+      // the sweep from turning into a 45-second wait.
+      if (out.length >= 10) break;
       try {
         final List<Place> found = await _places
             .search(label, location: center, radiusMeters: 25000)
-            .timeout(const Duration(seconds: 16));
+            .timeout(const Duration(seconds: 14));
         for (final Place p in found) {
           if (p.category == 'locality' ||
               p.category == 'administrative' ||

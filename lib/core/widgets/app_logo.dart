@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The YatraWise brand mark, used on the login screen (and anywhere else the
+/// The Tourism brand mark, used on the login screen (and anywhere else the
 /// app shows its identity).
 ///
 /// It resolves the PNG first and falls back to the bundled JPEG, so swapping

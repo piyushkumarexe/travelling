@@ -25,7 +25,7 @@ import '../../../data/models/safety_zone.dart';
 import '../../../data/models/trip_plan.dart';
 import '../../autopilot/autopilot_models.dart';
 import '../../autopilot/autopilot_service.dart';
-import 'nav_map_3d.dart';
+import '../../map/widgets/nav_map_3d.dart';
 
 /// Live Trip mode: tracks the traveler in real time toward a destination,
 /// showing remaining distance, ETA, the route on a map and a live safety

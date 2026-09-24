@@ -22,6 +22,7 @@ import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
+import '../widgets/nav_map_3d.dart';
 
 /// Interactive map (MapTiler raster tiles — no Google Maps SDK key needed):
 /// GPS location, zoom/pan, place search, tourist attractions, nearby places,
@@ -131,6 +132,15 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _searchDebounce;
   List<Place> _results = const <Place>[];
   bool _resultsVisible = false;
+
+  /// Full 3D view (MapLibre: tilted camera, building extrusions, the street
+  /// network and street names). Opt-in — the flat flutter_map stays the
+  /// default because it works keyless and costs far less battery.
+  bool _map3d = false;
+
+  /// Set when 3D could not start (no MapTiler key / style load failure) so
+  /// the map can say why it fell back instead of silently doing nothing.
+  String? _map3dNotice;
   bool _searchLoading = false;
   String? _searchError;
 
@@ -331,6 +341,12 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Last time the position actually reached the screen. GPS jitters by a few
+  /// metres while standing still; rebuilding the whole map (tiles, markers,
+  /// polylines, attribution) on every one of those fixes was pure jank and
+  /// pure battery. The value is always stored — only the REPAINT is rationed.
+  DateTime? _lastPosPaint;
+
   /// Always start live position tracking (even when the map opens focused on
   /// a specific place, so the blue dot, distance and follow-mode work).
   void _startPositionWatch() {
@@ -338,8 +354,27 @@ class _MapScreenState extends State<MapScreen> {
     _posSub = _c.locationService.watchPosition(distanceFilter: 20).listen(
           (Position p) {
         if (mounted) {
-          setState(() => _position = p);
-          _updateDistance();
+          final Position? prev = _position;
+          _position = p;
+          final double moved = prev == null
+              ? double.infinity
+              : GeoUtils.distanceMetersLL(
+                  prev.latitude, prev.longitude, p.latitude, p.longitude);
+          final DateTime? last = _lastPosPaint;
+          final bool stale = last == null ||
+              DateTime.now().difference(last) >= const Duration(seconds: 2);
+          if (moved >= 5 || stale) {
+            _lastPosPaint = DateTime.now();
+            // ONE rebuild for both the marker and the "distance to
+            // selected" line — they used to each call setState per fix.
+            setState(() {
+              _position = p;
+              final Place? sel = _selected;
+              if (sel != null) {
+                _distanceToSelected = _distanceTo(sel.lat, sel.lng);
+              }
+            });
+          }
           try {
             if (!_autoCentered) {
               _autoCentered = true;
@@ -1078,6 +1113,16 @@ class _MapScreenState extends State<MapScreen> {
     // runtime. Otherwise the map renders keyless OpenStreetMap tiles so it
     // never shows MapTiler's "Invalid key" error tiles and never goes blank.
     final bool useMaptiler = AppConfig.mapTilerConfigured && !_maptilerRejected;
+    // 3D needs vector tiles, which only exist when a MapTiler key was
+    // compiled in AND validated at runtime.
+    final bool can3d = AppConfig.mapTilerConfigured && !_maptilerRejected;
+    final bool show3d = _map3d && can3d;
+    final List<LatLng> route3d = (_route?.polyline ?? const <gm.LatLng>[])
+        .map((gm.LatLng g) => LatLng(g.latitude, g.longitude))
+        .toList();
+    final LatLng? dest3d = _selected == null
+        ? null
+        : LatLng(_selected!.lat, _selected!.lng);
     return Scaffold(
       // The keyboard must NOT resize the map body: when it did, the
       // bottom-anchored floating control column (zoom / follow / my-location)
@@ -1087,7 +1132,28 @@ class _MapScreenState extends State<MapScreen> {
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: <Widget>[
-          FlutterMap(
+          if (show3d)
+            Positioned.fill(
+              child: NavMap3D(
+                key: ValueKey<String>(
+                    'map3d-${_mapStyle == 'streets-v2' ? 'streets' : 'hybrid'}'),
+                position: _position,
+                routeLine: route3d,
+                destination: dest3d,
+                follow: _follow,
+                satellite: _mapStyle != 'streets-v2',
+                onUnavailable: () {
+                  if (!mounted || !_map3d) return;
+                  setState(() {
+                    _map3d = false;
+                    _map3dNotice = 'The 3D view needs the MapTiler style '
+                        'and vector tiles — showing the flat map instead.';
+                  });
+                },
+              ),
+            )
+          else
+            FlutterMap(
             mapController: _controller,
             options: MapOptions(
               initialCenter: _initialCenter,
@@ -1174,6 +1240,11 @@ class _MapScreenState extends State<MapScreen> {
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     child: _tileNoticeBanner(_tileNotice!),
                   ),
+                if (_map3dNotice != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _tileNoticeBanner(_map3dNotice!),
+                  ),
               ],
             ),
           ),
@@ -1235,6 +1306,24 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                FloatingActionButton.small(
+                  heroTag: 'map-3d-toggle',
+                  tooltip: show3d
+                      ? 'Back to the flat map'
+                      : (can3d
+                          ? '3D view — buildings, streets and street names'
+                          : 'The 3D view needs a MapTiler key'),
+                  onPressed: can3d
+                      ? () => setState(() {
+                            _map3d = !_map3d;
+                            _map3dNotice = null;
+                          })
+                      : null,
+                  backgroundColor: show3d ? scheme.primary : null,
+                  foregroundColor: show3d ? scheme.onPrimary : null,
+                  child: Icon(show3d ? Icons.map_outlined : Icons.view_in_ar),
+                ),
+                const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'map-layer-toggle',
                   tooltip: useMaptiler

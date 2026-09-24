@@ -65,6 +65,12 @@ class _NavMap3DState extends State<NavMap3D> {
   String? get _styleUrl =>
       AppConfig.styleJsonUrl(widget.satellite ? 'hybrid' : 'streets-v2');
 
+  /// True once the camera has been pointed at the traveller. The first GPS
+  /// fix often lands a beat AFTER the map is built (cold start), so an
+  /// explore-mode 3D view would otherwise open on the whole of India and stay
+  /// there — it now jumps to the user once, then leaves their panning alone.
+  bool _autoCentered = false;
+
   @override
   void initState() {
     super.initState();
@@ -853,6 +859,38 @@ class _NavMap3DState extends State<NavMap3D> {
       _lastDest = widget.destination;
       c.setGeoJsonSource('nav_dest_src', _destGeoJson());
     }
-    if (widget.follow) unawaited(_updateCamera());
+    if (widget.follow) {
+      unawaited(_updateCamera());
+    } else if (!_autoCentered && widget.position != null) {
+      // Free-look (Map tab): centre on the traveller the moment the first
+      // fix exists, then never fight their gestures again.
+      _autoCentered = true;
+      unawaited(_centreOnUser());
+    }
+  }
+
+  /// One-shot "put the camera where the user is" for explore mode.
+  Future<void> _centreOnUser() async {
+    final ml.MapLibreMapController? c = _controller;
+    final Position? p = widget.position;
+    if (c == null || p == null || !mounted) return;
+    if (!_styleReady.isCompleted) return;
+    _lastLat = p.latitude;
+    _lastLng = p.longitude;
+    try {
+      await c.animateCamera(
+        ml.CameraUpdate.newCameraPosition(
+          ml.CameraPosition(
+            target: ml.LatLng(p.latitude, p.longitude),
+            zoom: _lastZoom,
+            bearing: 0,
+            tilt: _tilt,
+          ),
+        ),
+        duration: const Duration(milliseconds: 400),
+      );
+    } catch (_) {
+      // Camera races during style load are harmless.
+    }
   }
 }

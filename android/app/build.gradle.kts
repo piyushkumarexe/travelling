@@ -104,8 +104,17 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Code minification (R8) stays OFF: the map SDKs (MapLibre,
+            // Google Maps) and Firebase deserialize through reflection, and a
+            // stripped model class crashes at runtime on a device — which is
+            // not a trade worth making for a few hundred KB.
             isMinifyEnabled = false
-            isShrinkResources = false
+            // Resource shrinking IS safe and worth it: it drops the drawables
+            // and layouts the AARs ship but this app never inflates. The
+            // keep-rules live in res/raw/keep.xml for the handful of
+            // resources that are looked up by NAME (launcher icons, the
+            // splash drawable and MapLibre's location-puck artwork).
+            isShrinkResources = true
         }
     }
 }

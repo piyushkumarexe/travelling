@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resource shrinking (isShrinkResources = true in build.gradle.kts) removes
+  anything it cannot prove is used. These are looked up BY NAME at runtime,
+  so shrinking has to be told to leave them alone:
+
+    * ic_launcher / ic_launcher_round — the launcher and the splash screen
+      (launch_background.xml references @mipmap/ic_launcher).
+    * maplibre_* — the MapLibre SDK resolves its location-puck and compass
+      artwork by name; stripping those crashes the 3D map the moment the
+      blue position dot is drawn.
+    * google_*/firebase_* — read by the Google/Firebase services at start-up.
+
+  shrinkMode="safe" keeps anything reachable by Resources.getIdentifier()
+  too, which is the conservative choice for a shipping build.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:shrinkMode="safe"
+    tools:keep="@mipmap/ic_launcher*,@drawable/launch_background,@drawable/maplibre_*,@string/google_*,@string/firebase_*,@string/default_web_client_id"
+    tools:discard="" />

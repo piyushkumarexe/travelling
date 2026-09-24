@@ -315,7 +315,7 @@ class MainActivity : FlutterActivity() {
         return try {
             val intent =
                 Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$destination")).apply {
-                    putExtra(Intent.EXTRA_SUBJECT, "YatraWise emergency location")
+                    putExtra(Intent.EXTRA_SUBJECT, "Tourism emergency location")
                     // smsto: intents carry the pre-filled body in the
                     // "sms_body" extra (Telephony.Sms.Intents.EXTRA_SMSP_BODY's
                     // value) — some SMS apps also read the generic "text".
