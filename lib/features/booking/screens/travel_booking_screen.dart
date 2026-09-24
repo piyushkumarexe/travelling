@@ -452,6 +452,7 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
         content: Text(describeLaunch(result))));
     if (result == BookingLaunchResult.appNotInstalled ||
         result == BookingLaunchResult.opened ||
+        result == BookingLaunchResult.openedPrefilled ||
         result == BookingLaunchResult.openedApp ||
         result == BookingLaunchResult.openedWeb) {
       await _offerSave(p, q);

@@ -237,13 +237,18 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     if (!mounted) return;
     setState(() => _launching = null);
     final String message = switch (result) {
+      BookingLaunchResult.openedPrefilled =>
+        '${provider.providerName} opened with your pickup and destination '
+            'coordinates prefilled. Confirm the pins before booking.',
       BookingLaunchResult.opened =>
-        '${provider.providerName} opened'
-            '${provider.appSchemePrefillsLocation ? ' with your pickup & drop prefilled' : ''}. '
-            'Complete the booking there — booking happens in ${provider.providerName}, not in Tourism.',
-      BookingLaunchResult.openedApp =>
-        'Official ${provider.providerName} app opened. Set your pickup & drop '
-            'there — Tourism does not prefill them for this provider.',
+        '${provider.providerName} opened. Its public link does not accept '
+            'pickup/drop coordinates.',
+      BookingLaunchResult.openedApp => _c.bookingService.lastDestinationCopied
+          ? 'Official ${provider.providerName} app opened. This provider has '
+              'no public location-prefill link, so "${q.toName}" was copied. '
+              'Paste it in the destination box.'
+          : 'Official ${provider.providerName} app opened. Set your pickup & '
+              'drop there — this provider has no public prefill contract.',
       BookingLaunchResult.openedWeb =>
         'Official ${provider.providerName} website opened.',
       BookingLaunchResult.appNotInstalled =>

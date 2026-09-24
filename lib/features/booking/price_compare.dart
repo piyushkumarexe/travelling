@@ -26,9 +26,12 @@ enum PriceConfidence { high, medium, low, unknown }
 
 extension PriceConfidenceInfo on PriceConfidence {
   String get label => switch (this) {
-        PriceConfidence.high => 'Good estimate',
-        PriceConfidence.medium => 'Rough estimate',
-        PriceConfidence.low => 'Ballpark only',
+        // "Good estimate" sounded like fare accuracy. What is high here is
+        // the INPUT quality (a real road route), not a promise that provider
+        // surge/discounts are known.
+        PriceConfidence.high => 'Route-based range',
+        PriceConfidence.medium => 'Indicative range',
+        PriceConfidence.low => 'Wide estimate',
         PriceConfidence.unknown => 'No estimate — check live',
       };
 
@@ -126,12 +129,17 @@ class PriceCompare {
   PriceCompare._();
 
   // ---- Rides (base ₹ + ₹/km + ₹/min, minimum fare) -----------------------
+  // These are APP-RIDE effective rates, not a city's meter tariff. The old
+  // ₹25 + ₹12/km auto card produced ₹50–64 for the user's real 2.1 km ride —
+  // far below what providers show once pickup, time, platform fee and demand
+  // are included. Conservative minimums + wider upper bands are deliberate:
+  // under-budgeting a traveller is worse than showing an honest wide range.
   static const Map<String, _RideRate> _rideRates = <String, _RideRate>{
-    'bike': _RideRate(base: 8, perKm: 4.5, perMin: 0.6, min: 20),
-    'auto': _RideRate(base: 25, perKm: 12, perMin: 1.0, min: 30),
-    'cab': _RideRate(base: 50, perKm: 14, perMin: 1.6, min: 90),
-    'sedan': _RideRate(base: 70, perKm: 17, perMin: 2.0, min: 120),
-    'suv': _RideRate(base: 90, perKm: 21, perMin: 2.4, min: 160),
+    'bike': _RideRate(base: 25, perKm: 6, perMin: 0.8, min: 40),
+    'auto': _RideRate(base: 45, perKm: 15, perMin: 1.5, min: 80),
+    'cab': _RideRate(base: 85, perKm: 19, perMin: 2.0, min: 130),
+    'sedan': _RideRate(base: 105, perKm: 22, perMin: 2.4, min: 160),
+    'suv': _RideRate(base: 140, perKm: 27, perMin: 2.8, min: 220),
   };
 
   /// Platform character: what each one typically costs relative to the card,
@@ -139,12 +147,12 @@ class PriceCompare {
   /// never a mystery.
   static const Map<String, _PlatformFactor> _rideFactors =
       <String, _PlatformFactor>{
-    'uber': _PlatformFactor(1.06, 0, 'Uber: usually a touch above Ola on '
-        'the same route; upfront pricing.'),
-    'ola': _PlatformFactor(1.00, 0, 'Ola: the baseline card; Prime/Plus '
-        'subscriptions can cut this further.'),
-    'rapido': _PlatformFactor(0.90, 5, 'Rapido: cheapest for bike/auto, '
-        'small platform fee on cabs.'),
+    'uber': _PlatformFactor(1.05, 12, 'Route-card estimate; Uber\'s actual '
+        'upfront fare may add demand, tolls or discounts.'),
+    'ola': _PlatformFactor(1.00, 10, 'Route-card estimate; Ola Prime/Plus, '
+        'demand and coupons can change the live fare.'),
+    'rapido': _PlatformFactor(0.98, 8, 'Route-card estimate; Rapido exposes '
+        'no public live-fare or location-prefill API.'),
   };
 
   // ---- Inter-city (₹/km by class/service, minimum fare) ------------------
@@ -216,8 +224,19 @@ class PriceCompare {
     double? distanceKm,
     double? minutes,
     String vehicle = 'cab',
+    Map<String, double> learnedFactors = const <String, double>{},
+    DateTime? pricedAt,
   }) {
     final _RideRate rate = _rideRates[vehicle] ?? _rideRates['cab']!;
+    final DateTime clock = pricedAt ?? DateTime.now();
+    // Not "live surge": just an honest wider planning factor for the hours
+    // where app rides commonly cost more. The UI explicitly calls it that.
+    final double demand = switch (clock.hour) {
+      >= 7 && <= 10 => 1.18,
+      >= 17 && <= 21 => 1.18,
+      >= 22 || <= 5 => 1.25,
+      _ => 1.05,
+    };
     final List<PlatformQuote> out = <PlatformQuote>[];
     for (final BookingProvider p in providers) {
       final _PlatformFactor f =
@@ -236,23 +255,31 @@ class PriceCompare {
         continue;
       }
       final double mins = minutes ?? (distanceKm / 22 * 60); // ~22 km/h city
+      final double learned =
+          (learnedFactors[p.providerId] ?? 1.0).clamp(0.65, 2.50);
       final double raw = (rate.base +
               distanceKm * rate.perKm +
               mins * rate.perMin +
               f.fee) *
-          f.factor;
+          f.factor *
+          demand *
+          learned;
       final int mid = raw < rate.min ? rate.min : raw.round();
       out.add(PlatformQuote(
         providerId: p.providerId,
         providerName: p.providerName,
         emoji: p.emoji,
         confidence: PriceConfidence.high,
-        low: (mid * 0.92).round(),
-        high: (mid * 1.18).round(),
+        // Wide by design: provider demand, pickup distance, tolls and offers
+        // are not available without its partner API.
+        low: (mid * 0.85).round(),
+        high: (mid * 1.45).round(),
         basis: '${distanceKm.toStringAsFixed(1)} km × ₹${_money(rate.perKm)}/km '
-            '+ ₹${_money(rate.base)} base + ~${mins.round()} min'
-            '${f.fee > 0 ? ' + ₹${_money(f.fee)} fee' : ''}'
-            '${f.factor != 1 ? ' × ${f.factor}' : ''}',
+            '+ ₹${_money(rate.base)} pickup/base + ~${mins.round()} min'
+            '${f.fee > 0 ? ' + ₹${_money(f.fee)} platform fee' : ''}'
+            ' × ${demand.toStringAsFixed(2)} time buffer'
+            '${f.factor != 1 ? ' × ${f.factor} provider' : ''}'
+            '${learned != 1 ? ' × ${learned.toStringAsFixed(2)} learned' : ''}',
         link: link,
         note: f.note,
       ));

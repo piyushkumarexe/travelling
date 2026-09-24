@@ -152,21 +152,94 @@ class BookingService extends ChangeNotifier {
   BookingLaunchResult _lastLaunchResult = BookingLaunchResult.ok;
   BookingLaunchResult get lastLaunchResult => _lastLaunchResult;
 
-  /// Opens the provider's official flow: documented deep/universal link or
-  /// direct app launch first, then the official website, then the Play
-  /// Store listing. Reports exactly what happened.
+  /// True when a provider cannot accept coordinates and Tourism put the
+  /// destination name on the clipboard as the least-friction honest fallback.
+  bool _lastDestinationCopied = false;
+  bool get lastDestinationCopied => _lastDestinationCopied;
+
+  /// Per-provider/service calibration learned ONLY from fares the traveller
+  /// enters after checking the real provider. It stays on this device.
+  static const String _fareFactorPrefix = 'booking.rideFareFactor.v1.';
+
+  Future<double> rideFareFactor(String providerId, String serviceType) async {
+    try {
+      final SharedPreferences p = await SharedPreferences.getInstance();
+      return (p.getDouble('$_fareFactorPrefix$providerId.$serviceType') ?? 1.0)
+          .clamp(0.65, 2.50);
+    } catch (_) {
+      return 1.0;
+    }
+  }
+
+  /// Learns gently (35% of the newest observation) so one surge fare cannot
+  /// poison every later estimate. Ratios are bounded for the same reason.
+  Future<void> recordActualRideFare({
+    required String providerId,
+    required String serviceType,
+    required int estimatedMid,
+    required int actualFare,
+  }) async {
+    if (estimatedMid <= 0 || actualFare <= 0) return;
+    try {
+      final SharedPreferences p = await SharedPreferences.getInstance();
+      final String key = '$_fareFactorPrefix$providerId.$serviceType';
+      final double old = (p.getDouble(key) ?? 1.0).clamp(0.65, 2.50);
+      // [estimatedMid] already includes [old], therefore convert the new
+      // observed ratio back to an ABSOLUTE factor before smoothing it.
+      final double observed =
+          (old * actualFare / estimatedMid).clamp(0.65, 2.50);
+      await p.setDouble(
+          key, (old * 0.65 + observed * 0.35).clamp(0.65, 2.50));
+    } catch (_) {
+      // Learning is optional; booking must still work if preferences fail.
+    }
+  }
+
+  /// Opens the provider's official flow. The order matters:
+  /// 1) a native scheme that REALLY carries coordinates (Uber),
+  /// 2) an official prefilled universal/web link (Ola),
+  /// 3) only then a bare app launch (Rapido has no public prefill contract).
   Future<BookingLaunchResult> continueWithProvider(
       BookingProvider provider, BookingQuery q) async {
     _lastLaunchResult = BookingLaunchResult.ok;
-    // 1) Verified deep/universal link (also covers mobile-web fallback).
+    _lastDestinationCopied = false;
+
+    // Native scheme first only when its documented contract carries both
+    // points. Ola's olacabs://app/launch does NOT, so opening it here was the
+    // exact reason the user had to type both locations again.
+    if (provider.appDeepLinkBuilder != null &&
+        provider.appSchemePrefillsLocation) {
+      final bool ok = await _launch(provider.appDeepLinkBuilder!(q));
+      if (ok) return BookingLaunchResult.openedPrefilled;
+    }
+
+    // Official universal/mobile-web link with coordinates. Android may hand
+    // it to the installed app; if not, mobile web still opens prefilled.
+    if (q.hasFrom && q.hasTo && provider.webLinkBuilder != null) {
+      final bool ok = await _launch(provider.webLinkBuilder!(q));
+      if (ok) return BookingLaunchResult.openedPrefilled;
+    }
+
+    // A documented scheme that cannot carry locations may still be the best
+    // official route into the app after the prefilled link was unavailable.
     if (provider.appDeepLinkBuilder != null) {
-      final String link = provider.appDeepLinkBuilder!(q);
-      final bool ok = await _launch(link);
+      final bool ok = await _launch(provider.appDeepLinkBuilder!(q));
       if (ok) return BookingLaunchResult.opened;
-      // Universal link failed entirely (offline / resolver error).
       _lastLaunchResult = BookingLaunchResult.linkInvalid;
     }
-    // 2) Direct official app launch — getLaunchIntentForPackage via the
+
+    // Rapido publishes no pickup/drop deep-link parameters. Copy the drop
+    // name so the traveller can paste it with one tap instead of retyping it;
+    // never invent undocumented URL parameters that its app will ignore.
+    if (provider.appDeepLinkBuilder == null &&
+        provider.webLinkBuilder == null &&
+        q.toName != null &&
+        q.toName!.trim().isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: q.toName!.trim()));
+      _lastDestinationCopied = true;
+    }
+
+    // Direct official app launch — getLaunchIntentForPackage via the
     //    native channel is the RELIABLE way to open the installed app
     //    itself (the intent:// MAIN/LAUNCHER URI silently fails to resolve
     //    on several OEMs, which used to strand the flow on the Play Store
@@ -306,7 +379,8 @@ class BookingService extends ChangeNotifier {
 
 enum BookingLaunchResult {
   ok, // initial/reset state
-  opened, // universal/deep link fired (app or provider web)
+  opened, // provider flow fired, but its contract carries no coordinates
+  openedPrefilled, // official native/universal link carries pickup + drop
   openedApp, // official app launched directly
   openedWeb, // official website opened (no prefill)
   appNotInstalled, // official app missing → Play listing shown
@@ -318,6 +392,8 @@ String describeLaunch(BookingLaunchResult r) => switch (r) {
       BookingLaunchResult.ok => '',
       BookingLaunchResult.opened =>
         'Continued with the provider\'s official booking flow.',
+      BookingLaunchResult.openedPrefilled =>
+        'Provider opened with pickup and destination prefilled.',
       BookingLaunchResult.openedApp => 'Official provider app opened.',
       BookingLaunchResult.openedWeb =>
         'Official website opened (no location prefill).',

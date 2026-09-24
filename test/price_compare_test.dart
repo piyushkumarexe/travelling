@@ -61,7 +61,7 @@ void main() {
       expect(a.single.low, b.single.low);
       expect(a.single.high, b.single.high);
       expect(a.single.basis, contains('10.0 km'));
-      expect(a.single.basis, contains('₹14/km'));
+      expect(a.single.basis, contains('₹19/km'));
     });
 
     test('a short hop is never quoted below the minimum fare', () {
@@ -71,8 +71,54 @@ void main() {
         distanceKm: 0.2,
         minutes: 1,
       );
-      expect(q.single.low, greaterThanOrEqualTo(80),
-          reason: 'the ₹90 minimum fare has to survive the -8% low band');
+      expect(q.single.low, greaterThanOrEqualTo(110),
+          reason: 'the ₹130 cab minimum must survive the -15% low band');
+    });
+
+    test('reported 2.1 km auto case has a realistic wide planning range', () {
+      final PlatformQuote q = PriceCompare.forRide(
+        providers: <BookingProvider>[BookingProviders.ola],
+        query: rideQuery(),
+        distanceKm: 2.1,
+        minutes: 5,
+        vehicle: 'auto',
+        pricedAt: DateTime(2026, 9, 24, 21, 53),
+      ).single;
+      expect(q.low, greaterThanOrEqualTo(75),
+          reason: 'must not repeat the screenshot\'s unrealistic ₹50 floor');
+      expect(q.high, greaterThanOrEqualTo(120),
+          reason: 'range must leave room for demand/pickup/platform pricing');
+      expect(q.confidence.label, 'Route-based range');
+    });
+
+    test('learned actual fares calibrate that provider only', () {
+      final List<PlatformQuote> base = PriceCompare.forRide(
+        providers: const <BookingProvider>[
+          BookingProviders.ola,
+          BookingProviders.uber,
+        ],
+        query: rideQuery(),
+        distanceKm: 5,
+        minutes: 15,
+        vehicle: 'auto',
+        pricedAt: DateTime(2026, 9, 24, 14),
+      );
+      final List<PlatformQuote> learned = PriceCompare.forRide(
+        providers: const <BookingProvider>[
+          BookingProviders.ola,
+          BookingProviders.uber,
+        ],
+        query: rideQuery(),
+        distanceKm: 5,
+        minutes: 15,
+        vehicle: 'auto',
+        learnedFactors: const <String, double>{'ola': 1.5},
+        pricedAt: DateTime(2026, 9, 24, 14),
+      );
+      int mid(List<PlatformQuote> q, String id) =>
+          q.firstWhere((PlatformQuote e) => e.providerId == id).mid;
+      expect(mid(learned, 'ola'), greaterThan(mid(base, 'ola')));
+      expect(mid(learned, 'uber'), mid(base, 'uber'));
     });
 
     test('without a distance every platform still appears, unpriced', () {

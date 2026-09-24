@@ -32,7 +32,19 @@ Future<void> showPriceCompareSheet(
   String? busClass,
   String? hotelTier,
   TripEstimate? trip,
-}) {
+}) async {
+  // Personal calibration stays on-device. It makes the approximation improve
+  // after the traveller tells us what the provider actually showed, without
+  // scraping private apps or pretending Tourism has a partner fare API.
+  final Map<String, double> learned = <String, double>{};
+  if (category == BookingCategory.ride) {
+    final BookingService service = AppScope.of(context).bookingService;
+    for (final BookingProvider p in providers) {
+      learned[p.providerId] =
+          await service.rideFareFactor(p.providerId, serviceType ?? 'cab');
+    }
+    if (!context.mounted) return;
+  }
   final List<PlatformQuote> quotes = category == BookingCategory.ride
       ? PriceCompare.forRide(
           providers: providers,
@@ -40,6 +52,7 @@ Future<void> showPriceCompareSheet(
           distanceKm: distanceKm,
           minutes: minutes,
           vehicle: serviceType ?? 'cab',
+          learnedFactors: learned,
         )
       : PriceCompare.forTravel(
           category: category,
@@ -65,6 +78,7 @@ Future<void> showPriceCompareSheet(
       trip: trip,
       distanceKm: distanceKm,
       pax: pax,
+      serviceType: serviceType,
     ),
   );
 }
@@ -107,6 +121,7 @@ class _PriceCompareBody extends StatelessWidget {
     required this.trip,
     required this.distanceKm,
     required this.pax,
+    required this.serviceType,
   });
 
   final BookingCategory category;
@@ -116,6 +131,7 @@ class _PriceCompareBody extends StatelessWidget {
   final TripEstimate? trip;
   final double? distanceKm;
   final int pax;
+  final String? serviceType;
 
   @override
   Widget build(BuildContext context) {
@@ -158,10 +174,12 @@ class _PriceCompareBody extends StatelessWidget {
             _quoteCard(context, inr, quotes[i], isCheapest: i == 0),
           const SizedBox(height: 10),
           Text(
-            'Estimates come from a published-style rate card (base + per-km '
-            'or per-km by class) with each platform\'s own multiplier and '
-            'fees. Real prices move with demand, traffic, availability and '
-            'offers — always confirm on the provider before paying.',
+            'Ride ranges include pickup/base, road distance, route time, '
+            'platform fee and a time-of-day buffer. They learn locally when '
+            'you enter the actual shown fare. Real prices still move with '
+            'live demand, pickup distance, tolls and offers — only an official '
+            'partner fare API could show them inside Tourism, so always '
+            'confirm on the provider before paying.',
             style: theme.textTheme.bodySmall
                 ?.copyWith(fontStyle: FontStyle.italic),
           ),
@@ -307,10 +325,77 @@ class _PriceCompareBody extends StatelessWidget {
                   ),
               ],
             ),
+            if (category == BookingCategory.ride && q.hasPrice)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _recordActualFare(context, q),
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: const Text('Actual fare different? Improve estimate'),
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _recordActualFare(
+      BuildContext context, PlatformQuote quote) async {
+    final TextEditingController amount = TextEditingController();
+    final int? actual = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('${quote.providerName} actual fare'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Provider app me jo final fare dikh raha hai woh enter '
+                'karein. Ye sirf is phone par estimate improve karega.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amount,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                prefixText: '₹ ',
+                labelText: 'Actual shown fare',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final int? value = int.tryParse(amount.text.trim());
+              if (value != null && value >= 10 && value <= 10000) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('Save & learn'),
+          ),
+        ],
+      ),
+    );
+    amount.dispose();
+    if (actual == null || !context.mounted) return;
+    await AppScope.of(context).bookingService.recordActualRideFare(
+          providerId: quote.providerId,
+          serviceType: serviceType ?? 'cab',
+          estimatedMid: quote.mid,
+          actualFare: actual,
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Saved ₹$actual. Future ${quote.providerName} '
+          '${serviceType ?? 'cab'} estimates will learn from it.'),
+    ));
   }
 
   Future<void> _open(BuildContext context, BookingProvider p) async {
