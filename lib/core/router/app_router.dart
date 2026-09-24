@@ -142,76 +142,122 @@ class AppRouter {
         builder: (BuildContext context, GoRouterState state) =>
             const ExpenseHistoryScreen(),
       ),
-      ShellRoute(
-        builder: (BuildContext context, GoRouterState state, Widget child) =>
-            AppShell(child: child),
-        routes: <RouteBase>[
-          GoRoute(
-            path: '/home',
-            builder: (BuildContext context, GoRouterState state) =>
-                const HomeScreen(),
+      // StatefulShellRoute keeps EVERY tab alive: switching Home → Map →
+      // Home no longer rebuilds the screen, re-runs the nearby queries
+      // or re-fetches the map tiles. That is the single biggest felt
+      // performance win in the app — the shell now behaves like the
+      // bottom navigation of any top-tier app.
+      StatefulShellRoute.indexedStack(
+        builder: (BuildContext context, GoRouterState state,
+            StatefulNavigationShell navigationShell) =>
+            AppShell(child: navigationShell),
+        branches: <StatefulShellBranch>[
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/home',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const HomeScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/explore',
-            builder: (BuildContext context, GoRouterState state) =>
-                const ExploreScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/explore',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const ExploreScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/map',
-            builder: (BuildContext context, GoRouterState state) {
-              final Map<String, String> qp = state.uri.queryParameters;
-              return MapScreen(
-                key: ValueKey<String>(
-                    'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}'),
-                initialLat: double.tryParse(qp['lat'] ?? ''),
-                initialLng: double.tryParse(qp['lng'] ?? ''),
-                initialName: qp['name'],
-              );
-            },
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/map',
+                builder: (BuildContext context, GoRouterState state) {
+                      final Map<String, String> qp = state.uri.queryParameters;
+                      return MapScreen(
+                        key: ValueKey<String>(
+                            'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}'),
+                        initialLat: double.tryParse(qp['lat'] ?? ''),
+                        initialLng: double.tryParse(qp['lng'] ?? ''),
+                        initialName: qp['name'],
+                      );
+                    },
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/safety',
-            builder: (BuildContext context, GoRouterState state) =>
-                SafetyScreen(
-              openSosContact:
-                  state.uri.queryParameters['addContact'] == '1',
-            ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/safety',
+                builder: (BuildContext context, GoRouterState state) =>
+                        SafetyScreen(
+                      openSosContact:
+                          state.uri.queryParameters['addContact'] == '1',
+                    ),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/profile',
-            builder: (BuildContext context, GoRouterState state) =>
-                const ProfileScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/profile',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const ProfileScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/vehicle',
-            builder: (BuildContext context, GoRouterState state) =>
-                const VehicleScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/vehicle',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const VehicleScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/essentials',
-            builder: (BuildContext context, GoRouterState state) =>
-                const EssentialsScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/essentials',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const EssentialsScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/wallet',
-            builder: (BuildContext context, GoRouterState state) =>
-                const WalletScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/wallet',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const WalletScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/route/multi',
-            builder: (BuildContext context, GoRouterState state) =>
-                const MultiStopScreen(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/route/multi',
+                builder: (BuildContext context, GoRouterState state) =>
+                        const MultiStopScreen(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/trip/live',
-            builder: (BuildContext context, GoRouterState state) {
-              final Map<String, String> qp = state.uri.queryParameters;
-              return LiveTripScreen(
-                destinationLat: double.tryParse(qp['lat'] ?? ''),
-                destinationLng: double.tryParse(qp['lng'] ?? ''),
-                destinationName: qp['name'],
-              );
-            },
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/trip/live',
+                builder: (BuildContext context, GoRouterState state) {
+                      final Map<String, String> qp = state.uri.queryParameters;
+                      return LiveTripScreen(
+                        destinationLat: double.tryParse(qp['lat'] ?? ''),
+                        destinationLng: double.tryParse(qp['lng'] ?? ''),
+                        destinationName: qp['name'],
+                      );
+                    },
+              ),
+            ],
           ),
         ],
       ),

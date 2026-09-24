@@ -595,6 +595,10 @@ class _MapScreenState extends State<MapScreen> {
     _circles = circles;
   }
 
+  /// '#RRGGBB' from a Flutter colour — the 3D map needs colours as strings.
+  static String _hexOf(Color c) =>
+      '#${(c.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
   /// Category icon + severity colour for an incident marker.
   IconData _incidentIcon(Incident i) => switch (i.category) {
         'theft' => Icons.directions_run,
@@ -1117,6 +1121,35 @@ class _MapScreenState extends State<MapScreen> {
     final LatLng? dest3d = _selected == null
         ? null
         : LatLng(_selected!.lat, _selected!.lng);
+    // Zones and the places the traveller just searched for stay visible in
+    // 3D — a 3D view that hides them is a downgrade, not an upgrade.
+    final List<Map3DZone> zones3d = <Map3DZone>[
+      if (_showZones)
+        for (final SafetyZone z in _zones)
+          if (z.active &&
+              z.radiusMeters.isFinite &&
+              z.radiusMeters > 0 &&
+              z.lat.isFinite &&
+              z.lng.isFinite)
+            Map3DZone(
+              name: z.name,
+              lat: z.lat,
+              lng: z.lng,
+              radiusMeters: z.radiusMeters,
+              colorHex: _hexOf(RiskBadge.colorFor(context, z.riskLevel)),
+            ),
+    ];
+    final List<Map3DPin> pins3d = <Map3DPin>[
+      for (final Place r in _results.take(20))
+        Map3DPin(name: r.name, lat: r.lat, lng: r.lng),
+      if (_selected != null)
+        Map3DPin(
+          name: _selected!.name,
+          lat: _selected!.lat,
+          lng: _selected!.lng,
+          colorHex: '#DC2626',
+        ),
+    ];
     return Scaffold(
       // The keyboard must NOT resize the map body: when it did, the
       // bottom-anchored floating control column (zoom / follow / my-location)
@@ -1126,24 +1159,31 @@ class _MapScreenState extends State<MapScreen> {
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: <Widget>[
+          // RepaintBoundary: the map (tiles + 3D scene) must not be repainted
+          // when an unrelated overlay — the results sheet, the speed chip —
+          // animates above it.
           if (show3d)
             Positioned.fill(
-              child: NavMap3D(
-                key: ValueKey<String>(
-                    'map3d-${_mapStyle == 'streets-v2' ? 'streets' : 'hybrid'}'),
-                position: _position,
-                routeLine: route3d,
-                destination: dest3d,
-                follow: _follow,
-                satellite: _mapStyle != 'streets-v2',
-                onUnavailable: () {
-                  if (!mounted || !_map3d) return;
-                  setState(() {
-                    _map3d = false;
-                    _map3dNotice = 'The 3D view needs the MapTiler style '
-                        'and vector tiles — showing the flat map instead.';
-                  });
-                },
+              child: RepaintBoundary(
+                child: NavMap3D(
+                  key: ValueKey<String>(
+                      'map3d-${_mapStyle == 'streets-v2' ? 'streets' : 'hybrid'}'),
+                  position: _position,
+                  routeLine: route3d,
+                  destination: dest3d,
+                  zones: zones3d,
+                  pins: pins3d,
+                  follow: _follow,
+                  satellite: _mapStyle != 'streets-v2',
+                  onUnavailable: () {
+                    if (!mounted || !_map3d) return;
+                    setState(() {
+                      _map3d = false;
+                      _map3dNotice = 'The 3D view needs the MapTiler style '
+                          'and vector tiles — showing the flat map instead.';
+                    });
+                  },
+                ),
               ),
             )
           else
@@ -1164,7 +1204,13 @@ class _MapScreenState extends State<MapScreen> {
                     : AppConfig.fallbackTileUrl,
                 fallbackUrl: useMaptiler ? AppConfig.fallbackTileUrl : null,
                 userAgentPackageName: 'app.roamio.tourism',
-                retinaMode: RetinaMode.isHighDensity(context),
+                // Retina fetches FOUR times the tiles. Vector-ish street
+                // styles need it for crisp labels; satellite/hybrid imagery
+                // gains almost nothing visible and costs a lot of data and
+                // decode time on a mid-range phone.
+                retinaMode: _mapStyle == 'streets-v2'
+                    ? RetinaMode.isHighDensity(context)
+                    : RetinaMode.never,
                 maxNativeZoom: _maxNativeZoom,
                 errorTileCallback: (tile, error, stackTrace) {
                   if (_tileNotice == null && mounted) {

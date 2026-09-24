@@ -956,7 +956,9 @@ class AutopilotService extends ChangeNotifier {
       return;
     }
     _arrivalSub = _location
-        .watchPosition(distanceFilter: 25)
+        // 30 m: arrival at a stop is detected within a building's width,
+        // while a stationary phone stops burning fixes every few metres.
+        .watchPosition(distanceFilter: 30)
         .listen((Position p) {
       final AutopilotStop? cur = currentStop;
       if (cur == null) return;
@@ -976,7 +978,9 @@ class AutopilotService extends ChangeNotifier {
     // Aging, not polling: with the phone in a pocket and no movement past the
     // distance filter there are no new fixes, yet "5 min left" must not sit
     // on screen claiming freshness for an hour.
-    _liveTicker = Timer.periodic(const Duration(seconds: 20), (Timer _) {
+    // 30 s is often enough to age the readout; 20 s woke the UI (and the
+    // radio) 50% more often for no extra information.
+    _liveTicker = Timer.periodic(const Duration(seconds: 30), (Timer _) {
       if (currentStop == null) return;
       notifyListeners();
     });

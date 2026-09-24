@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
+import '../price_compare.dart';
+import 'price_compare_sheet.dart';
 
 /// ✈️🚆🚌🏨🚗🎟️ Generic booking search screen for all non-ride
 /// categories. Builds a BookingQuery, shows the honest summary sheet and
@@ -33,6 +35,7 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
   int _rooms = 1;
   String _class = 'E';
   BookingProvider? _launching;
+  bool _comparing = false;
 
   bool get _needsFrom => widget.category == BookingCategory.flight ||
       widget.category == BookingCategory.train ||
@@ -60,6 +63,21 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: <Widget>[
           ..._formFields(),
+          const SizedBox(height: 14),
+          // The traveller asked for every platform's price in ONE tap —
+          // this is that tap.
+          FilledButton.icon(
+            onPressed: _comparing ? null : _comparePrices,
+            icon: _comparing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.compare_arrows),
+            label: Text(_comparing
+                ? 'Checking distances…'
+                : '⚖️ Compare all platforms (1 tap)'),
+          ),
           const SizedBox(height: 14),
           Text('Continue with a provider',
               style: Theme.of(context)
@@ -311,6 +329,62 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
     );
   }
 
+  /// The single source of truth for what the traveller asked for — used by
+  /// the provider flow AND by the price comparison so both see one query.
+  BookingQuery _query() => BookingQuery(
+        fromName: _from.text.trim().isEmpty ? null : _from.text.trim(),
+        toName: _to.text.trim().isEmpty ? null : _to.text.trim(),
+        date: BookingProviders.formatIso(_date),
+        returnDate: _returnDate == null
+            ? null
+            : BookingProviders.formatIso(_returnDate!),
+        passengers: _pax,
+        rooms: _rooms,
+        travelClass: _needsClass ? _class : null,
+        tripType: _tripType,
+      );
+
+  /// ONE TAP: every platform for this category, cheapest first, each with
+  /// its estimate and a button straight to the live fare. The distance is
+  /// geocoded when possible; when it is not, the sheet still lists every
+  /// platform and says honestly that it has no estimate.
+  Future<void> _comparePrices() async {
+    final BookingQuery q = _query();
+    setState(() => _comparing = true);
+    final double? km = await resolveDistanceKm(context, q.fromName, q.toName);
+    if (!mounted) return;
+    setState(() => _comparing = false);
+    final int nights = _returnDate == null
+        ? 1
+        : _returnDate!.difference(_date).inDays.abs().clamp(1, 30);
+    final String? trainCls = widget.category == BookingCategory.train
+        ? (_class == 'B' ? '3A' : 'SL')
+        : null;
+    await showPriceCompareSheet(
+      context,
+      category: widget.category,
+      query: q,
+      providers: BookingProviders.forCategory(widget.category),
+      date: _date,
+      pax: _pax,
+      distanceKm: km,
+      nights: nights,
+      trainClass: trainCls,
+      hotelTier: widget.category == BookingCategory.hotel ? 'standard' : null,
+      trip: km == null
+          ? null
+          : PriceCompare.trip(
+              category: widget.category,
+              days: nights < 1 ? 1 : nights,
+              pax: _pax,
+              distanceKm: km,
+              roundTrip: _returnDate != null,
+              hotelTier: 'standard',
+              trainClass: trainCls,
+            ),
+    );
+  }
+
   Future<void> _confirm(BookingProvider p) async {
     // Validation: forms that matter must be filled before hand-off.
     if (p.appDeepLinkBuilder != null &&
@@ -327,18 +401,7 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
           content: Text('Enter a destination to search on Booking.com.')));
       return;
     }
-    final BookingQuery q = BookingQuery(
-      fromName: _from.text.trim().isEmpty ? null : _from.text.trim(),
-      toName: _to.text.trim().isEmpty ? null : _to.text.trim(),
-      date: BookingProviders.formatIso(_date),
-      returnDate: _returnDate == null
-          ? null
-          : BookingProviders.formatIso(_returnDate!),
-      passengers: _pax,
-      rooms: _rooms,
-      travelClass: _needsClass ? _class : null,
-      tripType: _tripType,
-    );
+    final BookingQuery q = _query();
 
     final bool? go = await showModalBottomSheet<bool>(
       context: context,

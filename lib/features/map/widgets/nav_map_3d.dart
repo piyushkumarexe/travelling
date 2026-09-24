@@ -7,6 +7,7 @@
 // screen keeps the working 2D map (never a blank screen).
 
 import 'dart:async' show Completer, Timer, unawaited;
+import 'dart:math' as math;
 import 'dart:typed_data' show ByteData;
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,42 @@ import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 
 import '../../../core/app_config.dart';
 
+/// A circular area to paint on the 3D map (safety zone, geofence, …).
+/// Deliberately free of the safety-domain model so the 3D widget stays a
+/// reusable map component.
+class Map3DZone {
+  const Map3DZone({
+    required this.name,
+    required this.lat,
+    required this.lng,
+    required this.radiusMeters,
+    required this.colorHex,
+  });
+
+  final String name;
+  final double lat;
+  final double lng;
+  final double radiusMeters;
+
+  /// '#RRGGBB' — fill + outline colour, chosen by the caller.
+  final String colorHex;
+}
+
+/// A point to label on the 3D map (a search result, a saved place, …).
+class Map3DPin {
+  const Map3DPin({
+    required this.name,
+    required this.lat,
+    required this.lng,
+    this.colorHex = '#2563EB',
+  });
+
+  final String name;
+  final double lat;
+  final double lng;
+  final String colorHex;
+}
+
 class NavMap3D extends StatefulWidget {
   const NavMap3D({
     super.key,
@@ -26,6 +63,8 @@ class NavMap3D extends StatefulWidget {
     required this.follow,
     required this.satellite,
     required this.onUnavailable,
+    this.zones = const <Map3DZone>[],
+    this.pins = const <Map3DPin>[],
   });
 
   /// Latest device fix from the existing location stream.
@@ -38,6 +77,13 @@ class NavMap3D extends StatefulWidget {
 
   /// Reuses the Live Trip satellite toggle (hybrid imagery vs streets).
   final bool satellite;
+
+  /// Safety/geofence areas to paint under the route. Null or empty = none.
+  final List<Map3DZone> zones;
+
+  /// Extra points to label (the Map tab's search results, so switching to 3D
+  /// does not make the places you just searched for disappear).
+  final List<Map3DPin> pins;
 
   /// Called when the 3D view cannot render (no MapTiler key / style
   /// failure) so the parent can fall back to the 2D map.
@@ -172,6 +218,62 @@ class _NavMap3DState extends State<NavMap3D> {
     };
   }
 
+  /// Zones as circle polygons. A circle is approximated with 48 points —
+  /// smooth enough at city zoom and cheap enough to build on the UI thread.
+  Map<String, dynamic> _zonesGeoJson() {
+    const int steps = 48;
+    final List<Map<String, dynamic>> features = <Map<String, dynamic>>[];
+    for (final Map3DZone z in widget.zones) {
+      if (!z.radiusMeters.isFinite || z.radiusMeters <= 0) continue;
+      if (!z.lat.isFinite || !z.lng.isFinite) continue;
+      final List<List<double>> ring = <List<double>>[];
+      final double latKm = z.radiusMeters / 1000 / 111.32;
+      final double lngKm = z.radiusMeters /
+          1000 /
+          (111.32 * math.cos(z.lat * math.pi / 180).abs().clamp(0.05, 1.0));
+      for (int i = 0; i <= steps; i++) {
+        final double a = 2 * math.pi * i / steps;
+        ring.add(<double>[
+          z.lng + lngKm * math.sin(a),
+          z.lat + latKm * math.cos(a),
+        ]);
+      }
+      features.add(<String, dynamic>{
+        'type': 'Feature',
+        'properties': <String, dynamic>{
+          'name': z.name,
+          'color': z.colorHex,
+        },
+        'geometry': <String, dynamic>{
+          'type': 'Polygon',
+          'coordinates': <List<List<double>>>[ring],
+        },
+      });
+    }
+    return <String, dynamic>{
+      'type': 'FeatureCollection',
+      'features': features,
+    };
+  }
+
+  Map<String, dynamic> _pinsGeoJson() => <String, dynamic>{
+        'type': 'FeatureCollection',
+        'features': <Map<String, dynamic>>[
+          for (final Map3DPin p in widget.pins)
+            <String, dynamic>{
+              'type': 'Feature',
+              'properties': <String, dynamic>{
+                'name': p.name,
+                'color': p.colorHex,
+              },
+              'geometry': <String, dynamic>{
+                'type': 'Point',
+                'coordinates': <double>[p.lng, p.lat],
+              },
+            },
+        ],
+      };
+
   Future<void> _buildLayers() async {
     final ml.MapLibreMapController c = _controller!;
     // Route casing + line.
@@ -208,6 +310,89 @@ class _NavMap3DState extends State<NavMap3D> {
         circleStrokeColor: '#FFFFFF',
       ),
     );
+    // Zones first, so the route always reads above them.
+    if (widget.zones.isNotEmpty) {
+      try {
+        await c.addGeoJsonSource('nav_zones_src', _zonesGeoJson());
+        await c.addFillLayer(
+          'nav_zones_src',
+          'nav_zones_fill',
+          ml.FillLayerProperties(
+            fillColor: <dynamic>['get', 'color'],
+            fillOpacity: 0.18,
+          ),
+          belowLayerId: 'nav_route_casing',
+          enableInteraction: false,
+        );
+        await c.addLineLayer(
+          'nav_zones_src',
+          'nav_zones_outline',
+          ml.LineLayerProperties(
+            lineColor: <dynamic>['get', 'color'],
+            lineWidth: 2,
+            lineOpacity: 0.85,
+          ),
+          belowLayerId: 'nav_route_casing',
+          enableInteraction: false,
+        );
+        await c.addSymbolLayer(
+          'nav_zones_src',
+          'nav_zone_labels',
+          ml.SymbolLayerProperties(
+            textField: '{name}',
+            textSize: 12,
+            textColor: <dynamic>['get', 'color'],
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 1.6,
+          ),
+          belowLayerId: 'nav_route_casing',
+          minzoom: 11,
+          enableInteraction: false,
+        );
+      } catch (_) {
+        // Zones are an overlay — never block the map.
+      }
+    }
+
+    // Search results / saved places, so switching to 3D keeps what the
+    // traveller just searched for on screen.
+    if (widget.pins.isNotEmpty) {
+      try {
+        await c.addGeoJsonSource('nav_pins_src', _pinsGeoJson());
+        await c.addCircleLayer(
+          'nav_pins_src',
+          'nav_pins_circle',
+          ml.CircleLayerProperties(
+            circleRadius: 7,
+            circleColor: <dynamic>['get', 'color'],
+            circleStrokeWidth: 3,
+            circleStrokeColor: '#FFFFFF',
+          ),
+          belowLayerId: 'nav_route_casing',
+          enableInteraction: false,
+        );
+        await c.addSymbolLayer(
+          'nav_pins_src',
+          'nav_pins_labels',
+          ml.SymbolLayerProperties(
+            textField: '{name}',
+            textSize: 12,
+            textColor: '#0F172A',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 2,
+            textOffset: <dynamic>[0, 1.4],
+            textAnchor: 'top',
+            textOptional: true,
+          ),
+          belowLayerId: 'nav_route_casing',
+          minzoom: 12,
+          enableInteraction: false,
+        );
+      } catch (_) {
+        // Pins are decorative — the results list still works without them.
+      }
+    }
+
     // 3D buildings (optional): use the real building metadata from
     // MapTiler Planet v3 instead of painting every footprint the same grey.
     // The `colour` field carries OSM facade colours; render_height and

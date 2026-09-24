@@ -14,6 +14,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models/places.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
+import '../price_compare.dart';
+import 'price_compare_sheet.dart';
 
 /// 🚕 Ride booking — real GPS pickup, MapTiler destination search / map pin,
 /// OSRM route preview, and hand-off to VERIFIED official provider flows
@@ -180,15 +182,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
               Text('Set both pickup and destination to continue.')));
       return;
     }
-    final BookingQuery q = BookingQuery(
-      fromName: _pickup!.name,
-      fromLat: _pickup!.lat,
-      fromLng: _pickup!.lng,
-      toName: _drop!.name,
-      toLat: _drop!.lat,
-      toLng: _drop!.lng,
-      serviceType: _serviceType,
-    );
+    final BookingQuery q = _query();
     await showModalBottomSheet<void>(
       context: context,
       builder: (BuildContext ctx) => SafeArea(
@@ -262,6 +256,38 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// The query both the provider flow and the comparison use.
+  BookingQuery _query() => BookingQuery(
+        fromName: _pickup?.name,
+        fromLat: _pickup?.lat,
+        fromLng: _pickup?.lng,
+        toName: _drop?.name,
+        toLat: _drop?.lat,
+        toLng: _drop?.lng,
+        serviceType: _serviceType,
+      );
+
+  /// ONE TAP comparison for the ride apps. The distance is the real ROAD
+  /// distance from the route on the map (not straight-line), which is why
+  /// ride estimates are the highest-confidence numbers the app produces.
+  Future<void> _comparePrices() async {
+    if (_pickup == null || _drop == null) return;
+    final BookingQuery q = _query();
+    final double? km = _route == null ? null : _route!.distanceMeters / 1000;
+    final double? mins = _route == null ? null : _route!.durationSeconds / 60;
+    await showPriceCompareSheet(
+      context,
+      category: BookingCategory.ride,
+      query: q,
+      providers: BookingProviders.forCategory(BookingCategory.ride),
+      date: DateTime.now(),
+      pax: 1,
+      distanceKm: km,
+      minutes: mins,
+      serviceType: _serviceType,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<BookingProvider> providers =
@@ -282,6 +308,15 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
             const SizedBox(height: 10),
             _routeCard(),
           ],
+          const SizedBox(height: 14),
+          // One tap → every ride app's estimate for THIS route (the road
+          // distance comes from the route already drawn on the map, so
+          // these are the most accurate numbers in the app).
+          FilledButton.icon(
+            onPressed: _pickup == null || _drop == null ? null : _comparePrices,
+            icon: const Icon(Icons.compare_arrows),
+            label: const Text('⚖️ Compare all ride apps (1 tap)'),
+          ),
           const SizedBox(height: 14),
           Text('Continue with a provider',
               style: Theme.of(context)
