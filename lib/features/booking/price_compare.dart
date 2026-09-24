@@ -222,7 +222,7 @@ class PriceCompare {
     for (final BookingProvider p in providers) {
       final _PlatformFactor f =
           _rideFactors[p.providerId] ?? const _PlatformFactor(1.0, 0, '');
-      final String? link = p.webLinkBuilder?.call(query) ?? p.plainWebUrl;
+      final String? link = _officialLink(p, query);
       if (distanceKm == null || distanceKm <= 0) {
         out.add(PlatformQuote(
           providerId: p.providerId,
@@ -280,10 +280,8 @@ class PriceCompare {
     String? hotelTier,
   }) {
     final List<PlatformQuote> out = <PlatformQuote>[];
-    final String? link0 = providers.isEmpty
-        ? null
-        : (providers.first.webLinkBuilder?.call(query) ??
-            providers.first.plainWebUrl);
+    final String? link0 =
+        providers.isEmpty ? null : _officialLink(providers.first, query);
     if (distanceKm == null || distanceKm <= 0) {
       return <PlatformQuote>[
         for (final BookingProvider p in providers)
@@ -293,7 +291,7 @@ class PriceCompare {
             emoji: p.emoji,
             confidence: PriceConfidence.unknown,
             basis: 'Distance unknown — open the provider to see fares.',
-            link: p.webLinkBuilder?.call(query) ?? p.plainWebUrl ?? link0,
+            link: _officialLink(p, query) ?? link0,
             note: _otaFactors[p.providerId]?.note ?? '',
           ),
       ];
@@ -302,7 +300,7 @@ class PriceCompare {
     for (final BookingProvider p in providers) {
       final _PlatformFactor f =
           _otaFactors[p.providerId] ?? const _PlatformFactor(1.0, 0, '');
-      final String? link = p.webLinkBuilder?.call(query) ?? p.plainWebUrl;
+      final String? link = _officialLink(p, query);
       final String basisPrefix =
           '${distanceKm.toStringAsFixed(0)} km straight-line';
       switch (category) {
@@ -516,6 +514,13 @@ class PriceCompare {
         link: link,
         note: f.note,
       );
+
+  /// Best official URL the comparison can expose. App-only providers such
+  /// as Rapido have no public web fare link, so their verified Play Store
+  /// listing is the honest final fallback (the BookingService still tries
+  /// the installed Android package first when the row is tapped).
+  static String? _officialLink(BookingProvider p, BookingQuery q) =>
+      p.webLinkBuilder?.call(q) ?? p.plainWebUrl ?? p.playStoreUrl;
 
   /// Prints a whole number without a pointless ".0" so the arithmetic in the
   /// UI reads the way a human would write it ("₹14/km", not "₹14.0/km").
