@@ -1208,9 +1208,8 @@ class _MapScreenState extends State<MapScreen> {
                 // styles need it for crisp labels; satellite/hybrid imagery
                 // gains almost nothing visible and costs a lot of data and
                 // decode time on a mid-range phone.
-                retinaMode: _mapStyle == 'streets-v2'
-                    ? RetinaMode.isHighDensity(context)
-                    : RetinaMode.never,
+                retinaMode: _mapStyle == 'streets-v2' &&
+                    RetinaMode.isHighDensity(context),
                 maxNativeZoom: _maxNativeZoom,
                 errorTileCallback: (tile, error, stackTrace) {
                   if (_tileNotice == null && mounted) {

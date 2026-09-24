@@ -157,7 +157,8 @@ void main() {
         nights: 4,
         hotelTier: 'standard',
       );
-      expect(four.single.low, greaterThan(one.single.low * 3));
+      expect(four.single.low,
+          greaterThan((one.single.low ?? 0) * 3));
       // A stay price depends on the property, so it must never be sold as a
       // precise number.
       expect(one.single.confidence, PriceConfidence.low);

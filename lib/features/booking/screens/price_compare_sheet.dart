@@ -126,6 +126,7 @@ class _PriceCompareBody extends StatelessWidget {
       symbol: '₹',
       decimalDigits: 0,
     );
+    final double? km = distanceKm;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.72,
@@ -140,11 +141,11 @@ class _PriceCompareBody extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(
-            distanceKm == null
+            km == null
                 ? 'No distance available for this pair, so these are the '
                     'platforms you can check — open any of them for the '
                     'live fare.'
-                : 'Estimated totals for ${distanceKm.toStringAsFixed(0)} km, '
+                : 'Estimated totals for ${km.toStringAsFixed(0)} km, '
                     '$pax traveller(s). Tourism does NOT have live '
                     'fares — each row opens the platform where the real, '
                     'bookable price is.',
@@ -237,7 +238,7 @@ class _PriceCompareBody extends StatelessWidget {
     final ColorScheme scheme = theme.colorScheme;
     final BookingProvider? provider = providers
         .where((BookingProvider p) => p.providerId == q.providerId)
-        .firstOrNull();
+        .firstOrNull;
     final bool priced = q.hasPrice;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),

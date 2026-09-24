@@ -14,7 +14,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models/places.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
-import '../price_compare.dart';
 import 'price_compare_sheet.dart';
 
 /// 🚕 Ride booking — real GPS pickup, MapTiler destination search / map pin,
