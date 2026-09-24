@@ -104,17 +104,17 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // Code minification (R8) stays OFF: the map SDKs (MapLibre,
-            // Google Maps) and Firebase deserialize through reflection, and a
-            // stripped model class crashes at runtime on a device — which is
-            // not a trade worth making for a few hundred KB.
+            // R8 minification stays OFF on purpose, and AGP 8 will not
+            // shrink resources without it ("Removing unused resources
+            // requires unused code shrinking to be turned on"), so neither
+            // is enabled. MapLibre, Google Maps and Firebase deserialize
+            // through reflection: a stripped model class or a dropped
+            // name-looked-up drawable crashes at runtime on a device — and a
+            // few hundred KB is not worth a crash we cannot smoke-test from
+            // CI. Revisit only with a device test pass and a
+            // proguard-rules.pro that keeps those model packages.
             isMinifyEnabled = false
-            // Resource shrinking IS safe and worth it: it drops the drawables
-            // and layouts the AARs ship but this app never inflates. The
-            // keep-rules live in res/raw/keep.xml for the handful of
-            // resources that are looked up by NAME (launcher icons, the
-            // splash drawable and MapLibre's location-puck artwork).
-            isShrinkResources = true
+            isShrinkResources = false
         }
     }
 }
