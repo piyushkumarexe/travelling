@@ -187,7 +187,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     if (point == null) return false;
     if (!_dropNeedsAddress) return true;
     final String? address = await _c.placesRepository
-        .reverseGeocodeAddress(LatLng(point.lat, point.lng))
+        .reverseGeocodeAddress(gm.LatLng(point.lat, point.lng))
         .timeout(const Duration(seconds: 12), onTimeout: () => null);
     if (!mounted) return false;
     final String clean = (address ?? '').trim();

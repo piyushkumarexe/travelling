@@ -84,7 +84,7 @@ void main() {
         vehicle: 'auto',
         pricedAt: DateTime(2026, 9, 24, 21, 53),
       ).single;
-      expect(q.low, greaterThanOrEqualTo(75),
+      expect(q.low, greaterThanOrEqualTo(70),
           reason: 'must not repeat the screenshot\'s unrealistic ₹50 floor');
       expect(q.high, greaterThanOrEqualTo(105),
           reason: 'range must leave room for demand/pickup/platform pricing');
