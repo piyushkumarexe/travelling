@@ -759,12 +759,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _updateDistance() {
-    final Place? s = _selected;
-    if (s == null) return;
-    setState(() => _distanceToSelected = _distanceTo(s.lat, s.lng));
-  }
-
   void _clearSelection() {
     setState(() {
       _selected = null;
