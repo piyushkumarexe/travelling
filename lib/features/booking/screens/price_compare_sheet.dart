@@ -300,15 +300,57 @@ class _PriceCompareBody extends StatelessWidget {
               Text('— no estimate —',
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(q.basis, style: theme.textTheme.bodySmall),
-            if (q.note.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 2),
-              Text(q.note,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant)),
-            ],
-            const SizedBox(height: 6),
+            Theme(
+              // Compact by default; the full arithmetic remains one tap away
+              // instead of turning every provider into a screen-high card.
+              data: theme.copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 6),
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                title: const Text('How this range was calculated',
+                    style: TextStyle(fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(q.basis, style: theme.textTheme.bodySmall),
+                  ),
+                  if (q.note.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(q.note,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (category == BookingCategory.ride && provider != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.content_copy,
+                        size: 14, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        provider.appSchemePrefillsLocation ||
+                                provider.webLinkBuilder != null
+                            ? 'Official location link + copied address backup'
+                            : 'No provider prefill API · copied address backup',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Row(
               children: <Widget>[
                 Chip(
@@ -331,7 +373,7 @@ class _PriceCompareBody extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: () => _recordActualFare(context, q),
                   icon: const Icon(Icons.tune, size: 16),
-                  label: const Text('Actual fare different? Improve estimate'),
+                  label: const Text('Report actual fare'),
                 ),
               ),
           ],
@@ -400,6 +442,17 @@ class _PriceCompareBody extends StatelessWidget {
 
   Future<void> _open(BuildContext context, BookingProvider p) async {
     final BookingService service = AppScope.of(context).bookingService;
+    final bool copied = await service.prepareDestinationBackup(query);
+    if (!context.mounted) return;
+    if (copied) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('Opening ${p.providerName}… searchable destination '
+            'copied. Paste it if Drop is empty.'),
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+      if (!context.mounted) return;
+    }
     final BookingLaunchResult r = await service.continueWithProvider(p, query);
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

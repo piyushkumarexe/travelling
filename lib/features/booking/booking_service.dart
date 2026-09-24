@@ -156,6 +156,8 @@ class BookingService extends ChangeNotifier {
   /// destination name on the clipboard as the least-friction honest fallback.
   bool _lastDestinationCopied = false;
   bool get lastDestinationCopied => _lastDestinationCopied;
+  String? _lastHandoffAddress;
+  String? get lastHandoffAddress => _lastHandoffAddress;
 
   /// Per-provider/service calibration learned ONLY from fares the traveller
   /// enters after checking the real provider. It stays on this device.
@@ -195,28 +197,59 @@ class BookingService extends ChangeNotifier {
     }
   }
 
+  /// Copies a provider-searchable destination as a cross-app backup.
+  /// Public because the UI should tell the traveller BEFORE Tourism goes to
+  /// the background; a snackbar shown after launch is invisible until return.
+  Future<bool> prepareDestinationBackup(BookingQuery q) async {
+    _lastDestinationCopied = false;
+    _lastHandoffAddress = null;
+    final String destination = (q.toName ?? '').trim();
+    if (destination.isEmpty || destination.startsWith('Map pin (') ||
+        destination == 'Selected location' ||
+        destination == 'Finding address…') {
+      return false;
+    }
+    await Clipboard.setData(ClipboardData(text: destination));
+    _lastDestinationCopied = true;
+    _lastHandoffAddress = destination;
+    return true;
+  }
+
   /// Opens the provider's official flow. The order matters:
-  /// 1) a native scheme that REALLY carries coordinates (Uber),
-  /// 2) an official prefilled universal/web link (Ola),
+  /// 1) coordinate-bearing official web link in an in-app Custom Tab,
+  /// 2) a native scheme that claims to carry coordinates,
   /// 3) only then a bare app launch (Rapido has no public prefill contract).
   Future<BookingLaunchResult> continueWithProvider(
       BookingProvider provider, BookingQuery q) async {
     _lastLaunchResult = BookingLaunchResult.ok;
-    _lastDestinationCopied = false;
+    await prepareDestinationBackup(q);
 
-    // Native scheme first only when its documented contract carries both
-    // points. Ola's olacabs://app/launch does NOT, so opening it here was the
-    // exact reason the user had to type both locations again.
-    if (provider.appDeepLinkBuilder != null &&
-        provider.appSchemePrefillsLocation) {
-      final bool ok = await _launch(provider.appDeepLinkBuilder!(q));
+    // Always keep a SEARCHABLE TEXT backup. `launchUrl == true` only proves
+    // Android opened an activity; it does NOT prove the provider consumed
+    // lat/lng. Current Ola/Uber builds may discard documented parameters and
+    // Rapido publishes none. A resolved human address can be pasted into all
+    // three; raw `Map pin (26…, 80…)` cannot.
+
+    // Coordinate URL FIRST, inside a secure Custom Tab. Opening it as an
+    // external application lets Android hand it to Ola/Uber; the current app
+    // builds then discard the URL query and show an empty Drop field (the
+    // exact reported bug). Keeping the official page in-app prevents that
+    // interception and preserves lat/lng. It can also show the provider's
+    // real web quote when that provider makes one available.
+    if (q.hasFrom && q.hasTo && provider.webLinkBuilder != null) {
+      final bool ok = await _launch(
+        provider.webLinkBuilder!(q),
+        mode: LaunchMode.inAppBrowserView,
+      );
       if (ok) return BookingLaunchResult.openedPrefilled;
     }
 
-    // Official universal/mobile-web link with coordinates. Android may hand
-    // it to the installed app; if not, mobile web still opens prefilled.
-    if (q.hasFrom && q.hasTo && provider.webLinkBuilder != null) {
-      final bool ok = await _launch(provider.webLinkBuilder!(q));
+    // Native scheme second. This is a fallback for devices where Custom Tabs
+    // are unavailable; even documented app links may be ignored by a newer
+    // provider build, so the copied address remains available.
+    if (provider.appDeepLinkBuilder != null &&
+        provider.appSchemePrefillsLocation) {
+      final bool ok = await _launch(provider.appDeepLinkBuilder!(q));
       if (ok) return BookingLaunchResult.openedPrefilled;
     }
 
@@ -228,16 +261,9 @@ class BookingService extends ChangeNotifier {
       _lastLaunchResult = BookingLaunchResult.linkInvalid;
     }
 
-    // Rapido publishes no pickup/drop deep-link parameters. Copy the drop
-    // name so the traveller can paste it with one tap instead of retyping it;
-    // never invent undocumented URL parameters that its app will ignore.
-    if (provider.appDeepLinkBuilder == null &&
-        provider.webLinkBuilder == null &&
-        q.toName != null &&
-        q.toName!.trim().isNotEmpty) {
-      await Clipboard.setData(ClipboardData(text: q.toName!.trim()));
-      _lastDestinationCopied = true;
-    }
+    // Never invent undocumented URL parameters for providers that do not
+    // publish them. The searchable-address clipboard fallback above is the
+    // only honest cross-provider handoff.
 
     // Direct official app launch — getLaunchIntentForPackage via the
     //    native channel is the RELIABLE way to open the installed app
@@ -295,11 +321,14 @@ class BookingService extends ChangeNotifier {
     }
   }
 
-  Future<bool> _launch(String url) async {
+  Future<bool> _launch(
+    String url, {
+    LaunchMode mode = LaunchMode.externalApplication,
+  }) async {
     final Uri? uri = Uri.tryParse(url);
     if (uri == null) return false;
     try {
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return await launchUrl(uri, mode: mode);
     } on PlatformException {
       // ActivityNotFoundException etc (app missing / nothing handles it).
       return false;
@@ -393,7 +422,8 @@ String describeLaunch(BookingLaunchResult r) => switch (r) {
       BookingLaunchResult.opened =>
         'Continued with the provider\'s official booking flow.',
       BookingLaunchResult.openedPrefilled =>
-        'Provider opened with pickup and destination prefilled.',
+        'Official prefilled provider page opened. A searchable destination '
+            'backup was copied too.',
       BookingLaunchResult.openedApp => 'Official provider app opened.',
       BookingLaunchResult.openedWeb =>
         'Official website opened (no location prefill).',

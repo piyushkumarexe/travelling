@@ -130,16 +130,18 @@ class PriceCompare {
 
   // ---- Rides (base ₹ + ₹/km + ₹/min, minimum fare) -----------------------
   // These are APP-RIDE effective rates, not a city's meter tariff. The old
-  // ₹25 + ₹12/km auto card produced ₹50–64 for the user's real 2.1 km ride —
-  // far below what providers show once pickup, time, platform fee and demand
-  // are included. Conservative minimums + wider upper bands are deliberate:
+  // The first ₹25 + ₹12/km card produced ₹50–64 for the user's real 2.1 km
+  // auto ride; the next reaction overcorrected a 4.5 km cab to ₹203–380.
+  // These balanced city-app rates land those reported cases around ₹70–110
+  // (auto) and ₹125–215 (cab), before the user's learned provider factor.
+  // Honest ranges are deliberate:
   // under-budgeting a traveller is worse than showing an honest wide range.
   static const Map<String, _RideRate> _rideRates = <String, _RideRate>{
-    'bike': _RideRate(base: 25, perKm: 6, perMin: 0.8, min: 40),
-    'auto': _RideRate(base: 45, perKm: 15, perMin: 1.5, min: 80),
-    'cab': _RideRate(base: 85, perKm: 19, perMin: 2.0, min: 130),
-    'sedan': _RideRate(base: 105, perKm: 22, perMin: 2.4, min: 160),
-    'suv': _RideRate(base: 140, perKm: 27, perMin: 2.8, min: 220),
+    'bike': _RideRate(base: 18, perKm: 5, perMin: 0.4, min: 30),
+    'auto': _RideRate(base: 35, perKm: 12, perMin: 1.0, min: 65),
+    'cab': _RideRate(base: 55, perKm: 14, perMin: 1.2, min: 95),
+    'sedan': _RideRate(base: 75, perKm: 17, perMin: 1.5, min: 120),
+    'suv': _RideRate(base: 110, perKm: 22, perMin: 1.8, min: 170),
   };
 
   /// Platform character: what each one typically costs relative to the card,
@@ -232,10 +234,10 @@ class PriceCompare {
     // Not "live surge": just an honest wider planning factor for the hours
     // where app rides commonly cost more. The UI explicitly calls it that.
     final double demand = switch (clock.hour) {
-      >= 7 && <= 10 => 1.18,
-      >= 17 && <= 21 => 1.18,
-      >= 22 || <= 5 => 1.25,
-      _ => 1.05,
+      >= 7 && <= 10 => 1.10,
+      >= 17 && <= 21 => 1.10,
+      >= 22 || <= 5 => 1.15,
+      _ => 1.00,
     };
     final List<PlatformQuote> out = <PlatformQuote>[];
     for (final BookingProvider p in providers) {
@@ -273,7 +275,7 @@ class PriceCompare {
         // Wide by design: provider demand, pickup distance, tolls and offers
         // are not available without its partner API.
         low: (mid * 0.85).round(),
-        high: (mid * 1.45).round(),
+        high: (mid * 1.35).round(),
         basis: '${distanceKm.toStringAsFixed(1)} km × ₹${_money(rate.perKm)}/km '
             '+ ₹${_money(rate.base)} pickup/base + ~${mins.round()} min'
             '${f.fee > 0 ? ' + ₹${_money(f.fee)} platform fee' : ''}'

@@ -61,7 +61,7 @@ void main() {
       expect(a.single.low, b.single.low);
       expect(a.single.high, b.single.high);
       expect(a.single.basis, contains('10.0 km'));
-      expect(a.single.basis, contains('₹19/km'));
+      expect(a.single.basis, contains('₹14/km'));
     });
 
     test('a short hop is never quoted below the minimum fare', () {
@@ -71,8 +71,8 @@ void main() {
         distanceKm: 0.2,
         minutes: 1,
       );
-      expect(q.single.low, greaterThanOrEqualTo(110),
-          reason: 'the ₹130 cab minimum must survive the -15% low band');
+      expect(q.single.low, greaterThanOrEqualTo(80),
+          reason: 'the ₹95 cab minimum must survive the -15% low band');
     });
 
     test('reported 2.1 km auto case has a realistic wide planning range', () {
@@ -86,7 +86,7 @@ void main() {
       ).single;
       expect(q.low, greaterThanOrEqualTo(75),
           reason: 'must not repeat the screenshot\'s unrealistic ₹50 floor');
-      expect(q.high, greaterThanOrEqualTo(120),
+      expect(q.high, greaterThanOrEqualTo(105),
           reason: 'range must leave room for demand/pickup/platform pricing');
       expect(q.confidence.label, 'Route-based range');
     });

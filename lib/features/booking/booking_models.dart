@@ -128,15 +128,16 @@ class BookingProviders {
   BookingProviders._();
 
   static const String _uberDocNote =
-      'Uber opens with your pickup & drop prefilled (uber:// scheme + '
-      'm.uber.com universal link — developer.uber.com).';
+      'Tourism sends Uber\'s documented coordinate link and copies the '
+      'searchable destination as backup. Uber may still ignore link '
+      'parameters in some app versions.';
   static const String _olaDocNote =
-      'Opens the Ola app directly (olacabs://app/launch — '
-      'developers.olacabs.com). Ola\'s app scheme does not carry location '
-      'parameters, so set the drop inside Ola (pickup = your GPS).';
+      'Tourism sends Ola\'s documented coordinate URL first and copies the '
+      'searchable destination as backup. Current Ola builds may ignore the '
+      'URL and open an empty Drop field.';
   static const String _rapidoNote =
-      'Opens the official Rapido app (Bike/Auto/Cab). Rapido has no public '
-      'deep link, so pickup/drop are NOT prefilled — set them in Rapido.';
+      'Rapido publishes no location deep link. Tourism opens the official '
+      'app and copies a resolved street/locality address — paste it in Drop.';
 
   // ---- Rides ----
   static const BookingProvider uber = BookingProvider(

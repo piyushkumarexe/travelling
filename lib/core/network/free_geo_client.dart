@@ -2905,6 +2905,51 @@ class FreeGeoClient {
         n.contains('mandap'));
   }
 
+  /// Full searchable address for a dropped ride pin. This intentionally differs
+  /// from [reverseGeocode], whose callers want the privacy-friendly short
+  /// "City, State, Country" label. Provider search boxes need house/road/
+  /// locality; feeding them only "Lucknow, Uttar Pradesh" moves the drop pin
+  /// kilometres away.
+  Future<String?> reverseGeocodeAddress(double lat, double lng) async {
+    try {
+      final Response<dynamic> resp = await _dio.get<dynamic>(
+        'https://api.maptiler.com/geocoding/$lng,$lat.json',
+        queryParameters: <String, dynamic>{'key': _mtKey, 'limit': 1},
+      );
+      final List<dynamic> feats = _features(resp.data);
+      if (feats.isNotEmpty && feats.first is Map) {
+        final Map f = feats.first as Map;
+        final String full = ((f['place_name'] as String?) ?? '').trim();
+        if (full.isNotEmpty) return full;
+        final String text = ((f['text'] as String?) ?? '').trim();
+        final String? area = _mapTilerReverseLabel(f);
+        if (text.isNotEmpty) {
+          return area == null || area.contains(text) ? text : '$text, $area';
+        }
+      }
+    } catch (_) {
+      // Nominatim below is the keyless fallback.
+    }
+    try {
+      final Response<dynamic> resp = await _nominatim.get<dynamic>(
+        'https://nominatim.openstreetmap.org/reverse',
+        queryParameters: <String, dynamic>{
+          'lat': lat,
+          'lon': lng,
+          'format': 'jsonv2',
+          'zoom': 18,
+          'addressdetails': 1,
+        },
+      );
+      final Object? data = resp.data;
+      if (data is Map) {
+        final String display = ((data['display_name'] as String?) ?? '').trim();
+        if (display.isNotEmpty) return display;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<String?> reverseGeocode(double lat, double lng) async {
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(

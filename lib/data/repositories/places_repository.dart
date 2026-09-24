@@ -837,6 +837,17 @@ class PlacesRepository {
   Future<RouteInfo> osrmRoute(LatLng from, LatLng to, {String mode = 'car'}) =>
       _osrm.route(origin: from, destination: to, mode: mode);
 
+  /// Full street/locality address for cross-app ride handoff. Do not replace
+  /// this with [reverseGeocode]: that method deliberately returns a short city
+  /// label for weather/home privacy, which provider destination search cannot
+  /// locate precisely.
+  Future<String?> reverseGeocodeAddress(LatLng location) async {
+    final String? full = await _free
+        .reverseGeocodeAddress(location.latitude, location.longitude);
+    if (full != null && full.trim().isNotEmpty) return full.trim();
+    return reverseGeocode(location);
+  }
+
   Future<String?> reverseGeocode(LatLng location) async {
     try {
       final Map<String, dynamic> data =

@@ -174,6 +174,56 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     });
   }
 
+  bool get _dropNeedsAddress {
+    final String n = (_drop?.name ?? '').trim();
+    return n.isEmpty || n.startsWith('Map pin (') || n == 'Finding address…';
+  }
+
+  /// Provider search boxes understand a street/locality/address, not our old
+  /// internal `Map pin (lat, lng)` label. Resolve it both when the pin is
+  /// dropped AND immediately before handoff (covers old recents/state).
+  Future<bool> _ensureSearchableDrop() async {
+    final ({String name, double lat, double lng})? point = _drop;
+    if (point == null) return false;
+    if (!_dropNeedsAddress) return true;
+    final String? address = await _c.placesRepository
+        .reverseGeocodeAddress(LatLng(point.lat, point.lng))
+        .timeout(const Duration(seconds: 12), onTimeout: () => null);
+    if (!mounted) return false;
+    final String clean = (address ?? '').trim();
+    if (clean.isEmpty) {
+      setState(() {
+        _drop = (name: 'Selected location', lat: point.lat, lng: point.lng);
+        _destText.text = 'Selected location';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('This pin has no searchable street address. Search a '
+            'nearby landmark or locality before opening a ride app.'),
+      ));
+      return false;
+    }
+    setState(() {
+      _drop = (name: clean, lat: point.lat, lng: point.lng);
+      _destText.text = clean;
+    });
+    unawaited(_c.bookingService.addRecentLocation(clean, point.lat, point.lng));
+    return true;
+  }
+
+  Future<void> _pickMapPoint(LatLng point) async {
+    setState(() {
+      _drop = (
+        name: 'Finding address…',
+        lat: point.latitude,
+        lng: point.longitude,
+      );
+      _destText.text = 'Finding address…';
+      _pickingOnMap = false;
+    });
+    _refreshRoute();
+    await _ensureSearchableDrop();
+  }
+
   Future<void> _openSummary(BookingProvider provider) async {
     if (_pickup == null || _drop == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -181,6 +231,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
               Text('Set both pickup and destination to continue.')));
       return;
     }
+    if (!await _ensureSearchableDrop() || !mounted) return;
     final BookingQuery q = _query();
     await showModalBottomSheet<void>(
       context: context,
@@ -232,23 +283,36 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
 
   Future<void> _launch(BookingProvider provider, BookingQuery q) async {
     setState(() => _launching = provider);
+    final bool copied =
+        await _c.bookingService.prepareDestinationBackup(q);
+    if (!mounted) return;
+    if (copied) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('Opening ${provider.providerName}… destination address '
+            'copied. Paste it if the provider leaves Drop empty.'),
+      ));
+      // Let the traveller read the fallback before this app is backgrounded.
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+      if (!mounted) return;
+    }
     final BookingLaunchResult result =
         await _c.bookingService.continueWithProvider(provider, q);
     if (!mounted) return;
     setState(() => _launching = null);
     final String message = switch (result) {
       BookingLaunchResult.openedPrefilled =>
-        '${provider.providerName} opened with your pickup and destination '
-            'coordinates prefilled. Confirm the pins before booking.',
+        'Official ${provider.providerName} booking page opened with the '
+            'coordinate link. Searchable destination copied as backup.',
       BookingLaunchResult.opened =>
-        '${provider.providerName} opened. Its public link does not accept '
-            'pickup/drop coordinates.',
+        '${provider.providerName} opened. Searchable destination copied — '
+            'paste it if the destination field is empty.',
       BookingLaunchResult.openedApp => _c.bookingService.lastDestinationCopied
-          ? 'Official ${provider.providerName} app opened. This provider has '
-              'no public location-prefill link, so "${q.toName}" was copied. '
-              'Paste it in the destination box.'
-          : 'Official ${provider.providerName} app opened. Set your pickup & '
-              'drop there — this provider has no public prefill contract.',
+          ? 'Official ${provider.providerName} app opened. Location prefill '
+              'cannot be verified; searchable address copied. Paste it in '
+              'the destination box.'
+          : 'Official ${provider.providerName} app opened. Choose the '
+              'destination there.',
       BookingLaunchResult.openedWeb =>
         'Official ${provider.providerName} website opened.',
       BookingLaunchResult.appNotInstalled =>
@@ -276,6 +340,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
   /// ride estimates are the highest-confidence numbers the app produces.
   Future<void> _comparePrices() async {
     if (_pickup == null || _drop == null) return;
+    if (!await _ensureSearchableDrop() || !mounted) return;
     final BookingQuery q = _query();
     final double? km = _route == null ? null : _route!.distanceMeters / 1000;
     final double? mins = _route == null ? null : _route!.durationSeconds / 60;
@@ -504,17 +569,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
                 maxZoom: 19,
                 onTap: (TapPosition _, LatLng point) {
                   if (!_pickingOnMap) return;
-                  setState(() {
-                    _drop = (
-                      name: 'Map pin (${point.latitude.toStringAsFixed(4)}, '
-                          '${point.longitude.toStringAsFixed(4)})',
-                      lat: point.latitude,
-                      lng: point.longitude,
-                    );
-                    _destText.text = _drop!.name;
-                    _pickingOnMap = false;
-                  });
-                  _refreshRoute();
+                  unawaited(_pickMapPoint(point));
                 },
               ),
               children: <Widget>[
