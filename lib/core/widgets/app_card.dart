@@ -38,7 +38,34 @@ class AppCard extends StatelessWidget {
         boxShadow: AppTheme.softShadow(context),
       );
     } else {
-      decoration = AppTheme.cardBox(context);
+      // Uiverse-style layered surface translated to Flutter: a very subtle
+      // accent wash, gradient rim and restrained glow. Unlike heavy backdrop
+      // blur this is GPU-cheap and stays smooth over maps/lists.
+      decoration = BoxDecoration(
+        borderRadius: radius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            dark ? const Color(0xFF24242A) : Colors.white,
+            Color.alphaBlend(
+              scheme.primary.withValues(alpha: dark ? 0.08 : 0.035),
+              dark ? const Color(0xFF18181D) : const Color(0xFFFAFAFC),
+            ),
+          ],
+        ),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: dark ? 0.20 : 0.10),
+        ),
+        boxShadow: <BoxShadow>[
+          ...AppTheme.softShadow(context),
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: dark ? 0.08 : 0.035),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      );
     }
 
     return Container(

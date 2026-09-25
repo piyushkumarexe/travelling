@@ -40,6 +40,7 @@ import '../../features/route/screens/multi_stop_screen.dart';
 import '../../features/safety/screens/safety_screen.dart';
 import '../../features/setup/screens/setup_guide_screen.dart';
 import '../../features/trip/screens/live_trip_screen.dart';
+import '../../features/toolkit/screens/traveller_toolkit_screen.dart';
 import '../../features/vault/screens/vault_detail_screen.dart';
 import '../../features/vault/screens/vault_edit_screen.dart';
 import '../../features/vault/screens/vault_screen.dart';
@@ -99,6 +100,11 @@ class AppRouter {
         path: '/booking',
         builder: (BuildContext context, GoRouterState state) =>
             const BookingHubScreen(),
+      ),
+      GoRoute(
+        path: '/toolkit',
+        builder: (BuildContext context, GoRouterState state) =>
+            const TravellerToolkitScreen(),
       ),
       GoRoute(
         path: '/booking/ride',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'uiverse.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
 ///
@@ -85,32 +86,17 @@ class PrimaryButton extends StatelessWidget {
       );
     }
 
+    // Uiverse-inspired layered rim + inset face + tactile press translation.
+    // Keep PrimaryButton's public API so this polish reaches every existing
+    // feature without rewriting screens or weakening loading semantics.
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
+      child: UiverseButton(
+        label: label,
+        icon: icon,
         onPressed: enabled ? onPressed : null,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          backgroundColor: danger ? AppTheme.danger : scheme.primary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.12),
-          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: Center(
-          child: loading
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : content(Colors.white),
-        ),
+        loading: loading,
+        danger: danger,
       ),
     );
   }

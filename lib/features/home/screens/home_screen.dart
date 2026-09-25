@@ -371,6 +371,10 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Column(
         children: <Widget>[
+          _toolRow('🧰', 'Traveller Toolkit · 5 offline tools',
+                  'Packing, countdown, group budget, phrases and converter.',
+                  '/toolkit'),
+          const Divider(height: 1, indent: 54),
           _toolRow('💰', 'Travel Expense Guard',
                   'Track every rupee of your trip.', '/expenses'),
           const Divider(height: 1, indent: 54),
