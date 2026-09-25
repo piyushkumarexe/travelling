@@ -122,6 +122,14 @@ class _VaultScreenState extends State<VaultScreen> {
               if (u != null) _c.vaultService.start(u);
             },
           ),
+        if (_c.vaultService.metadataFallback) ...<Widget>[
+          _noteBanner(
+            'Vault metadata is securely syncing through your private profile. '
+            'PDF/image attachments need the latest Firebase Storage rules; '
+            'manual document and booking details work now.',
+          ),
+          const SizedBox(height: 10),
+        ],
         if (!_c.vaultService.remindersPermission) ...<Widget>[
           _noteBanner(
             'Notifications are turned off, so expiry reminders will not fire. '

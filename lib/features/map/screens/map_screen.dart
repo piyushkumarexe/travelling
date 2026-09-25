@@ -130,6 +130,7 @@ class _MapScreenState extends State<MapScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
+  int _searchGeneration = 0;
   List<Place> _results = const <Place>[];
   bool _resultsVisible = false;
 
@@ -398,10 +399,14 @@ class _MapScreenState extends State<MapScreen> {
     final String q = _searchController.text.trim();
     _searchDebounce?.cancel();
     if (q.isEmpty) {
+      _searchGeneration++;
       if (mounted) {
         setState(() {
           _resultsVisible = false;
           _results = const <Place>[];
+          _searchLoading = false;
+          _searchError = null;
+          _searchNote = null;
         });
       }
       return;
@@ -411,10 +416,13 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _runSearch() async {
     final String q = _searchController.text.trim();
-    if (q.isEmpty || _searchLoading) return;
+    if (q.isEmpty) return;
+    final int generation = ++_searchGeneration;
     setState(() {
       _searchLoading = true;
       _searchError = null;
+      _searchNote = null;
+      _results = const <Place>[];
       _resultsVisible = true; // show the sheet with a spinner while searching
     });
     try {
@@ -451,7 +459,11 @@ class _MapScreenState extends State<MapScreen> {
       // rows on screen are (a real name match, or the nearest places of that
       // kind because the named one does not exist here).
       final String? note = _c.placesRepository.lastSearchNote;
-      if (!mounted) return;
+      if (!mounted ||
+          generation != _searchGeneration ||
+          _searchController.text.trim() != q) {
+        return;
+      }
       setState(() {
         _results = places;
         _searchNote = note;
@@ -459,7 +471,7 @@ class _MapScreenState extends State<MapScreen> {
         _searchLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchError = e.toString();
         _searchLoading = false;
@@ -469,9 +481,14 @@ class _MapScreenState extends State<MapScreen> {
 
   void _searchCategory(String label, String query, {List<String>? types}) {
     if (_activeChip == label) {
+      _searchGeneration++;
       setState(() => _activeChip = null);
       _searchController.clear();
-      setState(() => _resultsVisible = false);
+      setState(() {
+        _resultsVisible = false;
+        _results = const <Place>[];
+        _searchLoading = false;
+      });
       return;
     }
     setState(() {
@@ -479,14 +496,18 @@ class _MapScreenState extends State<MapScreen> {
       _searchError = null;
     });
     _searchController.text = query;
+    _searchDebounce?.cancel();
     _runSearchWithTypes(query, types);
   }
 
   Future<void> _runSearchWithTypes(String q, List<String>? types) async {
+    final int generation = ++_searchGeneration;
     setState(() {
       _searchLoading = true;
       _resultsVisible = true;
       _searchNote = null;
+      _searchError = null;
+      _results = const <Place>[];
     });
     try {
       // Proximity = real GPS fix when available (camera only as fallback).
@@ -511,14 +532,18 @@ class _MapScreenState extends State<MapScreen> {
           types: types,
         );
       }
-      if (!mounted) return;
+      if (!mounted ||
+          generation != _searchGeneration ||
+          _searchController.text.trim() != q) {
+        return;
+      }
       setState(() {
         _results = places;
         _resultsVisible = true;
         _searchLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchError = e.toString();
         _searchLoading = false;

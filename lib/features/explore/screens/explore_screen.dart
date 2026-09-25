@@ -518,6 +518,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           label,
           location: here,
           radiusMeters: FreeGeoClient.kNearbyRadiusMeters,
+          types: _categoryTypes(category),
         );
         if (!mounted ||
             _activeCategory != category ||

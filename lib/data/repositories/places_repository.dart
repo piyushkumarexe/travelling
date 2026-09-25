@@ -204,10 +204,9 @@ class PlacesRepository {
         _free.isCategoryQuery(q, types);
     if (location != null && categoryQuery && biasRadius != null) {
       final double cap = biasRadius;
-      final List<Place> inside = out
+      out = out
           .where((Place p) => GeoUtils.distanceMeters(location, p.coords) <= cap)
           .toList();
-      if (inside.isNotEmpty) out = inside;
     }
 
     // Accuracy and shortest distance first. The relevance filter removes
@@ -652,13 +651,17 @@ class PlacesRepository {
     for (final List<Place> batch in batches) {
       for (final Place raw in batch) {
         final double distance = GeoUtils.distanceMeters(location, raw.coords);
-        if (distance > radiusMeters) continue;
+        if (distance > radiusMeters || !_validCategoryResult(raw, category)) {
+          continue;
+        }
         // This request is already category-scoped. Normalize the semantic
         // category so the UI does not discard Google `tourist_attraction` /
-        // `store` records while filtering for its chip label.
+        // `store` records while filtering for its chip label. Distance is
+        // always recomputed from this request's real origin; provider/cache
+        // distance can belong to an older location.
         final Place place = raw.copyWith(
           category: category,
-          distanceMeters: raw.distanceMeters ?? distance,
+          distanceMeters: distance,
         );
         final String key =
             '${place.name.toLowerCase().trim()}|${place.lat.toStringAsFixed(4)},${place.lng.toStringAsFixed(4)}';
@@ -680,6 +683,32 @@ class PlacesRepository {
               .compareTo(b.distanceMeters ??
                   GeoUtils.distanceMeters(location, b.coords)));
     return out;
+  }
+
+  /// Reject administrative/address/road geocoder rows from category chips.
+  /// A result named “Shopping Centre Road” is an address, not a shop, even if
+  /// a fuzzy provider returned it for the word “shopping”.
+  static bool _validCategoryResult(Place place, String category) {
+    if (PlaceRanking.isAdminRegion(place)) return false;
+    final Set<String> types = <String>{
+      if (place.category != null) place.category!.toLowerCase(),
+      if (place.primaryType != null) place.primaryType!.toLowerCase(),
+      ...place.types.map((String type) => type.toLowerCase()),
+    };
+    const Set<String> nonVenues = <String>{
+      'address', 'road', 'street', 'route', 'highway', 'residential',
+      'postcode', 'postal_code', 'house', 'building', 'intersection',
+    };
+    if (types.any(nonVenues.contains)) return false;
+    if (category != 'shopping') return true;
+    const Set<String> shoppingTypes = <String>{
+      'shopping', 'shop', 'store', 'mall', 'market', 'marketplace',
+      'supermarket', 'department_store', 'convenience', 'retail',
+      'clothes', 'gift', 'jewelry', 'electronics',
+    };
+    // Empty types from a category-filtered Overpass response are acceptable;
+    // explicitly typed geocoder rows must actually represent retail.
+    return types.isEmpty || types.any(shoppingTypes.contains);
   }
 
   /// Semantic UI category / type id → FreeGeoClient dataset categories for

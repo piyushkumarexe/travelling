@@ -285,6 +285,21 @@ void main() {
           <String>['New Public College']);
     });
 
+    test('typed college name never returns New Delhi or Noida admin noise',
+        () {
+      final Place newDelhi = _p('New Delhi', 28.6519, 77.2315,
+          address: 'New Delhi, India', state: 'Delhi', country: 'India');
+      final Place noida = _p('Noida', 28.5355, 77.3910,
+          address: 'Noida, Uttar Pradesh', city: 'Noida',
+          state: 'Uttar Pradesh', country: 'India');
+      final List<Place> kept = PlaceRanking.filterRelevant(
+        <Place>[newDelhi, noida],
+        'New Public College',
+        lucknow,
+      );
+      expect(kept, isEmpty);
+    });
+
     test('specific query: a real nearby match with a shared token is kept',
         () {
       final gm.LatLng mau = const gm.LatLng(26.9742, 82.5244);

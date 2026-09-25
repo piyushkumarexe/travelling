@@ -36,7 +36,8 @@ class VaultService extends ChangeNotifier {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   String? _uid;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription<Object?>? _sub;
+  bool _profileFallback = false;
 
   List<TravelDocument> _docs = const <TravelDocument>[];
   bool _loading = false;
@@ -46,6 +47,7 @@ class VaultService extends ChangeNotifier {
   List<TravelDocument> get docs => _docs;
   bool get loading => _loading;
   String? get lastError => _lastError;
+  bool get metadataFallback => _profileFallback;
 
   /// Whether OS notification permission was granted the last time it was
   /// checked — surfaced honestly in the UI when false.
@@ -84,6 +86,10 @@ class VaultService extends ChangeNotifier {
         refreshReminders();
       },
       onError: (Object e) {
+        if (e is FirebaseException && e.code == 'permission-denied') {
+          _startProfileFallback(uid);
+          return;
+        }
         _loading = false;
         _lastError = describeVaultError(e);
         notifyListeners();
@@ -94,10 +100,62 @@ class VaultService extends ChangeNotifier {
     refreshReminders();
   }
 
+  /// Compatibility path for projects whose deployed rules predate the
+  /// dedicated travelDocuments subcollection. Profile documents have always
+  /// been owner-only; metadata remains private and cross-device instead of
+  /// blocking the whole Vault. File uploads remain disabled in this mode.
+  void _startProfileFallback(String uid) {
+    _sub?.cancel();
+    _profileFallback = true;
+    _sub = _db.collection('profiles').doc(uid).snapshots().listen(
+      (DocumentSnapshot<Map<String, dynamic>> snapshot) {
+        final Object? raw = snapshot.data()?['travelDocumentsV1'];
+        final List<TravelDocument> docs = raw is List
+            ? raw
+                .whereType<Map>()
+                .map((Map item) {
+                  final Map<String, dynamic> data =
+                      Map<String, dynamic>.from(item);
+                  return TravelDocument.fromFirestore(
+                    (data['documentId'] as String?) ?? '',
+                    data,
+                  );
+                })
+                .where((TravelDocument doc) => doc.id.isNotEmpty)
+                .toList()
+            : <TravelDocument>[];
+        docs.sort((TravelDocument a, TravelDocument b) =>
+            b.updatedAt.compareTo(a.updatedAt));
+        _docs = docs;
+        _loading = false;
+        _lastError = null;
+        notifyListeners();
+        unawaited(refreshReminders());
+      },
+      onError: (Object error) {
+        _loading = false;
+        _lastError = describeVaultError(error);
+        notifyListeners();
+      },
+    );
+  }
+
+  Future<void> _saveFallback(List<TravelDocument> docs) async {
+    final String? uid = _uid;
+    if (uid == null) throw StateError('Not signed in');
+    final List<TravelDocument> bounded = docs.take(150).toList(growable: false);
+    await _db.collection('profiles').doc(uid).set(<String, dynamic>{
+      'travelDocumentsV1': bounded
+          .map((TravelDocument doc) => doc.toFirestore())
+          .toList(growable: false),
+    }, SetOptions(merge: true));
+  }
+
   void stop() {
     _sub?.cancel();
     _sub = null;
     _uid = null;
+    _profileFallback = false;
     _loading = false;
     notifyListeners();
   }
@@ -108,7 +166,14 @@ class VaultService extends ChangeNotifier {
   /// offline and syncs automatically with the same stable id — retries
   /// cannot duplicate the document.
   Future<void> createDocument(TravelDocument doc) async {
-    await _docRef(doc.userId, doc.id).set(doc.toFirestore());
+    if (_profileFallback) {
+      final List<TravelDocument> next = List<TravelDocument>.from(_docs)
+        ..removeWhere((TravelDocument item) => item.id == doc.id)
+        ..insert(0, doc);
+      await _saveFallback(next);
+    } else {
+      await _docRef(doc.userId, doc.id).set(doc.toFirestore());
+    }
     unawaited(refreshReminders());
   }
 
@@ -116,7 +181,14 @@ class VaultService extends ChangeNotifier {
   /// changed to another user.
   Future<void> updateDocument(TravelDocument doc) async {
     assert(doc.userId == _uid, 'vault: ownership mismatch');
-    await _docRef(doc.userId, doc.id).set(doc.toFirestore());
+    if (_profileFallback) {
+      final List<TravelDocument> next = List<TravelDocument>.from(_docs)
+        ..removeWhere((TravelDocument item) => item.id == doc.id)
+        ..insert(0, doc);
+      await _saveFallback(next);
+    } else {
+      await _docRef(doc.userId, doc.id).set(doc.toFirestore());
+    }
     unawaited(refreshReminders());
   }
 
@@ -127,7 +199,13 @@ class VaultService extends ChangeNotifier {
     if (doc.storagePath != null && doc.storagePath!.isNotEmpty) {
       await _storage.deleteVaultFile(doc.storagePath!);
     }
-    await _docRef(doc.userId, doc.id).delete();
+    if (_profileFallback) {
+      final List<TravelDocument> next = List<TravelDocument>.from(_docs)
+        ..removeWhere((TravelDocument item) => item.id == doc.id);
+      await _saveFallback(next);
+    } else {
+      await _docRef(doc.userId, doc.id).delete();
+    }
     for (final int offset in kVaultReminderOffsets) {
       await _notifications.cancelScheduled(vaultReminderId(doc.id, offset));
     }
@@ -144,8 +222,12 @@ class VaultService extends ChangeNotifier {
   /// returned [Task]: it listens for progress, can cancel, and retries to
   /// the SAME path — so a retried upload can never create duplicates or
   /// orphans.
-  Future<Task> startUpload(XFile file, String uid, String docId) =>
-      _storage.startVaultUpload(file, uid, docId);
+  Future<Task> startUpload(XFile file, String uid, String docId) {
+    if (_profileFallback) {
+      throw StateError('File attachments require the latest Storage rules.');
+    }
+    return _storage.startVaultUpload(file, uid, docId);
+  }
 
   /// Records a finished upload (URL + path + file info) on the metadata.
   Future<void> completeUpload({

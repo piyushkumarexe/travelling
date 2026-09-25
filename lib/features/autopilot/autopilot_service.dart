@@ -181,7 +181,10 @@ class AutopilotService extends ChangeNotifier {
     try {
       final LatLng? here = await _here();
       final List<Place> found = await _places
-          .search(q, location: here, radiusMeters: 300000)
+          // This is an explicitly named destination, not a “near me” search.
+          // Passing the current GPS fix made the relevance filter discard a
+          // distant city such as Mumbai before Autopilot could plan around it.
+          .search(q, location: null, biasToUserLocation: false)
           // Must outlast the providers' own budgets (Overpass needs up to
           // 22 s) — cutting it at 12 s silently dropped a destination the
           // traveller typed ("explore Ayodhya") instead of resolving it.

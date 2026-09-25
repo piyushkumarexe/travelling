@@ -576,6 +576,7 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
 
   Widget _fileSection() {
     final bool hasExistingFile = _existing?.fileUrl != null;
+    final bool attachmentsAvailable = !_c.vaultService.metadataFallback;
     return Card(
       margin: const EdgeInsets.only(bottom: 4),
       child: Padding(
@@ -588,11 +589,13 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  _file != null
-                      ? '${_file!.name} (ready to upload)'
-                      : hasExistingFile
-                          ? 'Attached: ${_existing!.fileName ?? 'file'}'
-                          : 'Attach a file (PDF, JPG or PNG) — optional',
+                  !attachmentsAvailable
+                      ? 'Attachments need the latest Firebase Storage rules'
+                      : _file != null
+                          ? '${_file!.name} (ready to upload)'
+                          : hasExistingFile
+                              ? 'Attached: ${_existing!.fileName ?? 'file'}'
+                              : 'Attach a file (PDF, JPG or PNG) — optional',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 12.5),
@@ -605,14 +608,14 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
               runSpacing: 8,
               children: <Widget>[
                 OutlinedButton.icon(
-                  onPressed: _uploadProgress == null
+                  onPressed: attachmentsAvailable && _uploadProgress == null
                       ? () => _pickFile(pdf: false)
                       : null,
                   icon: const Icon(Icons.image, size: 18),
                   label: const Text('Image', style: TextStyle(fontSize: 12.5)),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _uploadProgress == null
+                  onPressed: attachmentsAvailable && _uploadProgress == null
                       ? () => _pickFile(pdf: true)
                       : null,
                   icon: const Icon(Icons.picture_as_pdf, size: 18),

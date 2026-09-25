@@ -321,9 +321,10 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         const SizedBox(height: 8),
         FilledButton.icon(
           onPressed: () async {
-            // "WHAT SHOULD I DO NOW?" — no interests needed at all.
-            await _svc.start(const AutopilotBrief());
-            if (mounted) setState(() => _step = 3);
+            // Fast-start still honours anything already typed or selected.
+            // The old shortcut discarded the text, interests and destination,
+            // so “explore Mumbai” silently became “near me”.
+            await _generate();
           },
           icon: const Icon(Icons.explore),
           label: const Text('WHAT SHOULD I DO NOW?'),

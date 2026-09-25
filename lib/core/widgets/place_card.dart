@@ -59,12 +59,17 @@ class PlaceCard extends StatelessWidget {
     // contextLine = address + city/state (when structured data exists) —
     // strictly richer than address-only and disambiguates same-name places.
     final String subtitle = place.contextLine;
+    final String rawType = (place.primaryType ?? '').replaceAll('_', ' ');
     final String ratingText = place.provider == 'curated'
         ? 'Open-data directory record • verify details'
         : place.rating != null
             ? '★ ${place.rating!.toStringAsFixed(1)}'
                 '${place.userRatingCount != null ? ' (${place.userRatingCount})' : ''}'
-            : (place.primaryType ?? '').replaceAll('_', ' ');
+            : const <String>{
+                'address', 'place', 'point of interest', 'poi', 'road', 'street'
+              }.contains(rawType.toLowerCase())
+                ? ''
+                : rawType;
 
     return AppCard(
       onTap: onTap,
@@ -102,14 +107,16 @@ class PlaceCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                const SizedBox(height: 4),
-                Text(
-                  ratingText,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
+                if (ratingText.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    ratingText,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
