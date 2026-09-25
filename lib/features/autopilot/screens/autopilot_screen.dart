@@ -523,7 +523,11 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
 
   Widget _stepResults() {
     if (_svc.loading) {
-      return const LoadingView(message: 'Finding real places near you…');
+      return LoadingView(
+        message: _svc.destinationName == null
+            ? 'Finding real places near you…'
+            : 'Finding real places around ${_svc.destinationName}…',
+      );
     }
     if (_svc.error != null) {
       return _errorView();
@@ -537,8 +541,12 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 .textTheme
                 .titleMedium
                 ?.copyWith(fontWeight: FontWeight.w800)),
-        Text('Based on your current location',
-            style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          _svc.destinationName == null
+              ? 'Based on your current location'
+              : 'Based around ${_svc.destinationName}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: 10),
         if (plan != null) ...<Widget>[
           _planCard(plan),
@@ -548,14 +556,12 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           _suggestionCard(s),
         if (_svc.suggestions.isEmpty) ...<Widget>[
           const SizedBox(height: 8),
-          const EmptyState(
+          EmptyState(
             icon: Icons.search_off,
             title: 'No suitable places found nearby.',
-            message: 'The open places were collected around your current '
-                'position, but nothing left passed the filters — opening '
-                'hours right now, your interests, or the time left in the '
-                'session. Change the plan (more time / another interest) or '
-                'move somewhere with more coverage and refresh.',
+            message: _svc.destinationName == null
+                ? 'Places were collected around your current position, but nothing passed the opening-hours, interests, and available-time filters. Change the plan or refresh.'
+                : 'Places were collected around ${_svc.destinationName}, but nothing passed the opening-hours, interests, and available-time filters. Change the plan or refresh.',
           ),
         ],
         _notPracticalSection(),

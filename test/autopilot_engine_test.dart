@@ -247,6 +247,51 @@ void main() {
         'ayodhya');
   });
 
+  test('DESTINATION: bundled geocode keeps explicit city planning offline', () {
+    final ({String name, double lat, double lng})? ayodhya =
+        AutopilotService.bundledDestination('Ayodhya, Uttar Pradesh');
+    expect(ayodhya, isNotNull);
+    expect(ayodhya!.name, 'Ayodhya');
+    expect(ayodhya.lat, closeTo(26.7922, 0.0001));
+    expect(ayodhya.lng, closeTo(82.1998, 0.0001));
+
+    final ({String name, double lat, double lng})? mumbai =
+        AutopilotService.bundledDestination('mumbai');
+    expect(mumbai?.name, 'Mumbai');
+    expect(AutopilotService.bundledDestination('an unknown hamlet'), isNull);
+    final List<Place> fallback =
+        AutopilotService.bundledDestinationPlaces('Ayodhya');
+    expect(fallback.map((Place p) => p.name), contains('Hanuman Garhi'));
+    expect(fallback.every((Place p) => p.provider == 'bundled_directory'),
+        isTrue);
+    expect(AutopilotService.bundledDestinationPlaces('Mumbai'), isEmpty);
+  });
+
+  test('DESTINATION: failed explicit lookup cannot become nearby mode', () {
+    const AutopilotBrief requested =
+        AutopilotBrief(freeText: 'I want to explore an unknown hamlet');
+    expect(
+      AutopilotService.hasUnresolvedExplicitDestination(requested, requested),
+      isTrue,
+    );
+    expect(
+      AutopilotService.hasUnresolvedExplicitDestination(
+        requested,
+        requested.copyWith(
+          endName: 'Unknown Hamlet',
+          endLat: 20.1,
+          endLng: 70.2,
+        ),
+      ),
+      isFalse,
+    );
+    const AutopilotBrief local = AutopilotBrief(freeText: 'I want good food');
+    expect(
+      AutopilotService.hasUnresolvedExplicitDestination(local, local),
+      isFalse,
+    );
+  });
+
   test('originLabel: remote planning says "from <destination>"', () {
     final List<Place> dataset = <Place>[
       _p('1', 'Garden Cafe', 'cafe', 1.2, <String, dynamic>{}),

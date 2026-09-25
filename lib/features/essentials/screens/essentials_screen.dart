@@ -375,9 +375,11 @@ class _EssentialsScreenState extends State<EssentialsScreen> {
   String _friendlyError(Object e) {
     if (e is ApiException) {
       return switch (e.kind) {
+        // A provider timeout is not proof that the device is offline: mobile
+        // data and map tiles can still work while an upstream is unavailable.
         ApiErrorKind.network ||
         ApiErrorKind.timeout =>
-          "You're offline. Check your connection and retry.",
+          'Nearby place providers could not be reached. Your connection may still be working; retry in a moment.',
         ApiErrorKind.rateLimited =>
           'Nearby places are temporarily unavailable. Try again shortly.',
         ApiErrorKind.server ||

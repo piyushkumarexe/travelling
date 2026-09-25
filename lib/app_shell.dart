@@ -182,6 +182,10 @@ class _AppShellState extends State<AppShell> {
       final String location = GoRouterState.of(context).matchedLocation;
       final int index = _indexOf(location);
       final bool onTab = _tabs.contains(location);
+      // The map owns the lower-right area for its primary Navigate action.
+      // Keep SOS reachable through the adjacent Safety tab instead of
+      // covering that action with a second floating control.
+      final bool showGlobalSos = location != '/map';
       AppContainer c;
       try {
         c = AppScope.of(context);
@@ -237,7 +241,7 @@ class _AppShellState extends State<AppShell> {
             ),
           ],
         ),
-        floatingActionButton: const SosFab(),
+        floatingActionButton: showGlobalSos ? const SosFab() : null,
         bottomNavigationBar: onTab
             ? DecoratedBox(
                 decoration: BoxDecoration(

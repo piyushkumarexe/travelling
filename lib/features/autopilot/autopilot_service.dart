@@ -168,8 +168,11 @@ class AutopilotService extends ChangeNotifier {
   /// Resolves a destination the traveller asked for: the explicit "End
   /// destination" field, or a place named inside the free-text request
   /// ("I want to explore Ayodhya"). Geocoding uses the existing
-  /// PlacesRepository — no second geocoding stack. On any failure the brief
-  /// is returned UNCHANGED (nearby mode around the current position).
+  /// PlacesRepository — no second network stack. Major Indian destinations
+  /// also have a bundled city-centre geocode so an explicit request remains
+  /// usable when public geocoders are temporarily blocked on mobile data.
+  /// Unknown destinations remain unresolved and are rejected by [start]; they
+  /// must NEVER silently turn into a plan around the current GPS position.
   Future<AutopilotBrief> _resolveDestination(AutopilotBrief brief) async {
     if (brief.endLat != null && brief.endLng != null) return brief;
     String? name = brief.endName;
@@ -178,8 +181,17 @@ class AutopilotService extends ChangeNotifier {
     }
     final String q = (name ?? '').trim();
     if (q.length < 3) return brief;
+
+    final ({String name, double lat, double lng})? known =
+        bundledDestination(q);
+    if (known != null) {
+      return brief.copyWith(
+        endName: known.name,
+        endLat: known.lat,
+        endLng: known.lng,
+      );
+    }
     try {
-      final LatLng? here = await _here();
       final List<Place> found = await _places
           // This is an explicitly named destination, not a “near me” search.
           // Passing the current GPS fix made the relevance filter discard a
@@ -191,16 +203,131 @@ class AutopilotService extends ChangeNotifier {
           .timeout(const Duration(seconds: 24));
       if (found.isEmpty) return brief;
       final Place d = found.first;
-      // If the geocode lands on the spot the traveller already stands at,
-      // there is nothing to redirect — stay in local nearby mode.
-      if (here != null &&
-          GeoUtils.distanceMeters(here, LatLng(d.lat, d.lng)) < 2000) {
-        return brief;
-      }
+      // Keep the resolved coordinates even when the traveller is already in
+      // that city. The downstream centre selection knows how to follow live
+      // GPS on arrival; dropping them here would make an explicit destination
+      // indistinguishable from a failed lookup.
       return brief.copyWith(endName: d.name, endLat: d.lat, endLng: d.lng);
     } catch (_) {
       return brief;
     }
+  }
+
+  /// Stable city-centre geocodes for common Indian travel destinations.
+  /// These are destination centres, not invented attractions or businesses;
+  /// live nearby providers still supply every suggested place around them.
+  @visibleForTesting
+  static ({String name, double lat, double lng})? bundledDestination(
+      String query) {
+    final String q = query
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9, ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    const Map<String, ({String name, double lat, double lng})> cities =
+        <String, ({String name, double lat, double lng})>{
+      'ayodhya': (name: 'Ayodhya', lat: 26.7922, lng: 82.1998),
+      'lucknow': (name: 'Lucknow', lat: 26.8467, lng: 80.9462),
+      'mumbai': (name: 'Mumbai', lat: 19.0760, lng: 72.8777),
+      'new delhi': (name: 'New Delhi', lat: 28.6139, lng: 77.2090),
+      'delhi': (name: 'Delhi', lat: 28.6139, lng: 77.2090),
+      'agra': (name: 'Agra', lat: 27.1767, lng: 78.0081),
+      'varanasi': (name: 'Varanasi', lat: 25.3176, lng: 82.9739),
+      'prayagraj': (name: 'Prayagraj', lat: 25.4358, lng: 81.8463),
+      'allahabad': (name: 'Prayagraj', lat: 25.4358, lng: 81.8463),
+      'jaipur': (name: 'Jaipur', lat: 26.9124, lng: 75.7873),
+      'udaipur': (name: 'Udaipur', lat: 24.5854, lng: 73.7125),
+      'amritsar': (name: 'Amritsar', lat: 31.6340, lng: 74.8723),
+      'haridwar': (name: 'Haridwar', lat: 29.9457, lng: 78.1642),
+      'rishikesh': (name: 'Rishikesh', lat: 30.0869, lng: 78.2676),
+      'shimla': (name: 'Shimla', lat: 31.1048, lng: 77.1734),
+      'manali': (name: 'Manali', lat: 32.2432, lng: 77.1892),
+      'srinagar': (name: 'Srinagar', lat: 34.0837, lng: 74.7973),
+      'kolkata': (name: 'Kolkata', lat: 22.5726, lng: 88.3639),
+      'chennai': (name: 'Chennai', lat: 13.0827, lng: 80.2707),
+      'hyderabad': (name: 'Hyderabad', lat: 17.3850, lng: 78.4867),
+      'bengaluru': (name: 'Bengaluru', lat: 12.9716, lng: 77.5946),
+      'bangalore': (name: 'Bengaluru', lat: 12.9716, lng: 77.5946),
+      'kochi': (name: 'Kochi', lat: 9.9312, lng: 76.2673),
+      'pune': (name: 'Pune', lat: 18.5204, lng: 73.8567),
+      'panaji': (name: 'Panaji', lat: 15.4909, lng: 73.8278),
+      'goa': (name: 'Goa', lat: 15.4909, lng: 73.8278),
+      'mathura': (name: 'Mathura', lat: 27.4924, lng: 77.6737),
+      'vrindavan': (name: 'Vrindavan', lat: 27.5650, lng: 77.6593),
+    };
+    final ({String name, double lat, double lng})? exact = cities[q];
+    if (exact != null) return exact;
+    for (final MapEntry<String, ({String name, double lat, double lng})> e
+        in cities.entries) {
+      if (q.startsWith('${e.key},') || q.startsWith('${e.key} ')) {
+        return e.value;
+      }
+    }
+    return null;
+  }
+
+  /// Small verified fallback directory for destinations where the public POI
+  /// providers are all unreachable. Records are real, stable landmarks with
+  /// sourced coordinates; live/cache results always take precedence.
+  @visibleForTesting
+  static List<Place> bundledDestinationPlaces(String? destinationName) {
+    if (destinationName?.trim().toLowerCase() != 'ayodhya') {
+      return const <Place>[];
+    }
+    return <Place>[
+      Place(
+        placeId: 'bundled:ayodhya:ram-mandir',
+        name: 'Shri Ram Janmabhoomi Mandir',
+        lat: 26.7956,
+        lng: 82.1943,
+        primaryType: 'tourist_attraction',
+        types: const <String>['tourist_attraction', 'hindu_temple'],
+        category: 'attraction',
+        provider: 'bundled_directory',
+        city: 'Ayodhya',
+        state: 'Uttar Pradesh',
+      ),
+      Place(
+        placeId: 'bundled:ayodhya:hanuman-garhi',
+        name: 'Hanuman Garhi',
+        lat: 26.7952876,
+        lng: 82.2016429,
+        primaryType: 'tourist_attraction',
+        types: const <String>['tourist_attraction', 'hindu_temple'],
+        category: 'attraction',
+        provider: 'bundled_directory',
+        city: 'Ayodhya',
+        state: 'Uttar Pradesh',
+      ),
+      Place(
+        placeId: 'bundled:ayodhya:kanak-bhawan',
+        name: 'Kanak Bhawan',
+        lat: 26.7984517,
+        lng: 82.1992995,
+        primaryType: 'tourist_attraction',
+        types: const <String>['tourist_attraction', 'hindu_temple'],
+        category: 'attraction',
+        provider: 'bundled_directory',
+        city: 'Ayodhya',
+        state: 'Uttar Pradesh',
+      ),
+    ];
+  }
+
+  /// Whether a requested named destination failed to acquire coordinates.
+  /// Kept pure so the no-silent-GPS-fallback safety contract is regression
+  /// tested without needing a live geocoder or GPS.
+  @visibleForTesting
+  static bool hasUnresolvedExplicitDestination(
+    AutopilotBrief requested,
+    AutopilotBrief resolved,
+  ) {
+    String? name = requested.endName;
+    if ((name == null || name.trim().isEmpty) && requested.freeText != null) {
+      name = AutopilotEngine.destinationCandidate(requested.freeText!);
+    }
+    return (name ?? '').trim().length >= 3 &&
+        (resolved.endLat == null || resolved.endLng == null);
   }
 
   // ---------------- Persistence ----------------
@@ -303,7 +430,21 @@ class AutopilotService extends ChangeNotifier {
     _datasetKey = null;
     _realTravel = const <String, int>{};
     notifyListeners();
+    String? requestedDestination = brief.endName;
+    if ((requestedDestination == null || requestedDestination.trim().isEmpty) &&
+        brief.freeText != null) {
+      requestedDestination =
+          AutopilotEngine.destinationCandidate(brief.freeText!);
+    }
     _brief = await _resolveDestination(brief);
+    if (hasUnresolvedExplicitDestination(brief, _brief)) {
+      _loading = false;
+      _error = AutopilotErrorKind.noResults;
+      _errorMessage =
+          'Could not locate "${requestedDestination!.trim()}". Check the spelling or add the state/country, then try again. No nearby plan was substituted.';
+      notifyListeners();
+      return false;
+    }
     // A session exists from the first GENERATE whether or not the traveller
     // filled in "available time": the live monitor (where you are vs where the
     // plan expects you) is driven by the session, and tying it to an optional
@@ -377,6 +518,12 @@ class AutopilotService extends ChangeNotifier {
               await _wideSweep(center).timeout(const Duration(seconds: 45));
         } catch (_) {
           // Timeout or total outage — reported as an empty area below.
+        }
+      }
+      if (_dataset.isEmpty) {
+        _dataset = bundledDestinationPlaces(_brief.endName);
+        if (_dataset.isNotEmpty) {
+          _datasetKey = 'bundled:${_brief.endName!.toLowerCase()}';
         }
       }
       if (_dataset.isEmpty) {

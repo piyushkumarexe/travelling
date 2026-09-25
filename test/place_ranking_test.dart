@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
 import 'package:yatrawise/core/network/free_geo_client.dart';
 import 'package:yatrawise/data/models/places.dart';
+import 'package:yatrawise/data/repositories/places_repository.dart';
 
 Place _p(String name, double lat, double lng, {String? address,
     String? city, String? state, String? country}) => Place(
@@ -384,5 +385,20 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  test('verified directory rescues Lucknow categories without fake venues', () {
+    const gm.LatLng lucknow = gm.LatLng(26.8467, 80.9462);
+    final List<Place> transit =
+        PlacesRepository.bundledNearbyDirectory(lucknow, 'transit');
+    expect(transit.map((Place p) => p.name),
+        contains('Lucknow Charbagh Railway Station'));
+    expect(transit.every((Place p) => p.provider == 'bundled_directory'),
+        isTrue);
+    expect(
+      PlacesRepository.bundledNearbyDirectory(
+          const gm.LatLng(19.0760, 72.8777), 'transit'),
+      isEmpty,
+    );
   });
 }

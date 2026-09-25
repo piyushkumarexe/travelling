@@ -151,7 +151,10 @@ class NearbyStore {
       fetch,
       location: location,
       version: version,
-      allowStaleOnError: !force,
+      // A user pressing Refresh asks us to TRY the network, not to destroy a
+      // still-useful saved dataset when every upstream happens to time out.
+      // The result remains explicitly marked stale/fromCache by [_run].
+      allowStaleOnError: true,
     );
     _inFlight[key] = run;
     try {
