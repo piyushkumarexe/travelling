@@ -47,10 +47,13 @@ class AppCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: <Color>[
-            dark ? const Color(0xFF24242A) : Colors.white,
             Color.alphaBlend(
-              scheme.primary.withValues(alpha: dark ? 0.08 : 0.035),
-              dark ? const Color(0xFF18181D) : const Color(0xFFFAFAFC),
+              Colors.white.withValues(alpha: dark ? 0.025 : 0.70),
+              scheme.surface,
+            ),
+            Color.alphaBlend(
+              scheme.secondary.withValues(alpha: dark ? 0.075 : 0.035),
+              scheme.surface,
             ),
           ],
         ),
@@ -73,6 +76,7 @@ class AppCard extends StatelessWidget {
       child: Material(
         type: MaterialType.transparency,
         borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
         child: onTap == null
             ? content
             : InkWell(
@@ -103,12 +107,25 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 10),
       child: Row(
         children: <Widget>[
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[AppTheme.brandStart, AppTheme.brandEnd],
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    letterSpacing: -0.2,
+                    letterSpacing: -0.25,
                   ),
             ),
           ),

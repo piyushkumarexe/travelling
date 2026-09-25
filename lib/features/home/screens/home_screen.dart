@@ -267,6 +267,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _safety = a);
   }
 
+  String get _greeting {
+    final int hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   String get _greetingName {
     final String? name =
         (_profile?.name.isNotEmpty ?? false) ? _profile!.name : null;
@@ -304,16 +311,31 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Hello, $_greetingName',
+              '$_greeting, $_greetingName',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
-            Text(
-              _locationDone
-                  ? (_locationLabel ?? 'Location unavailable')
-                  : 'Getting your location…',
-              style: Theme.of(context).textTheme.bodySmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  _locationDone && _locationLabel != null
+                      ? Icons.near_me_outlined
+                      : Icons.location_searching,
+                  size: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    _locationDone
+                        ? (_locationLabel ?? 'Location unavailable')
+                        : 'Getting your location…',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -329,16 +351,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: <Widget>[
                   _autopilotCard(),
                   const SizedBox(height: 12),
+                  if (_activeTrip != null) ...<Widget>[
+                    _continueTripCard(),
+                    const SizedBox(height: 12),
+                  ],
                   _weatherCard(),
                   const SizedBox(height: 12),
                   _safetyCard(),
                   const SectionHeader(title: 'Travel tools'),
                   _travelToolsCard(),
                   const SizedBox(height: 12),
-                  if (_activeTrip != null) ...<Widget>[
-                    _continueTripCard(),
-                    const SizedBox(height: 12),
-                  ],
                   _sosCard(),
                   const SectionHeader(title: 'Quick actions'),
                   _quickActions(),
@@ -372,7 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         children: <Widget>[
           _toolRow(Icons.travel_explore, 'Traveller Toolkit · 6 advanced tools',
-                  'Packing, countdown, phrases, safety brief and more.',
+                  'Packing, phrases, budget and automatic safety checks.',
                   '/toolkit'),
           const Divider(height: 1, indent: 62),
           _toolRow(Icons.account_balance_wallet_outlined,

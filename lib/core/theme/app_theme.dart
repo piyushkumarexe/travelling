@@ -60,12 +60,46 @@ class AppTheme {
 
     final Color scaffold =
         dark ? const Color(0xFF090B12) : const Color(0xFFF3F1FC);
+    final TextTheme baseTypography = ThemeData(
+      brightness: brightness,
+      useMaterial3: true,
+    ).textTheme;
+    final TextTheme typography = baseTypography.copyWith(
+      displaySmall: baseTypography.displaySmall
+          ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -1.1),
+      headlineLarge: baseTypography.headlineLarge
+          ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.8),
+      headlineMedium: baseTypography.headlineMedium
+          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.65),
+      headlineSmall: baseTypography.headlineSmall
+          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),
+      titleLarge: baseTypography.titleLarge
+          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4),
+      titleMedium: baseTypography.titleMedium
+          ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2),
+      labelLarge:
+          baseTypography.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+      bodyLarge: baseTypography.bodyLarge?.copyWith(height: 1.35),
+      bodyMedium: baseTypography.bodyMedium?.copyWith(height: 1.38),
+      bodySmall: baseTypography.bodySmall?.copyWith(height: 1.35),
+    );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
+      textTheme: typography,
       scaffoldBackgroundColor: scaffold,
-      visualDensity: VisualDensity.adaptivePlatformDensity,
+      visualDensity: VisualDensity.standard,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: _AuroraPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: _AuroraPageTransitionsBuilder(),
+          TargetPlatform.windows: _AuroraPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _AuroraPageTransitionsBuilder(),
+        },
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: scaffold,
         foregroundColor: scheme.onSurface,
@@ -91,11 +125,23 @@ class AppTheme {
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        labelTextStyle: WidgetStatePropertyAll<TextStyle>(
-          TextStyle(
+        labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>(
+          (Set<WidgetState> states) => TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: scheme.onSurfaceVariant,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w800
+                : FontWeight.w600,
+            color: states.contains(WidgetState.selected)
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
+          ),
+        ),
+        iconTheme: WidgetStateProperty.resolveWith<IconThemeData>(
+          (Set<WidgetState> states) => IconThemeData(
+            size: states.contains(WidgetState.selected) ? 25 : 23,
+            color: states.contains(WidgetState.selected)
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -149,6 +195,14 @@ class AppTheme {
         isDense: false,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        labelStyle: TextStyle(
+            color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+        floatingLabelStyle:
+            TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
+        hintStyle: TextStyle(
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.72)),
+        prefixIconColor: scheme.primary,
+        suffixIconColor: scheme.onSurfaceVariant,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide(color: scheme.outlineVariant),
@@ -195,17 +249,110 @@ class AppTheme {
         trackColor: WidgetStateProperty.resolveWith<Color?>((states) =>
             states.contains(WidgetState.selected) ? scheme.primary : null),
       ),
+      checkboxTheme: CheckboxThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+        fillColor: WidgetStateProperty.resolveWith<Color?>((states) =>
+            states.contains(WidgetState.selected) ? scheme.primary : null),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith<Color?>((states) =>
+            states.contains(WidgetState.selected) ? scheme.primary : null),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: scheme.primary,
+        inactiveTrackColor: scheme.primary.withValues(alpha: 0.12),
+        thumbColor: scheme.primary,
+        overlayColor: scheme.primary.withValues(alpha: 0.10),
+        trackHeight: 4,
+      ),
+      refreshIndicatorTheme: RefreshIndicatorThemeData(
+        color: scheme.primary,
+        backgroundColor: scheme.surface,
+        elevation: 3,
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll<Size>(Size(48, 50)),
+          padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+              EdgeInsets.symmetric(horizontal: 12, vertical: 11)),
+          textStyle: WidgetStateProperty.resolveWith<TextStyle>(
+            (Set<WidgetState> states) => TextStyle(
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w800
+                  : FontWeight.w600,
+            ),
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) =>
+              states.contains(WidgetState.selected)
+                  ? scheme.primary.withValues(alpha: dark ? 0.24 : 0.12)
+                  : scheme.surface.withValues(alpha: 0.72)),
+          side: WidgetStatePropertyAll<BorderSide>(
+              BorderSide(color: scheme.outlineVariant)),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 12,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titleTextStyle: typography.titleLarge?.copyWith(color: scheme.onSurface),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: dark ? const Color(0xFFE8E7F4) : const Color(0xFF171827),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        textStyle: TextStyle(
+          color: dark ? const Color(0xFF171827) : Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        radius: const Radius.circular(8),
+        thickness: const WidgetStatePropertyAll<double>(4),
+        thumbColor: WidgetStatePropertyAll<Color>(
+            scheme.primary.withValues(alpha: 0.30)),
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor:
+            dark ? const Color(0xFFE9E7F5) : const Color(0xFF171827),
+        contentTextStyle: TextStyle(
+            color: dark ? const Color(0xFF171827) : Colors.white,
+            fontWeight: FontWeight.w600),
+        actionTextColor: dark ? brandStart : const Color(0xFF67E8F9),
+        elevation: 10,
+        insetPadding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
+      bottomSheetTheme: BottomSheetThemeData(
         showDragHandle: true,
-        backgroundColor: Colors.transparent,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: scheme.surface,
+        modalBarrierColor: Colors.black.withValues(alpha: 0.44),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: brandStart),
-      dividerTheme: DividerThemeData(color: scheme.outline),
-      listTileTheme: ListTileThemeData(iconColor: scheme.primary),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: scheme.primary,
+        linearTrackColor: scheme.primary.withValues(alpha: 0.10),
+        circularTrackColor: scheme.primary.withValues(alpha: 0.10),
+      ),
+      dividerTheme: DividerThemeData(
+          color: scheme.outlineVariant, thickness: 1, space: 1),
+      listTileTheme: ListTileThemeData(
+        iconColor: scheme.primary,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
     );
   }
 
@@ -225,6 +372,39 @@ class AppTheme {
           offset: const Offset(0, 1),
         ),
       ],
+    );
+  }
+}
+
+/// A restrained fade/slide transition used consistently on Android and
+/// desktop. It is intentionally short so navigation feels responsive and
+/// does not add expensive blur or scale work over map screens.
+class _AuroraPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _AuroraPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (route.settings.name == Navigator.defaultRouteName) return child;
+    final Animation<double> curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.035, 0.015),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      ),
     );
   }
 }

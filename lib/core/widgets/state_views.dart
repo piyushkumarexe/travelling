@@ -11,20 +11,30 @@ class LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          const LoadingIndicator(),
-          if (message != null) ...<Widget>[
-            const SizedBox(height: 16),
-            Text(
-              message!,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ],
+    return Semantics(
+      liveRegion: true,
+      label: message ?? 'Loading',
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const LoadingIndicator(),
+              if (message != null) ...<Widget>[
+                const SizedBox(height: 18),
+                Text(
+                  message!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        height: 1.45,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -55,27 +65,30 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 56, color: scheme.primary),
-            const SizedBox(height: 16),
+            _StateIcon(icon: icon, color: scheme.primary),
+            const SizedBox(height: 18),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w800),
               textAlign: TextAlign.center,
             ),
             if (message != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
                 message!,
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
                 textAlign: TextAlign.center,
               ),
             ],
             if (actionLabel != null) ...<Widget>[
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               FilledButton.icon(
                 onPressed: onAction,
-                icon: const Icon(Icons.add),
+                icon: const Icon(Icons.arrow_forward),
                 label: Text(actionLabel!),
               ),
             ],
@@ -103,30 +116,65 @@ class ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 56, color: scheme.error),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            if (onRetry != null) ...<Widget>[
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: Text(retryLabel),
+    return Semantics(
+      liveRegion: true,
+      label: message,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _StateIcon(icon: icon, color: scheme.error),
+              const SizedBox(height: 18),
+              Text(
+                message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                textAlign: TextAlign.center,
               ),
+              if (onRetry != null) ...<Widget>[
+                const SizedBox(height: 18),
+                FilledButton.tonalIcon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(retryLabel),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _StateIcon extends StatelessWidget {
+  const _StateIcon({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            color.withValues(alpha: 0.17),
+            color.withValues(alpha: 0.06),
+          ],
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withValues(alpha: 0.20)),
+      ),
+      child: Icon(icon, size: 36, color: color),
     );
   }
 }

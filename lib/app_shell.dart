@@ -239,36 +239,58 @@ class _AppShellState extends State<AppShell> {
         ),
         floatingActionButton: const SosFab(),
         bottomNavigationBar: onTab
-            ? NavigationBar(
-                selectedIndex: index,
-                onDestinationSelected: (int i) => context.go(_tabs[i]),
-                destinations: const <NavigationDestination>[
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home),
-                    label: 'Home',
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.explore_outlined),
-                    selectedIcon: Icon(Icons.explore),
-                    label: 'Explore',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.map_outlined),
-                    selectedIcon: Icon(Icons.map),
-                    label: 'Map',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.shield_outlined),
-                    selectedIcon: Icon(Icons.shield),
-                    label: 'Safety',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.directions_car_outlined),
-                    selectedIcon: Icon(Icons.directions_car),
-                    label: 'Vehicle',
-                  ),
-                ],
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.07),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: NavigationBar(
+                  selectedIndex: index,
+                  onDestinationSelected: (int i) {
+                    HapticFeedback.selectionClick();
+                    if (i != index) context.go(_tabs[i]);
+                  },
+                  destinations: const <NavigationDestination>[
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore),
+                      label: 'Explore',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.shield_outlined),
+                      selectedIcon: Icon(Icons.shield),
+                      label: 'Safety',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.directions_car_outlined),
+                      selectedIcon: Icon(Icons.directions_car),
+                      label: 'Vehicle',
+                    ),
+                  ],
+                ),
               )
             : null,
       ),
@@ -302,43 +324,63 @@ class _AppShellState extends State<AppShell> {
       padding: const EdgeInsets.only(left: 12, top: 8, right: 4),
       child: Align(
         alignment: Alignment.topLeft,
-        child: Material(
-          color: Colors.black.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: <Color>[Color(0xFF171827), Color(0xFF3730A3)],
+            ),
             borderRadius: BorderRadius.circular(24),
-            onTap: () => context.push(c.activeTrip.route),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.navigation,
-                      color: Color(0xFF4ADE80), size: 18),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Navigating to $name',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
+            border: Border.all(color: Colors.white24),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: AppTheme.brandStart.withValues(alpha: 0.28),
+                blurRadius: 16,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                context.push(c.activeTrip.route);
+              },
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(Icons.navigation,
+                        color: Color(0xFF4ADE80), size: 18),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Navigating to $name',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Resume',
+                      style: TextStyle(
+                        color: Color(0xFF4ADE80),
+                        fontWeight: FontWeight.w800,
                         fontSize: 13,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Resume',
-                    style: TextStyle(
-                      color: Color(0xFF4ADE80),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -357,14 +399,25 @@ class _AppShellState extends State<AppShell> {
       color: Colors.transparent,
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: () => context.push('/profile'),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          context.push('/profile');
+        },
         child: Container(
           width: 42,
           height: 42,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: scheme.surface,
-            border: Border.all(color: scheme.outline),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                scheme.surface,
+                scheme.primary.withValues(alpha: 0.10),
+              ],
+            ),
+            border: Border.all(
+                color: scheme.primary.withValues(alpha: 0.24), width: 1.2),
             boxShadow: AppTheme.softShadow(context),
           ),
           child: ClipOval(

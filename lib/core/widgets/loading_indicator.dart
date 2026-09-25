@@ -32,7 +32,18 @@ class _LoadingIndicatorState extends State<LoadingIndicator>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
-  )..repeat();
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+      _controller.value = 0;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
 
   @override
   void dispose() {
