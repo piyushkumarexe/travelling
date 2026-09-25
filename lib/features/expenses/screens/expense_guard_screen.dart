@@ -5,8 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/state_views.dart';
-import '../expense_math.dart';
 import '../expense_icons.dart';
+import '../expense_math.dart';
 import '../expense_models.dart';
 import '../expense_repository.dart';
 
