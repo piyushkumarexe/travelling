@@ -4,7 +4,7 @@
 
 **Tourism** is a Flutter-based Android application designed to help travellers plan, automate, navigate, monitor, and manage a journey from one place. It combines trip planning, live navigation, travel safety, expense control, booking hand-offs, document storage, nearby discovery, AI assistance, and real notification automations without pretending that unavailable data is live or verified.
 
-> **Current application version:** `1.0.24+25`
+> **Current application version:** `1.0.25+26`
 > **Android requirement:** Android 7.0 or later (`minSdk 24`)
 > **Application ID:** `app.roamio.tourism`
 > **Status:** Active development
@@ -298,6 +298,25 @@ After the journey, Tourism can remind the user to finish expenses, retain useful
 - Local Android safety and automation notifications.
 - Role-gated admin tools for incidents, safety zones and SOS records.
 - Server-side rules enforce authorization independently of UI visibility.
+
+### Journey Operations
+
+Twelve private tools sync through the signed-in user’s Firebase account:
+
+1. Medicine plan with dosage and schedule details.
+2. Luggage inventory with bag location and packed state.
+3. Shared preparation task board with owner and completion state.
+4. Travel contacts with direct phone-app hand-off.
+5. SIM, roaming and connectivity plan.
+6. Diet and allergy card with local-language notes.
+7. Accessibility-request tracker with confirmation state.
+8. Gift and souvenir tracker with recipient and budget notes.
+9. Searchable trip journal.
+10. Airport, station and border checkpoint readiness.
+11. Home-departure security checklist.
+12. Local knowledge notebook with source/verification notes.
+
+Every tool supports account-private create, edit, search and delete flows. Applicable tools also support completion tracking. Firestore reports the real sync result, and the UI never reports a failed write as saved.
 
 ---
 

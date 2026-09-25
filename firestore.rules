@@ -318,6 +318,45 @@ service cloud.firestore {
       allow delete: if isSelf(uid);
     }
 
+    // ---- Journey Operations: twelve private, Firebase-synced travel tools ----
+    match /users/{uid}/journeyOperations/{operationId} {
+      allow read: if isSelf(uid);
+      allow create: if isSelf(uid)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == operationId
+        && request.resource.data.kind in [
+          'medicine', 'luggage', 'taskBoard', 'contacts', 'connectivity',
+          'dietary', 'accessibility', 'souvenirs', 'journal', 'checkpoints',
+          'homeReadiness', 'localKnowledge'
+        ]
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.detail is string
+        && request.resource.data.detail.size() <= 2000
+        && request.resource.data.extra is string
+        && request.resource.data.extra.size() <= 500
+        && request.resource.data.completed is bool
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number;
+      allow update: if isSelf(uid)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 160
+        && request.resource.data.detail is string
+        && request.resource.data.detail.size() <= 2000
+        && request.resource.data.extra is string
+        && request.resource.data.extra.size() <= 500
+        && request.resource.data.completed is bool
+        && request.resource.data.updatedAt is number;
+      allow delete: if isSelf(uid);
+    }
+
     // ---- Rate limits are backend-only ----
     match /rateLimits/{key} {
       allow read, write: if false;

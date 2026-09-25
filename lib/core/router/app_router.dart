@@ -35,6 +35,7 @@ import '../../features/itinerary/screens/itinerary_list_screen.dart';
 import '../../features/itinerary/screens/itinerary_new_screen.dart';
 import '../../features/map/screens/map_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
+import '../../features/operations/screens/journey_operations_screen.dart';
 import '../../features/planner/screens/trip_planner_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/route/screens/multi_stop_screen.dart';
@@ -111,6 +112,11 @@ class AppRouter {
         path: '/automation',
         builder: (BuildContext context, GoRouterState state) =>
             const TravelAutomationScreen(),
+      ),
+      GoRoute(
+        path: '/journey-operations',
+        builder: (BuildContext context, GoRouterState state) =>
+            const JourneyOperationsScreen(),
       ),
       GoRoute(
         path: '/booking/ride',

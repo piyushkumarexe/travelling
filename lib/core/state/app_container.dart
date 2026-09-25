@@ -20,6 +20,7 @@ import '../../features/automation/travel_automation_service.dart';
 import '../../features/autopilot/autopilot_service.dart';
 import '../../features/booking/booking_service.dart';
 import '../../features/expenses/expense_repository.dart';
+import '../../features/operations/journey_operations_service.dart';
 import '../../features/vault/vault_service.dart';
 import '../app_config.dart';
 import '../network/api_client.dart';
@@ -159,6 +160,10 @@ class AppContainer {
     notifications: notificationService,
     trips: tripPlanStore,
   );
+
+  /// Twelve private Firebase-synced journey organisation tools.
+  late final JourneyOperationsService journeyOperations =
+      JourneyOperationsService();
 
   /// Live location sharing with the SOS contact (started from the
   /// navigation flow after the user accepts the share prompt).
