@@ -39,6 +39,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
   final TextEditingController _endName = TextEditingController();
 
   int _debugTaps = 0;
+  bool _generating = false;
   bool _showArrivalSheet = false;
   int _lastVisitedCount = 0;
 
@@ -85,11 +86,18 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text("✅ You've arrived!",
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w800)),
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.check_circle,
+                      color: AppTheme.success, size: 26),
+                  const SizedBox(width: 8),
+                  Text("You've arrived!",
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w800)),
+                ],
+              ),
               Text(
                   'You have about ${AutopilotEngine.formatDurationLabel(left)} left.',
                   style: const TextStyle(fontSize: 13)),
@@ -130,6 +138,15 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
   }
 
   Future<void> _generate({bool autoPlan = false}) async {
+    if (_generating) return;
+    FocusScope.of(context).unfocus();
+    // Move immediately to a visible progress state. Provider/geocoding calls
+    // can legitimately take several seconds; leaving the same enabled buttons
+    // on screen made a successful tap look completely dead.
+    setState(() {
+      _generating = true;
+      _step = 3;
+    });
     final AutopilotBrief brief = AutopilotBrief(
       interests: _picked,
       availableMinutes: _minutes,
@@ -144,12 +161,21 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
     if (brief.freeText != null && brief.freeText!.isNotEmpty) {
       effective = AutopilotEngine.parseBrief(brief.freeText!, base: brief);
     }
-    await _svc.start(effective);
-    if (!mounted) return;
-    if (autoPlan && _svc.suggestions.isNotEmpty) {
-      _svc.generatePlan();
+    try {
+      final bool loaded = await _svc.start(effective);
+      if (!mounted) return;
+      if (loaded && autoPlan && _svc.suggestions.isNotEmpty) {
+        _svc.generatePlan();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Autopilot could not start. Please try again.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _generating = false);
     }
-    setState(() => _step = 3);
   }
 
   @override
@@ -158,6 +184,9 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
       listenable: _svc,
       builder: (BuildContext context, _) {
         final bool inSession = _svc.session != null;
+        final bool initialLoad = (_generating || _svc.loading) &&
+            (_svc.session?.stops.isEmpty ?? true) &&
+            _svc.suggestions.isEmpty;
         return PopScope(
           canPop: !inSession,
           onPopInvokedWithResult: (bool didPop, Object? result) {
@@ -186,18 +215,24 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 ),
               ),
             ),
-            body: _svc.session != null
-                ? _dashboard()
-                : IndexedStack(
-                    index: _step.clamp(0, 3),
-                    children: <Widget>[
-                      _stepInterests(),
-                      _stepTime(),
-                      _stepOptions(),
-                      _stepResults(),
-                    ],
-                  ),
-            bottomNavigationBar: _svc.session != null ? _stopBar() : null,
+            body: initialLoad
+                ? const LoadingView(
+                    message: 'Reading your location and real nearby places…\n'
+                        'The first scan can take a few seconds.',
+                  )
+                : _svc.session != null
+                    ? _dashboard()
+                    : IndexedStack(
+                        index: _step.clamp(0, 3),
+                        children: <Widget>[
+                          _stepInterests(),
+                          _stepTime(),
+                          _stepOptions(),
+                          _stepResults(),
+                        ],
+                      ),
+            bottomNavigationBar:
+                inSession && !initialLoad ? _stopBar() : null,
           ),
         );
       },
@@ -410,8 +445,8 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           controller: _maxTravel,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
-            labelText: "Don't take me more than (minutes) — optional",
-            hintText: '20',
+            labelText: 'Maximum travel time (minutes)',
+            hintText: 'Optional · e.g. 20',
             border: OutlineInputBorder(),
           ),
         ),
@@ -458,19 +493,22 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
         FilledButton.icon(
-          onPressed: () => _generate(),
-          icon: const Icon(Icons.flash_on),
-          label: const Text('GENERATE'),
+          onPressed: _generating ? null : () => _generate(),
+          icon: const Icon(Icons.travel_explore),
+          label: const Text('GENERATE OPTIONS'),
         ),
-        FilledButton.icon(
-          onPressed: () => _generate(autoPlan: true),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed:
+              _generating ? null : () => _generate(autoPlan: true),
           icon: const Icon(Icons.auto_mode),
-          label: const Text('AUTO PLAN'),
+          label: const Text('BUILD AUTO PLAN'),
         ),
+        const SizedBox(height: 10),
         TextButton(
-          onPressed: () => setState(() => _step = 1),
+          onPressed: _generating ? null : () => setState(() => _step = 1),
           child: const Text('Back'),
         ),
         const SizedBox(height: 24),
@@ -727,9 +765,17 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   children: <Widget>[
-                    Text('${i + 1}️⃣',
-                        style: const TextStyle(fontSize: 15)),
-                    const SizedBox(width: 6),
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor:
+                          Theme.of(context).colorScheme.primary,
+                      child: Text('${i + 1}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800)),
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '${plan.steps[i].suggestion.name} — '
@@ -1070,11 +1116,17 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 children: <Widget>[
                   Text('${i + 1}.'),
                   const SizedBox(width: 6),
-                  Text(journey[i].status == AutopilotStopStatus.visited
-                      ? '✅'
-                      : journey[i].status == AutopilotStopStatus.accepted
-                          ? '▶️'
-                          : '⬜'),
+                  Icon(
+                    journey[i].status == AutopilotStopStatus.visited
+                        ? Icons.check_circle
+                        : journey[i].status == AutopilotStopStatus.accepted
+                            ? Icons.play_circle
+                            : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: journey[i].status == AutopilotStopStatus.visited
+                        ? AppTheme.success
+                        : Theme.of(context).colorScheme.primary,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
