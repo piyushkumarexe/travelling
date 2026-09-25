@@ -1,762 +1,921 @@
-# Tourism — Smart Tourism & Safety Assistant (Android)
+# Tourism
 
-Tourism is a native Android app (Flutter) that combines a premium travel
-experience with real safety tooling: live Google Maps, real AI assistance
-(NVIDIA), real weather (OpenWeather), AI incident triage, geofenced safety
-zones with Android notifications, a one-tap SOS flow, a Digital Emergency
-ID with real QR verification, and an Eco Score for sustainable travel.
+## Smart Travel, Safety and Automation Assistant for Android
 
-Everything is real and wired end-to-end — there are no demo buttons and no
-fake data. All third-party secrets (NVIDIA, OpenWeather, Google Maps server
-key) live only in the Firebase Cloud Functions backend; the Android app ships
-with no secret API keys (the MapTiler tile key is a public, client-side key,
-the same category as the Google Maps Android key).
+**Tourism** is a Flutter-based Android application designed to help travellers plan, automate, navigate, monitor, and manage a journey from one place. It combines trip planning, live navigation, travel safety, expense control, booking hand-offs, document storage, nearby discovery, AI assistance, and real notification automations without pretending that unavailable data is live or verified.
+
+> **Current application version:** `1.0.24+25`
+> **Android requirement:** Android 7.0 or later (`minSdk 24`)
+> **Application ID:** `app.roamio.tourism`
+> **Status:** Active development
 
 ---
 
-## Feature overview
+## Table of contents
 
-| Area | What it actually does |
-| --- | --- |
-| Home dashboard | Live location label, real weather, safety-zone status for your position, nearby tourist attractions, latest alerts, SOS button, emergency ID, report incident, AI assistant, itineraries, eco score — every card navigates to a working feature. |
-| Explore | Real Google Places text search + category browsing (attractions, food, hidden gems), place detail with real photos (proxied), rating, price level, open/closed, distance from you, and "navigate" that opens real Google Maps navigation. |
-| Map | MapTiler tiles via `flutter_map` (satellite by default with a streets toggle): live GPS dot with real-time follow mode, zoom/pan, place search markers, tourist attractions, safety zones (color-coded circles), emergency services, destination markers, distance + route info (real Directions API polyline when available, honestly-labelled straight-line fallback), current-location button, proper permission handling. |
-| AI assistant | Real conversational AI with your current location and travel preferences as context: Cloud Functions backend first, then a direct NVIDIA key or any OpenAI-compatible provider compiled in at build time. Typing indicator, error states, suggestion chips. |
-| Itinerary generator | Destination + days + interests + budget + style → real AI-generated plan (NVIDIA JSON), preview, regenerate, save to Firestore, view by day, delete. |
-| Safety hub | Nearest active zone, zone list with details, geofence monitor (real background location while app runs), in-app warning + Android notification + notification history when entering a high-risk zone, nearby emergency services you can actually call (`tel:`) or get directions to. |
-| SOS | Confirm dialog → real GPS fix → `emergencyEvents` document → active status UI with coordinates/accuracy → nearby emergency services with call buttons → cancel/resolve. Never claims authorities were contacted. |
-| Incident reporting | Description + photo + video + location → Firebase Storage (type/size validated) → NVIDIA triage (category, severity, summary, recommended action) → Firestore + history + admin review. |
-| Digital Emergency ID | Real profile record with a QR code containing **only** a 64-char verification token. Active/revoked, copy token, and a real verification screen (camera scan via `mobile_scanner` or manual paste) that checks Firestore live. |
-| Eco score | GPS-tracked walk/cycle sessions (real distance accumulation) or manual logs; points/levels/badges persisted in Firestore. |
-| Weather | Current conditions + 5-day forecast from OpenWeather (backend proxy) with practical safety notes and full loading/error/retry states. |
-| Notifications | Per-user notification history (safety, geofence, incident, emergency, weather) with read/unread and deep-links. |
-| Profile | Name, photo (Storage upload), language, emergency contact, budget/style/interests — all in Firestore — plus sign out. |
-| Admin console | Role-gated in the app **and** enforced server-side by Firebase security rules: view/update all incidents, create/edit/disable safety zones, view and resolve all SOS events. |
+1. [Application idea](#application-idea)
+2. [Problem statement](#problem-statement)
+3. [Proposed solution](#proposed-solution)
+4. [Objectives](#objectives)
+5. [Target users](#target-users)
+6. [Application content and user journey](#application-content-and-user-journey)
+7. [Major features](#major-features)
+8. [Travel Automation Center](#travel-automation-center)
+9. [Technical approach](#technical-approach)
+10. [Architecture and repository structure](#architecture-and-repository-structure)
+11. [Security, privacy and responsible design](#security-privacy-and-responsible-design)
+12. [Feasibility](#feasibility)
+13. [Viability](#viability)
+14. [Impact and benefits](#impact-and-benefits)
+15. [Research basis](#research-basis)
+16. [References](#references)
+17. [Setup and development](#setup-and-development)
+18. [Build and testing](#build-and-testing)
+19. [Important instructions](#important-instructions)
+20. [Known limitations](#known-limitations)
+21. [Future scope](#future-scope)
+22. [License](#license)
 
 ---
 
-## Tech stack
+## Application idea
 
-- **Flutter 3.32 / Dart 3.8** — Material 3, GoRouter, DI-free service container.
-- **Firebase** — Authentication (Google + email/password sign-in), Cloud Firestore, Storage,
-  Cloud Functions v2 (Node 20, CommonJS) as the secure API gateway.
-- **MapTiler + flutter_map** — raster tiles (satellite + streets) with a
-  public client key; the map widget needs no Google Maps SDK key.
-- **Google** — Places/Directions/Geocoding APIs (server key, proxied) and
-  turn-by-turn navigation via the installed Google Maps app.
-- **OpenWeather** — current + forecast (server key, proxied).
-- **NVIDIA API** — Llama 3.1 70B instruct for chat, itinerary JSON and
-  incident triage (server key only).
-- **GitHub Actions** — analyze + test + release APK artifact.
+Travellers normally use separate applications for maps, weather, bookings, expenses, documents, emergency contacts, nearby services, and itinerary planning. Important actions are therefore scattered across multiple screens and are often remembered too late.
 
-## Repository layout
+Tourism follows a **journey lifecycle** approach:
 
+```text
+Discover → Plan → Prepare → Travel → Stay safe → Track → Review
 ```
-android/                  # native Android project (app.roamio.tourism)
+
+The central idea is to build a trustworthy travel companion that turns an itinerary into practical actions. Instead of only displaying information, Tourism can remind the traveller to check documents, verify bookings, review weather, prepare a vehicle, monitor expenses, hydrate, perform a safety check-in, back up important media, and close the trip properly.
+
+The product follows three core principles:
+
+1. **Use real data when it is available.**
+2. **Label estimates and limitations honestly.**
+3. **Require user consent before automation, tracking, or communication.**
+
+---
+
+## Problem statement
+
+A traveller may face several preventable problems:
+
+- Important documents or booking references are difficult to find at departure time.
+- A trip plan may not account for realistic travel time, delays, opening hours, or budget.
+- Safety information and emergency actions may be hidden across different applications.
+- Expenses are recorded late or not recorded at all.
+- Travellers forget pre-trip checks, hydration, check-in requirements, return timing, or backups.
+- Booking comparison tools may show unverified or fabricated prices when official partner data is unavailable.
+- Safety products may imply that police, providers, or contacts were notified when no such confirmation exists.
+- Weak network coverage can make cloud-only travel tools unreliable.
+
+Tourism addresses these issues through a unified, permission-aware and failure-aware Android experience.
+
+---
+
+## Proposed solution
+
+Tourism provides:
+
+- A single travel dashboard for the active journey.
+- Real GPS-based maps, search, routes, nearby discovery and navigation.
+- Trip planning and itinerary generation.
+- A Travel Automation Center with individually controlled notification agents.
+- SOS, emergency ID, safety zones, nearby emergency services and location-sharing tools.
+- Booking provider hand-offs that keep booking and payment in official provider systems.
+- A private document and booking vault.
+- Expense, budget and vehicle-cost tools.
+- Weather, essentials, eco activity and travel intelligence modules.
+- AI assistance through configured providers, with deterministic fallbacks where appropriate.
+- Honest loading, permission, offline, unavailable-data and error states.
+
+Tourism is not intended to replace emergency services, official booking providers, government advisories, medical professionals, or human judgement. It is a decision-support and travel-organization application.
+
+---
+
+## Objectives
+
+### Primary objectives
+
+- Reduce repetitive travel preparation work.
+- Improve access to trip-critical information.
+- Encourage timely and safer travel decisions.
+- Reduce missed documents, untracked spending and forgotten checks.
+- Keep travellers informed without enabling surprise automation.
+- Provide one consistent interface across the complete journey lifecycle.
+
+### Engineering objectives
+
+- Keep third-party secrets out of the APK wherever server-side proxying is supported.
+- Separate UI, state, repositories, domain engines and platform services.
+- Use owner-scoped Firebase data rules.
+- Preserve useful offline and cache-first behavior.
+- Avoid invented prices, confirmations, coordinates, opening hours, battery levels, or safety claims.
+- Validate every release through static analysis, tests and signed-APK verification.
+
+---
+
+## Target users
+
+Tourism is useful for:
+
+- Solo travellers who want preparation and safety support.
+- Families managing bookings, documents and shared plans.
+- Road-trip users tracking fuel, service readiness and trip expenses.
+- Students and budget travellers monitoring daily spending.
+- Domestic and international tourists storing travel references.
+- Travellers visiting unfamiliar places who need nearby essentials and emergency services.
+- Users who prefer reminders and guided workflows over manual travel checklists.
+
+---
+
+## Application content and user journey
+
+### 1. Onboarding and authentication
+
+Users can sign in through configured Firebase Authentication methods. Profile preferences, emergency contacts and travel settings are associated with the authenticated account.
+
+### 2. Home dashboard
+
+The home screen acts as the journey command center. It surfaces the current location, weather, active trip, nearby places, safety state, quick actions, Travel Automation, Travel Autopilot, Booking Hub, Expense Guard, document vault and other tools.
+
+### 3. Discovery and planning
+
+Users can explore places, search by category, inspect place details, generate or edit an itinerary, and save a trip. The active trip then becomes the shared context for automation, expenses, documents, intelligence and navigation.
+
+### 4. Preparation
+
+Before departure, users can review documents, bookings, weather, packing, vehicle readiness and provider information. Automation agents can schedule these checks from the actual trip date.
+
+### 5. During the journey
+
+The traveller can use live maps, route guidance, nearby essentials, daily itinerary prompts, expense logging, budget status, safety check-ins, emergency tools and context-aware recommendations.
+
+### 6. Trip closure
+
+After the journey, Tourism can remind the user to finish expenses, retain useful booking references, review documents, and clean up journey records.
+
+---
+
+## Major features
+
+### Travel planning and intelligence
+
+- Create and save multi-day trips.
+- AI-assisted itinerary generation using configured providers.
+- Deterministic robustness analysis and contradiction detection.
+- What-if simulation for delay, closure, reduced budget and reduced time.
+- Constraint solving for must-visit places, maximum daily load and deadlines.
+- Auto-recovery for a delayed itinerary.
+- Decision replay for changes the user actually applies.
+- Group preference conflict resolution.
+- Honest handling of unknown travel or visit duration.
+
+### Travel Autopilot
+
+- Works with current location and available time, even without a full itinerary.
+- Ranks nearby options using distance, route time, opening data when available and user interests.
+- Creates a practical multi-stop plan for the available window.
+- Supports arrival detection, breaks, re-planning and trip recovery.
+- Persists the current session locally per user.
+- Labels unknown prices instead of inventing them.
+
+### Maps, search and navigation
+
+- Live GPS position with permission handling.
+- MapTiler and OpenStreetMap-based map rendering.
+- Locality-first place ranking and canonical coordinate selection.
+- Nearby attraction and essential-service discovery.
+- OSRM route distance and ETA where available.
+- Route polyline, destination markers and multi-stop routing.
+- 2D map and MapLibre-powered 3D navigation mode.
+- Heading-up follow camera and speed-aware trip display.
+- Clear fallback labeling when only straight-line information is available.
+
+### Safety and emergency support
+
+- Safety zones and location-aware risk display.
+- Nearby hospital, police, fire and medical service discovery.
+- One-tap SOS workflow with actual device coordinates.
+- Emergency events with active and resolved states.
+- Emergency-contact SMS and WhatsApp hand-off where supported.
+- Opt-in offline emergency SMS through Android `SmsManager`.
+- Live-location sharing with visible status and stop control.
+- Power-off last-known-location fallback with explicit limitations.
+- No claim that authorities were contacted unless an external system confirms it.
+
+### Digital Emergency ID
+
+- Private emergency profile associated with a random verification token.
+- QR code contains the verification token, not raw personal details.
+- Camera scan and manual verification paths.
+- Active and revoked states.
+- Public verification is token-addressed and collection listing is denied.
+
+### Incident reporting
+
+- Description, location, image and video support.
+- Media type and size validation.
+- Configured AI-based category and severity assistance.
+- Firestore history and admin review.
+- Human-readable error states when upload or analysis fails.
+
+### Weather
+
+- Current conditions and forecast through the configured weather backend.
+- Practical travel guidance and retry states.
+- Weather information is treated as advisory and may change rapidly.
+
+### Travel Booking Hub
+
+- Ride, flight, train, bus, hotel, car-rental and activity categories.
+- Official provider app/site hand-off.
+- Pickup and destination forwarding where a provider publicly supports it.
+- Booking and payment remain with the official provider.
+- No fake live fares, seat inventory, ratings or confirmations.
+- Provider references can be saved manually after returning to Tourism.
+
+### Travel Document and Booking Vault
+
+- Passport, visa, ID, ticket, hotel, insurance and other travel-document types.
+- PDF and supported-image uploads.
+- Trip linking without duplicating trip data.
+- Search and upcoming-booking timeline.
+- Expiry states computed from the real current date.
+- Expiry reminders through local notifications.
+- Owner-only Firestore and Firebase Storage access rules.
+- No pretend OCR: users verify and enter document details themselves.
+
+### Travel Expense Guard
+
+- Fast expense entry with optional receipt, merchant, notes and trip link.
+- Offline-first cache and idempotent synchronization queue.
+- Per-currency totals; unsupported currency conversion is never invented.
+- Daily budget thresholds and deterministic spending insights.
+- Search, filters, sorting, edit and delete.
+- Equal or custom expense splitting with sum validation.
+- Sync status reflects the real persistence result.
+
+### Budget and wallet
+
+- Trip budget setup.
+- Expense recording and editing.
+- Remaining-budget views based on entered data.
+- Local trip-level spending support.
+
+### Vehicle tools
+
+- Fuel fill-up records.
+- Mileage and cost tracking.
+- Service reminders.
+- Trip fuel estimation based on user-provided vehicle inputs.
+- Pre-trip vehicle-readiness automation.
+
+### Nearby essentials
+
+- Locate useful services such as pharmacies, hospitals, ATMs, fuel and food.
+- Uses real location and mapped place data where available.
+- Provides distance/context rather than guaranteeing inventory or service availability.
+
+### Eco activity
+
+- Walk and cycle session tracking.
+- Distance-based points and badges.
+- Firestore persistence for the user’s activity history.
+- No blockchain claims or artificial environmental measurements.
+
+### Payment Guardian
+
+- Helps users check payment context and provider hand-offs.
+- Encourages verification before leaving the trusted provider flow.
+- Does not request or store banking passwords, card PINs or OTPs.
+
+### Notifications and administration
+
+- Per-user notification history and read state.
+- Local Android safety and automation notifications.
+- Role-gated admin tools for incidents, safety zones and SOS records.
+- Server-side rules enforce authorization independently of UI visibility.
+
+---
+
+## Travel Automation Center
+
+The Travel Automation Center contains **15 real, opt-in notification automations**. Schedules are generated from the active trip’s actual start date and duration.
+
+| Phase | Automation | Purpose |
+| --- | --- | --- |
+| Before trip | Smart packing trigger | Starts a packing check two evenings before departure. |
+| Before trip | Document readiness | Prompts a passport, ID, ticket, insurance and vault review. |
+| Before trip | Booking confirmation audit | Reminds the user to verify official confirmations and references. |
+| Before trip | Weather re-check | Schedules a final weather review before travel. |
+| Before trip | Vehicle readiness | Prompts fuel/charge, tyre, licence and emergency-kit checks. |
+| Before trip | Departure morning brief | Surfaces route, weather, booking and document checks. |
+| During trip | Daily itinerary brief | Provides a planning prompt on each trip morning. |
+| During trip | Stay check-in assistant | Prompts hotel address, accepted ID and confirmation readiness. |
+| During trip | Nearby essentials check | Reminds the user to identify nearby pharmacy, water, ATM and transport. |
+| During trip | Hydration rhythm | Schedules three lightweight hydration prompts per trip day. |
+| During trip | Daily budget pulse | Prompts an evening expense and budget review. |
+| During trip | Daylight return guard | Prompts a return-route, battery and safety check before evening. |
+| During trip | Night safety check-in | Reminds the traveller to verify SOS contact and safe-route readiness. |
+| During trip | Photo and document backup | Prompts backup of important trip media and receipts. |
+| After trip | Trip closure assistant | Prompts final expenses, references and document cleanup. |
+
+### Automation rules
+
+- Every automation is **off until the user enables it**.
+- Tourism requests notification permission through Android.
+- An automation is marked enabled only if at least one notification was accepted for scheduling.
+- Missing active trip, permission denial and “no future event” are separate outcomes.
+- Past notification times are not scheduled.
+- Repeating recipes are limited to the first 14 trip days to avoid excessive notification creation.
+- Enabled recipes and accepted schedule timestamps are stored per user.
+- Disabling a recipe cancels its scheduled notifications.
+- Automations are reminders and decision support; they do not silently book, pay, contact providers, or send personal data.
+
+---
+
+## Technical approach
+
+### Frontend
+
+- **Flutter and Dart** for a single Android application codebase.
+- **Material 3** with Tourism’s Aurora visual system.
+- **GoRouter** for declarative navigation and deep-link-ready routes.
+- A lightweight application container for shared services and repositories.
+- Feature-oriented folders to keep domain responsibilities separated.
+
+### Backend and persistence
+
+- **Firebase Authentication** for user identity.
+- **Cloud Firestore** for profiles, trips, incidents, expenses, bookings and user records.
+- **Firebase Storage** for controlled user media and documents.
+- **Cloud Functions** as a secure gateway for configured AI, weather and Google service integrations.
+- **SharedPreferences** for suitable device-local state such as automation choices and active local sessions.
+
+### Maps and location
+
+- `geolocator` for permission-aware device position.
+- `flutter_map`, MapTiler and OpenStreetMap sources for 2D mapping.
+- `maplibre_gl` for supported 3D map presentation.
+- OSRM and configured route services for road distance, ETA and geometry.
+- Haversine distance only where a straight-line calculation is explicitly appropriate.
+
+### Notifications and automation
+
+- `flutter_local_notifications` for Android notification channels and scheduled reminders.
+- `timezone` for local-time scheduling.
+- A pure automation engine converts trip facts into future events.
+- A separate service handles permission, scheduling, cancellation and persistence.
+- The UI displays service results rather than assuming that scheduling succeeded.
+
+### AI strategy
+
+Configured AI providers can support conversation, itinerary generation and incident categorization. Provider keys may be supplied through secure backend configuration or build-time configuration where explicitly supported.
+
+Deterministic logic is preferred for:
+
+- Budget arithmetic.
+- Date and expiry calculations.
+- Route and distance constraints.
+- Automation schedules.
+- Expense totals.
+- Feasibility checks.
+- Rule-based ranking and fallback behavior.
+
+This separation reduces hallucination risk and makes important calculations testable.
+
+### Reliability and performance
+
+- Cache-first loading where stale-but-useful information is safer than a blank screen.
+- Bounded Firestore listeners.
+- Parallel independent requests.
+- Request deduplication where applicable.
+- Stable identifiers for retryable writes.
+- Explicit loading, empty, offline, permission-denied and failed states.
+- No blocking network work on the UI thread.
+
+---
+
+## Architecture and repository structure
+
+```text
+android/                    Native Android configuration and integrations
+assets/images/              Application images and brand assets
+functions/                  Firebase Cloud Functions backend
 lib/
-  main.dart               # entrypoint (Firebase init)
-  app.dart                # MaterialApp + router wiring
-  app_shell.dart          # bottom-nav shell + SOS bridge + geofence alerts
-  firebase_options.dart   # YOUR Firebase config (replace the template)
-  core/                   # theme, services, state, widgets, utils, network
-  data/models/            # typed models + parsers
-  data/repositories/      # all Firestore/API access behind one API
-  features/               # one folder per feature area (screens)
-functions/                # Cloud Functions (secure backend gateway)
-firestore.rules           # Firestore security rules
-storage.rules             # Storage security rules
-firestore.indexes.json    # indexes (none required today)
-firebase.json             # firebase deploy manifest
-test/                     # unit + widget tests
-.github/workflows/        # Build APK (runnable from the Actions UI)
+  main.dart                 Application entry point
+  app.dart                  Root application and routing integration
+  app_shell.dart            Main navigation shell and global trip/safety UI
+  core/                     Theme, configuration, services, state and utilities
+  data/models/              Typed application models
+  data/repositories/        Firestore and remote-data boundaries
+  features/                 Feature-oriented UI and domain modules
+    automation/             Travel Automation engine, service and screen
+    autopilot/              Location/time-based journey recommendations
+    booking/                Official booking-provider hand-offs
+    expenses/               Offline-first expense tracking
+    intelligence/           Trip analysis and decision tools
+    safety/                 Safety zones, SOS and emergency functions
+    vault/                  Travel documents and booking records
+    ...                     Maps, weather, profile, vehicle, wallet and more
+scripts/                    Deployment and maintenance helpers
+test/                       Unit and widget tests
+.github/workflows/          Verify and release APK workflows
+firestore.rules             Firestore authorization and validation
+storage.rules               Firebase Storage authorization and limits
+firebase.json               Firebase deployment manifest
 ```
 
-## Collections (Firestore)
+### Data design
 
-```
-users/{uid}                          # { role: 'user'|'admin', displayName, email }
-profiles/{uid}                       # name, photoUrl, language, contacts, prefs
-safetyZones/{id}                     # name, lat, lng, radiusMeters, riskLevel, active, ...
-incidents/{id}                       # uid, reporterName, description, category, severity,
-                                     # status, lat, lng, summary, recommendedAction, media
-emergencyEvents/{id}                 # uid, name, lat, lng, accuracyMeters, status, timestamps
-digitalIds/{id}                      # uid, ownerName, token (64-hex), photoUrl, contacts, status
-users/{uid}/itineraries/{id}         # destination, days, interests, budget, travelStyle, plan
-users/{uid}/notifications/{id}       # title, body, type, read, payload, createdAt
-ecoScores/{uid}                      # score, byMode, badges, sessions
-ecoScores/{uid}/activities/{id}      # mode, distanceMeters, durationSeconds, note
-rateLimits/{uid:endpoint:minute}     # backend-only (denied to clients by rules)
-```
+Important records are scoped either by user ownership or by a controlled public/admin role. Representative paths include:
 
-## Setup (one-time, ~30 minutes)
-
-### 1. Prerequisites
-
-- Flutter 3.32.x (`flutter doctor` green for Android)
-- Firebase CLI (`npm i -g firebase-tools`)
-- An Android device or emulator with Google Play Services
-- A Firebase project (e.g. `yatrawise-prod`)
-
-### 2. Firebase project
-
-1. Create the project in the Firebase console.
-2. **Authentication → Sign-in method**:
-   - **Google**: enable it (see step 3 for the OAuth client).
-   - **Email/Password**: enable it to allow email sign-up/sign-in.
-3. **Project settings → Your apps → Add app (Android)** with
-   package name `app.roamio.tourism`.
-4. Run `flutterfire configure` (or paste the downloaded config into
-   `lib/firebase_options.dart`). The committed file is a placeholder
-   template — replace `REPLACE_WITH_YOUR_...` values.
-5. **Firestore → Create database** (production mode, closest region).
-6. **Storage → Get started** (production mode).
-
-### 3. Google sign-in credentials
-
-1. In the **Google Cloud console** (linked to your Firebase project):
-   **APIs & Services → Credentials → Create OAuth client ID → Android**.
-   - Package name: `app.roamio.tourism`
-   - SHA-1 fingerprint: for local debug builds use the debug keystore
-     (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`);
-     add your release fingerprint too if you sign your own builds.
-   The SHA-1 of the exact APK you install must be registered here, otherwise
-   Google Sign-In fails instantly.
-2. Because this app uses `firebase_options.dart` (not `google-services.json`),
-   you must also provide the Google Sign-In **Web client ID** as the
-   `serverClientId`:
-   - Firebase console → **Project settings → Your apps → Web app** → copy the
-     `Web client ID` (ends with `.apps.googleusercontent.com`), or
-   - Google Cloud → **Credentials** → the "Web client (auto-created by Google
-     Service)" client.
-   Then either hardcode it in `lib/core/app_config.dart`
-   (`googleWebClientId`) or build with:
-   `flutter build apk --dart-define=GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com`
-   (in CI set the `GOOGLE_WEB_CLIENT_ID` secret).
-
-### 4. Google Maps keys (two separate keys)
-
-> The interactive map widget now renders with **MapTiler** tiles, so the
-> Maps SDK **client key is optional** (the map shows without it). The
-> `MAPTILER_API_KEY` default is already compiled in; override it with
-> `--dart-define=MAPTILER_API_KEY=...` (CI secret `MAPTILER_API_KEY`).
-
-**Client key (Android manifest):**
-1. Credentials → Create API key → restrict to **Android apps** with your
-   package name + SHA-1s; enable the **Maps SDK for Android**.
-2. Paste it into `android/app/src/main/AndroidManifest.xml` in the
-   placeholder meta-data:
-   `<meta-data android:name="com.google.android.geo.API_KEY" .../>`
-
-**Server key (backend proxy):**
-1. Create a second key restricted by **IP addresses** (Cloud Functions —
-   leave the IP restriction "all" and restrict by app engine/Cloud
-   Functions service) or simply to the Cloud Functions service; enable
-   **Places API (legacy), Geocoding API, Routes API**.
-2. Set it as the `GOOGLE_MAPS_API_KEY` function environment variable
-   (see step 7). It never ships in the APK.
-
-### 5. AI keys (free) + OpenWeather
-
-> In 2026 every keyless AI provider shut down anonymous access (Pollinations,
-> Hack Club AI, DuckDuckGo AI all did), so the assistant needs ONE free key.
-> All of these work as a single GitHub secret; the app auto-prefers Groq →
-> NVIDIA → Gemini → generic.
-
-1. **Groq (fastest, recommended)**: get a free key at https://console.groq.com/keys
-   → set it as the `GROQ_API_KEY` GitHub secret (or build with
-   `--dart-define=GROQ_API_KEY=gsk_...`). Default model
-   `openai/gpt-oss-120b`; override with `GROQ_MODEL`.
-2. **Google Gemini**: get a free key at https://aistudio.google.com/apikey →
-   set it as the `GEMINI_API_KEY` GitHub secret (or build with
-   `--dart-define=GEMINI_API_KEY=AIza...`). Default model `gemini-2.5-flash`.
-3. **NVIDIA**: create a free key (build.nvidia.com) → set it as the
-   `NVIDIA_API_KEY` GitHub secret (or
-   `--dart-define=NVIDIA_API_KEY=nvapi-...`; optionally override
-   `NVIDIA_MODEL`).
-4. **Any OpenAI-compatible provider** (OpenRouter / Mistral / …):
-   `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` GitHub secrets / dart-defines.
-5. OpenWeather: create an API key → set as `OPENWEATHER_API_KEY`.
-
-### 6. Deploy the secure backend
-
-> **Quick start:** `bash scripts/deploy-backend.sh` — one command that logs you
-> in, sets the three secrets and deploys functions + Firestore rules + Storage
-> rules. Full Hindi/Hinglish step-by-step (including the **Blaze plan** and
-> **Firestore database** requirements): see [`BACKEND_SETUP.md`](BACKEND_SETUP.md).
-
-**Two things that are easy to miss:**
-1. The project must be on the **Blaze (pay-as-you-go)** plan — v2 functions with
-   secrets don't run on the free Spark plan.
-2. A **Firestore database** must exist (console → Build → Firestore → Create
-   database) — the rate limiter and app data depend on it.
-
-```bash
-firebase login
-firebase use <your-project-id>
-
-# 1) define the secrets (prompts you for the value — nothing is committed)
-firebase functions:secrets:set NVIDIA_API_KEY
-firebase functions:secrets:set OPENWEATHER_API_KEY
-firebase functions:secrets:set GOOGLE_MAPS_API_KEY
-
-# 2) deploy functions + rules + indexes
-#    (firebase.json already declares the three secrets for the function)
-firebase deploy --only functions,firestore:rules,storage:rules,firestore:indexes
+```text
+users/{uid}
+profiles/{uid}
+users/{uid}/itineraries/{tripId}
+users/{uid}/travelDocuments/{documentId}
+users/{uid}/expenses/{expenseId}
+users/{uid}/bookingRefs/{referenceId}
+users/{uid}/notifications/{notificationId}
+safetyZones/{zoneId}
+incidents/{incidentId}
+emergencyEvents/{eventId}
+digitalIds/{id}
+digitalIdPublic/{verificationToken}
+ecoScores/{uid}
 ```
 
-`GOOGLE_FUNCTION_REGION` defaults to `us-central1` — set it as a
-regular function environment variable in the console if your functions
-region differs.
+The security rules in this repository are the source of truth for access—not the screen visibility alone.
 
-### 7. Make someone an admin (optional)
+---
 
-In the Firestore console, set the `users/{yourUid}` document's `role`
-to `admin`. The app's admin area appears on Profile → Admin area.
-Normal users are blocked by the security rules even if they tamper with
-the UI.
+## Security, privacy and responsible design
 
-### 8. Run locally
+### Security controls
+
+- Firebase rules validate ownership and permitted field changes.
+- Admin checks are enforced server-side.
+- Storage paths restrict owner, content type and file size.
+- Backend endpoints validate types, ranges and string lengths.
+- Rate limiting protects configured proxy endpoints.
+- Release builds use a permanent signing key in CI.
+- CI checks analysis, tests, APK signing, package metadata and installability.
+
+### Privacy controls
+
+- Permission is requested before protected device capabilities are used.
+- Automation is opt-in per recipe.
+- Live location sharing remains visible and can be stopped.
+- Digital Emergency ID QR codes contain a verification token rather than raw personal data.
+- Document content, OTPs, card PINs and banking passwords must not be logged.
+- Expense currencies are not converted without a real exchange-rate source.
+- Device battery status must come from the device, never a hardcoded or manually selected percentage.
+
+### Honest-product rules
+
+Tourism must never:
+
+- Fabricate coordinates, fares, booking status, availability, ratings or confirmations.
+- Present an estimate as a live provider price.
+- Claim that police, emergency services or a contact were notified without confirmation.
+- Claim continuous background monitoring when the operating system or app lifecycle does not provide it.
+- Claim OCR, danger detection, unfamiliar-area awareness or automatic authority dispatch when those capabilities are not actually implemented.
+- Silently enable all travel automations.
+
+---
+
+## Feasibility
+
+### Technical feasibility
+
+The application is technically feasible because its main capabilities use mature Android and Flutter interfaces:
+
+- GPS and permissions are provided by Android and accessed through established Flutter plugins.
+- Local reminders are implemented with Android notification scheduling.
+- Authentication, structured cloud storage and media storage are supported by Firebase.
+- Map rendering and routing use documented mapping and routing technologies.
+- Provider hand-offs rely on public app links or official websites rather than private scraping.
+- Pure Dart engines make itinerary checks and automation scheduling testable without the UI.
+
+The project already has CI workflows that run analysis, tests and signed release builds, reducing release risk.
+
+### Operational feasibility
+
+A small team can operate Tourism because:
+
+- Flutter reduces duplicate platform code.
+- Firebase provides managed authentication and data infrastructure.
+- Feature modules can be developed and tested independently.
+- Secrets are configured centrally.
+- APK production is automated through GitHub Actions.
+
+Operational work is still required for API quotas, Firebase billing, provider policy changes, security-rule deployment, monitoring and support.
+
+### Economic feasibility
+
+A prototype or small deployment can use free or low-cost service tiers. Cost increases with:
+
+- Map and place requests.
+- Cloud Function invocations.
+- Firestore reads and writes.
+- Media and document storage.
+- AI inference usage.
+- Weather API usage.
+
+Cost controls should include endpoint quotas, caching, rate limits, bounded listeners, compressed media and provider-specific usage monitoring.
+
+### Legal and policy feasibility
+
+The product remains more viable when it:
+
+- Uses public provider hand-offs instead of scraping.
+- Respects map attribution requirements.
+- Obtains explicit location and notification consent.
+- Publishes a privacy policy before public production use.
+- Avoids claiming to be an emergency-response service.
+- Reviews local data-protection, telecom, payment and travel regulations before commercial deployment.
+
+---
+
+## Viability
+
+### User viability
+
+Tourism offers value by consolidating repetitive travel tasks. Its strongest differentiator is not a single map or chatbot; it is the connection between a real trip and useful actions across preparation, movement, safety, budget and closure.
+
+### Product viability
+
+Potential product directions include:
+
+- Free personal travel organizer.
+- Premium offline packs and advanced automation.
+- Family or group journey coordination.
+- White-label tools for hotels, colleges, tour operators or corporate travel teams.
+- Partner integrations using official APIs and transparent referral models.
+- Optional paid cloud storage tiers.
+
+Core safety functions should remain accessible and should not be designed around manipulative urgency.
+
+### Business viability
+
+Possible revenue models:
+
+- Freemium subscription for advanced planning and automation.
+- Official affiliate partnerships for booking hand-offs.
+- Business subscriptions for managed group travel.
+- Optional premium AI quota.
+- Privacy-respecting sponsored listings, clearly labeled as sponsored.
+
+A production business model must not sell sensitive location, emergency, document or identity data.
+
+### Sustainability of the implementation
+
+- Modular features reduce maintenance coupling.
+- Provider adapters isolate external hand-off changes.
+- Backend proxies can change upstream services without redesigning every screen.
+- Tests protect deterministic engines and critical calculations.
+- Explicit limitations reduce support issues caused by misleading promises.
+
+---
+
+## Impact and benefits
+
+### Traveller benefits
+
+- Fewer forgotten pre-trip tasks.
+- Faster access to documents and references.
+- Better awareness of daily spending.
+- More realistic itinerary decisions.
+- Easier discovery of nearby services.
+- Clearer emergency actions and contact options.
+- Reduced context switching between unrelated applications.
+- Better trip closure and record organization.
+
+### Safety benefits
+
+- Emergency information is easier to reach.
+- Location age and accuracy can be communicated honestly.
+- Return, battery and check-in reminders encourage preventive action.
+- Official limitations reduce false confidence.
+- Token-based emergency identity verification limits unnecessary data exposure.
+
+### Social and environmental benefits
+
+- Accessibility for budget-conscious and first-time travellers.
+- Walk/cycle activity tracking can encourage lower-impact local movement.
+- Better planning may reduce unnecessary detours and repeated trips.
+- Nearby discovery can help travellers find local businesses and services.
+
+### Engineering and educational benefits
+
+The project demonstrates:
+
+- Flutter application architecture.
+- Firebase authorization and secure media paths.
+- Mobile permission design.
+- Real-time location and mapping.
+- Offline-first synchronization.
+- Deterministic decision engines.
+- Responsible AI boundaries.
+- Automated Android release validation.
+
+---
+
+## Research basis
+
+Tourism’s design is informed by established travel-risk, mobile-security, accessibility and sustainable-tourism guidance.
+
+### 1. Travel preparation and risk reduction
+
+Government and international travel guidance consistently recommends reviewing destination information, documents, insurance, local conditions and emergency contacts before departure. Tourism translates those recurring preparation tasks into user-controlled trip reminders.
+
+### 2. Timely, actionable notifications
+
+A notification is useful when it is relevant, expected and actionable. The automation design therefore uses the selected trip’s dates, avoids past events, limits repetitive schedules and keeps every recipe individually controlled.
+
+### 3. Privacy by design
+
+Location, identity documents and emergency contacts are sensitive. Tourism applies data minimization, owner-scoped access, visible sharing state and permission-aware behavior. QR verification uses a random token instead of embedding raw identity information.
+
+### 4. Human-centered automation
+
+Automation should support decisions rather than conceal them. Tourism schedules reminders but does not silently purchase tickets, make payments, upload private media, contact authorities, or enable all agents. Critical actions remain under user control.
+
+### 5. Responsible AI
+
+AI output is not treated as an authoritative source for emergency response, price, route feasibility or financial arithmetic. Deterministic calculations and official providers are used for facts that require verification, while AI is used for assistance where configured.
+
+### 6. Sustainable travel
+
+Sustainable tourism guidance emphasizes informed visitor behavior, respect for local environments and efficient resource use. Tourism’s eco activity and practical routing tools support awareness, while avoiding unsupported claims about exact carbon savings.
+
+---
+
+## References
+
+The following official or primary sources are useful for the project’s design and implementation:
+
+1. **UN Tourism — Sustainable Development**
+   https://www.unwto.org/sustainable-development
+
+2. **World Health Organization — International travel and health**
+   https://www.who.int/health-topics/travel-and-health
+
+3. **Government of India, Ministry of Tourism**
+   https://tourism.gov.in/
+
+4. **National Disaster Management Authority, India**
+   https://ndma.gov.in/
+
+5. **CERT-In — Cybersecurity guidance and advisories**
+   https://www.cert-in.org.in/
+
+6. **OWASP Mobile Application Security**
+   https://mas.owasp.org/
+
+7. **Android Developers — Permissions**
+   https://developer.android.com/guide/topics/permissions/overview
+
+8. **Android Developers — Notifications**
+   https://developer.android.com/develop/ui/views/notifications
+
+9. **Android Developers — Location**
+   https://developer.android.com/develop/sensors-and-location/location
+
+10. **Flutter documentation**
+    https://docs.flutter.dev/
+
+11. **Firebase documentation**
+    https://firebase.google.com/docs
+
+12. **Cloud Firestore Security Rules**
+    https://firebase.google.com/docs/firestore/security/get-started
+
+13. **OpenStreetMap copyright and attribution**
+    https://www.openstreetmap.org/copyright
+
+14. **OSRM API documentation**
+    https://project-osrm.org/docs/v5.24.0/api/
+
+15. **MapLibre documentation**
+    https://maplibre.org/maplibre-gl-js/docs/
+
+16. **Google Maps Platform documentation**
+    https://developers.google.com/maps/documentation
+
+17. **OpenWeather API documentation**
+    https://openweathermap.org/api
+
+18. **NIST Privacy Framework**
+    https://www.nist.gov/privacy-framework
+
+19. **W3C Web Content Accessibility Guidelines**
+    https://www.w3.org/WAI/standards-guidelines/wcag/
+
+20. **Uber developer deep-link documentation**
+    https://developer.uber.com/docs/riders/ride-requests/tutorials/deep-links/introduction
+
+> References provide design and implementation guidance. They do not imply endorsement of Tourism by any listed organization.
+
+---
+
+## Setup and development
+
+### Prerequisites
+
+- Flutter stable compatible with the repository SDK constraint.
+- Dart SDK `>=3.5.0 <5.0.0`.
+- Android Studio and Android SDK.
+- JDK 21 for the CI-compatible Android build environment.
+- Firebase CLI for backend and rules deployment.
+- An Android 7.0+ device or emulator.
+- A Firebase project.
+
+### Install dependencies
 
 ```bash
 flutter pub get
-flutter run          # on a connected device / emulator
 ```
 
-First launch shows a short setup guide; sign in with Google (an account
-that has access to the OAuth client) or create an account with your email
-and password, and you land on the dashboard.
+### Firebase configuration
 
-## 📲 Install the APK (testers)
+1. Create or select a Firebase project.
+2. Add an Android application with package name `app.roamio.tourism`.
+3. Enable the required authentication methods.
+4. Create Firestore and Firebase Storage.
+5. Configure `lib/firebase_options.dart` with the correct project values.
+6. Register the signing certificate SHA-1/SHA-256 values required by Google Sign-In.
+7. Configure the Google web client ID where required.
+8. Deploy Firestore and Storage rules.
 
-**Direct download — no login, no ZIP:** open
-**GitHub → Releases → `apk-latest` ("Latest Tourism APK")** and download
-the file for your phone:
-
-| File | For |
-| --- | --- |
-| `yatrawise-arm64-v8a.apk` | ✅ Almost all phones (2017+) — download **this** (~35–50 MB). |
-| `yatrawise-armeabi-v7a.apk` | Very old 32-bit phones only. |
-| `yatrawise-x86_64.apk` | Emulator / rare x86 devices. |
-| `yatrawise-universal.apk` | Fallback for any device (biggest file). |
-| `SHA256SUMS.txt` | Hashes to verify a complete download. |
-
-Requires **Android 7.0+** (minSdk 24 — the floor enforced by current
-Flutter stable; the APK itself is the source of truth, see release
-notes). Tap the APK → allow **"Install unknown apps"** → Install.
-Always re-download the **same** file for updates — switching files
-needs a one-time uninstall + fresh install (universal → split is the
-only switch that upgrades cleanly).
-
-> ⚠️ **Actions → Artifacts wala ZIP phone par download/extract mat karo**
-> — usme se "Could not extract file" error aata hai. Hamesha **Releases →
-> `apk-latest`** se seedha APK lo: koi ZIP nahi, koi extract nahi, bas
-> tap → Install. APK ko kabhi "extract" mat karo (APK khud ek package
-> hai, uske andar se kuch nikaalna nahi hota).
-
-Install failing? See
-**[`docs/INSTALL_APK_TROUBLESHOOTING.md`](docs/INSTALL_APK_TROUBLESHOOTING.md)**
-(Hindi + English: parse error, "App not installed", Play Protect…).
-
-## Building the APK
-
-### Via GitHub Actions (recommended)
-
-1. Push to `main` (or any PR into `main`), **or** open
-   **GitHub → Actions → "Build APK" → Run workflow**.
-2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze`,
-   `flutter test`) and **Build release APK** (JDK 21 + Android SDK +
-   `flutter build apk --release --split-per-abi` plus a universal APK).
-3. Every APK passes a strict **installability gate** before publish:
-   `apksigner verify`, permanent-key certificate match, `aapt` badging
-   (package / minSdk 23 / launcher activity), `zipalign` incl. 16 KB page
-   alignment, and a test-only check. The verified APKs + `SHA256SUMS.txt`
-   are published to the rolling **`apk-latest`** release (and as the
-   `yatrawise-release-apk` artifact).
-
-### Signing (permanent upload key — required)
-
-Release builds are signed with ONE permanent certificate from the
-**`ANDROID_KEYSTORE_BASE64`** repo secret. The build **fails** if the
-secret is missing, so a debug-signed APK can never be published by
-mistake (its ever-changing signature would break all updates with "App
-not installed"). Maintainer setup/rotation notes:
-[`android/RELEASE_SIGNING.md`](android/RELEASE_SIGNING.md).
-
-### Locally
+Useful scripts:
 
 ```bash
-flutter build apk --release --split-per-abi   # small per-device APKs
-flutter build apk --release                   # universal (fat) APK
-# → build/app/outputs/flutter-apk/
+bash scripts/deploy-rules.sh
+bash scripts/deploy-backend.sh
 ```
 
-Local builds without the keystore fall back to the debug key
-(development only — never distribute those).
+### Service configuration
 
-## Android permissions (and why)
+Depending on the features being deployed, configure supported credentials as Firebase secrets, CI secrets or approved build-time definitions:
 
-| Permission | Used for |
-| --- | --- |
-| `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | Dashboard location label, distances, SOS coordinates, eco tracking, geofence entry detection. |
-| `ACCESS_BACKGROUND_LOCATION` | Geofence monitoring while the app is in the background (only started by the user; status is always shown in Safety). |
-| `POST_NOTIFICATIONS` (Android 13+) | Zone-entry + safety alerts. |
-| `CAMERA` | Digital ID QR scanning. |
-| `INTERNET` | All network traffic. |
+- AI provider credentials.
+- OpenWeather key.
+- Google server API key.
+- MapTiler key.
+- Google Sign-In web client ID.
 
-All location/notification flows check the permission state first and
-show a real error state when denied — nothing is simulated.
+**Never commit real secrets to source control.**
 
-## Security model
-
-- **No third-party API keys in the APK.** The app talks only to Firebase
-  and to its own Cloud Functions endpoints; NVIDIA/OpenWeather/Google
-  server keys live in function secrets.
-- **Firestore security rules** (`firestore.rules`):
-  - users can only create/update their own documents in
-    `users/{uid}`, `profiles/{uid}`, `emergencyEvents` (own),
-    `incidents` (own, fixed status on create), `digitalIds` (own; token
-    must match `^[0-9a-f]{64}$`), itineraries & notifications & eco in
-    per-user subcollections;
-  - `safetyZones` are read-only for everyone, writable by admins;
-  - `rateLimits` is denied to all clients (backend-only);
-  - admin checks go through the `users/{uid}.role == 'admin'` document,
-    so the admin area cannot be faked client-side.
-- **Storage rules** (`storage.rules`): incident media limited to
-  image/jpeg|png|webp or video/mp4|mov|webm|3gpp ≤ 50 MB under
-  `incidents/{uid}/`; avatars image-only ≤ 5 MB under `avatars/{uid}/`;
-  everything else denied.
-- **Rate limiting**: every backend endpoint enforces a per-user
-  per-minute quota in a Firestore transaction
-  (`chat` 10, `itinerary` 5, `incidentAnalyze` 5, `weather*` 20,
-  `places*` 30, `route` 20, `geocodeReverse` 20, `emergencyNearby` 10).
-- **Input validation** client-side (shared `Validators`) *and*
-  server-side on every endpoint (types, ranges, string lengths, enums).
-- **Digital ID QR** encodes only the random 64-hex token — no personal
-  data is ever in the QR payload.
-
-## Backend endpoints (Cloud Functions, all POST unless noted)
-
-| Path | Purpose |
-| --- | --- |
-| `/chat` | NVIDIA chat (location + profile context injected server-side) |
-| `/itinerary` | NVIDIA JSON itinerary for destination/days/interests/budget/style |
-| `/incidentAnalyze` | NVIDIA triage → category, severity, summary, recommended action |
-| `/weatherCurrent` | OpenWeather current conditions |
-| `/weatherForecast` | OpenWeather 5-day forecast (aggregated) |
-| `/placesSearch` | Google Places (text query ± location bias, or nearby by types) |
-| `/placesDetails` | Google Places details by place id |
-| `/placesPhoto` | (GET) Places photo proxy |
-| `/emergencyNearby` | Nearby hospital/police/fire/doctor |
-| `/route` | Google Routes v2 with **server-decoded** polyline; labelled straight-line fallback on failure |
-| `/geocodeReverse` | Reverse geocoding → short human label |
-
-Every response is JSON with `kind` on errors (`validation`, `upstream`,
-`rate`, `config`, `internal`) so the UI can show meaningful states.
-
-## Manual configuration checklist (quick reference)
-
-- [ ] `lib/firebase_options.dart` replaced with real values
-- [ ] Google OAuth Android client created (`app.roamio.tourism` + SHA-1)
-- [ ] Maps **client** key in `android/app/src/main/AndroidManifest.xml`
-- [ ] Firestore database created; rules deployed
-- [ ] Storage bucket created; rules deployed
-- [ ] Functions deployed with `NVIDIA_API_KEY`, `OPENWEATHER_API_KEY`,
-      `GOOGLE_MAPS_API_KEY` secrets set
-- [ ] (optional) `users/{uid}.role = "admin"` for the admin console
-
-## Troubleshooting
-
-| Symptom | Fix |
-| --- | --- |
-| Sign-in fails immediately | OAuth client missing the device's SHA-1, Web client ID (`serverClientId`) not set, or account not allowed for the client. |
-| Map tiles don't load | Check your connection and the MapTiler key (default is compiled in; override with `--dart-define=MAPTILER_API_KEY=...`). |
-| "Backend is missing the X configuration" | Set the function secret and redeploy functions. |
-| Places search 403 | Server key not restricted/allowed properly for Places (legacy) API. |
-| Geofence never fires | Background location permission must be *While using* or *All the time*; zone must be active; keep the process alive (Android battery saver off while testing). |
-| SOS button says location unavailable | Enable device GPS; the app will not fabricate coordinates. |
-| Notifications: `[cloud_firestore/permission-denied]` | The deployed Firestore rules predate `users/{uid}/notifications` (and the live-location update rule). Run **`bash scripts/deploy-rules.sh`** once from the repo root, then reopen the app — no reinstall needed. |
-
-## Safety messaging (SOS, Power-Off, Live Location)
-
-- **SOS activation** auto-sends an SMS with the traveler's coordinates and a
-  Google Maps link to the saved SOS contact (SEND_SMS runtime permission is
-  requested on first use), plus WhatsApp (`wa.me`) and manual SMS share
-  buttons in the active-SOS sheet.
-- **Power-Off Safety Location**: when Android broadcasts `ACTION_SHUTDOWN`,
-  `PowerOffReceiver` queues that same SMS first (SMS works on the cellular
-  network even with mobile data off — the only realistic channel during
-  shutdown) and then writes the event to Firestore. The message states how
-  old the last fix is; a fresh GPS fix after power-off is impossible.
-- **Live location sharing**: started from the English prompt shown when
-  in-app navigation begins ("Do you want to share your live location with
-  your SOS contact?"). While active: SMS with fresh coordinates + map link
-  immediately and every 5 minutes, cloud position refresh every 45 s
-  (`emergencyEvents`, owner can update only whitelisted live fields while
-  the event stays `active`), an ongoing notification, and a red on-map
-  banner with Stop. It is deliberately in-process — closing the app stops
-  the share; there is no hidden background tracking.
-- SMS is delivered by the **Messages/SMS app** (not WhatsApp — WhatsApp has
-  no keyless programmatic send). The WhatsApp buttons open a chat with the
-  location message pre-filled; you press send. If the red share banner shows
-  "SMS permission off", tap **Enable SMS** — the first message goes out
-  immediately after granting.
-- **Why WhatsApp cannot be "fully automatic"**: WhatsApp deliberately does
-  not allow any third-party app to send messages silently (no official API
-  without a business account + template approval, and unofficial hacks get
-  numbers banned). So: with internet ON the share now **auto-opens your
-  WhatsApp chat with the location message already typed** — one tap on send
-  delivers it; with internet OFF the automatic SMS still reaches the contact
-  with zero taps. There is also a chat icon on the red banner to re-open the
-  WhatsApp chat with a fresh location any time.
-- **Navigation survives tab switches**: the trip keeps running when you
-  browse other features; a "Navigating to … · Resume" pill (top-left on
-  every screen) jumps straight back. The trip ends automatically on arrival
-  (or via **End trip**).
-- **Google-style navigation camera**: the map follows you at street-level
-  zoom and rotates so your travel direction stays up (both toggleable from
-  the round buttons on the map), with a vehicle marker (car/bike/auto per
-  your profile) rotated to your GPS heading. **Navigation uses the
-  satellite/imagery map style (with roads + labels) by default** — the
-  layers button switches back to the street map. The trip card starts as a
-  slim collapsed bar (destination · remaining · ETA · speed) so the map
-  stays fully visible; tap it to expand details and buttons. True 3D
-  buildings/perspective are not possible with the map engine used
-  (flutter_map renders flat raster tiles) — this follow-cam + rotating
-  vehicle + satellite view is the closest equivalent.
-- **Search suggestions are locality-first**: while typing, the app ranks
-  your own city/area first (≤25 km → ≤100 km → ≤500 km → everywhere else),
-  and within the same area exact name matches → prefix → substring. It now
-  also merges Photon (OpenStreetMap POI autocomplete), so small local
-  places (shops, guest houses, chaurahas) that global geocoders don't know
-  actually show up instead of far-away same-named places in other states
-  or countries.
-
-## Travel Intelligence Engine (🧠)
-
-**Round 3 (2026-09-14):** a deterministic decision layer on top of the **existing** Trip Planner (no new data model, no invented content) — Home → "Travel Intelligence" → `/intelligence`.
-
-- **Robustness score 0–100** with a factor breakdown (tight transfers, overload, missing buffers, plan cost) and an "Improve Robustness" action that previews a concrete relaxation in the simulator.
-- **What-If Simulator** — train/flight delay, closure, weather-if-reliable, transport unavailable, reduced time/budget, changed start/destination, late check-in, removed stop, custom — always simulated on a **copy**; nothing changes until you press *Apply*, which writes through the existing `TripPlanStore` and records a replay entry.
-- **Constraint Solver & Trade-Off Sliders** — must-visit, avoid, max time/day, budget cap (only *parsed* ₹ costs are counted), items/day, walking/mode limits, deadlines; infeasible sets report the conflicts and the closest feasible plan. Sliders (relaxed↔packed, budget, travel, time↔experience) really re-solve the plan.
-- **Dependency Graph** — each stop depends on the previous saved time; tap a stop to see exactly what slides when it runs late.
-- **Auto Recovery** — "running late by N minutes" re-flows the rest of the day, never silently editing fixed events; stops pushed past 23:30 are reported as dropped, not hidden.
-- **Why not this place?** — checks a place against your **real GPS + OSRM route + parsed costs** and returns honest reasons (time, detour, day end, budget, your own avoid-list) or "Nothing against it"; never invents missing data.
-- **Decision Replay** — an append-only device-local log of your *real* applied decisions (scenario/recovery/constraints/edits). No fabricated history; clearable any time.
-- **Last Safe Decision Point** — Safe/Risky/No-longer-feasible leave-by arithmetic (leg time + safety buffer); unknown leg times are labelled unknown.
-- **Group Conflict Resolver** — maximises liked preferences across members, reports compromises explicitly.
-- **Contradiction Detector** — Critical/Warning/Info with actual values (impossible sequence, duplicates, tight transfers, unset/late-night times).
-- **Time-to-Enjoyment** — travel time labelled *OSRM-known* vs *unknown*; visit duration is never fabricated.
-- **Personal behaviour model** — optional, non-sensitive: learns preferred pacing only from plans *you applied*; view/reset in the dashboard. No location history, no sensitive traits.
-- **Perf & data rules**: cache-first, parallel requests, deduped geocoding, OSRM `lng,lat` order, no blocking work on the UI thread, full error states. Nearby keeps the exact 10 km Haversine filter with no artificial result cap.
-
-## Offline Emergency SMS (🔋 NEW)
-
-Power-off safety and the SOS flow now have an **opt-in** offline fallback that sends a real SMS **without internet**:
-
-- **Where**: Safety → "Offline Emergency SMS (works without internet)" card. Default **OFF**; enabling requires a configured SOS contact and the `SEND_SMS` permission (requested in-app with an explanation).
-- **How it works**: native Android `SmsManager` only — no internet, Firebase, WhatsApp or gateway in this path. Fresh GPS is fetched first (12 s cap) with a last-known cache fallback; the message labels the fix as **CURRENT location (GPS)** or **LAST KNOWN location** with its age and ±accuracy. No fix at all → a typed failure — coordinates are never invented.
-- **Honest statuses**: pending / sending / sent / failed / no-service / no-SIM / permission-denied / no-location / queued (15 s without radio confirmation = "handed to the radio, no confirmation"). Sent + delivery callbacks are tracked via Android PendingIntents on an EventChannel; the last status is stored locally on-device only.
-- **Power-off path**: `ACTION_SHUTDOWN` attempts the SMS as early as possible with the same last-known fix. Honest limits: delivery after shutdown cannot be guaranteed and depends on the network.
-- **Privacy**: no coordinates or phone numbers are logged; no emergency-location history is written to Firebase.
-- **Test SMS**: labelled "TEST SMS", requires explicit confirmation, sends a clearly-marked message to your SOS contact.
-
-## Search accuracy fix (📍)
-
-Search no longer relies on place names alone:
-- With GPS ON, **distance dominates**: ranking = explicit-city intent → distance buckets from your real GPS (25/100/500 km) → name relevance. Searching "transport" in Lucknow puts **Transport Nagar, Lucknow** first — never "Transport" from Vilhelmina (Sweden) or Tustin (California).
-- **Irrelevant far-away name matches are dropped** whenever any result lies within 500 km of the known origin. If nothing relevant is nearby, the app shows **"No relevant nearby result found"** instead of foreign noise (deliberate specific searches like "eiffel tower" still work; with GPS off nothing is filtered and results are ranked by text relevance with context shown).
-- Query naming a city wins outright ("Taj Mahal **Agra**" → Agra even from Lucknow; "Transport Nagar **Lucknow**" → Lucknow).
-- MapTiler receives `proximity` (lon,lat) and Photon `lat/lon` bias from the same real-GPS origin in both `suggest()` and full text search.
-- Duplicate names are disambiguated with a subtitle: **"ABC Cafe — Gomti Nagar, Lucknow · 2.1 km"** (locality, city, real distance from you) in ride booking, map search, multi-stop and explore screens.
-- Selecting a result stores and uses its **exact canonical coordinates** (placeId/name/lat/lng/city/state/country/address) everywhere — the selection is never re-geocoded by name.
-- Map attribution uses `RichAttributionWidget(showFlutterMapAttribution: false)` — only the legally required **© MapTiler © OpenStreetMap contributors** line is shown (the hardcoded "flutter_map |" prefix is gone), tappable to the provider copyright pages.
-## 3D Navigation (Live Trip) (🗺️)
-
-Live Trip navigation now renders in **true 3D**: MapLibre GL (`maplibre_gl`, no API key) with a MapTiler vector style, camera **tilt 47.5°**, heading-up bearing and the existing speed-adaptive zoom — plus **3D building extrusions** from MapTiler's v3 vector tileset. Route (blue with white casing), destination pin and follow-cam mirror the 2D view; the **3D** button switches back to the original flutter_map 2D view at any time, and the app auto-falls-back to 2D when no MapTiler key is compiled in or the style fails to load. Google Maps 3D was not usable because the project intentionally has no Google Maps API key.
-
-## Travel Document & Booking Vault (🗂️)
-
-One secure, private place for every travel document and booking — works for domestic and international travellers.
-
-- **Where**: Home → "Travel Document & Booking Vault" card → `/vault`.
-- **What you can store**: Passport, Visa, ID Proof, Flight / Train / Bus tickets, Hotel bookings, Cab/Car rental, Activity tickets, Travel Insurance, Other. Upload a PDF/JPG/PNG (images auto-compressed by the picker) or enter details manually — only the title is required; every other field is optional because document types differ.
-- **Booking-specific fields** (all optional & editable): flights (airline, flight number, PNR, airports, departure/arrival date-time, terminal, seat), hotels (hotel name, booking ID, check-in/out, address, contact), trains/buses (operator, PNR/booking ID, origin/destination, departure/arrival, seat/coach), activities (provider, booking ID, venue, date-time, location).
-- **Main screen**: upcoming bookings timeline (real saved dates only), documents expiring soon, recent entries, trips with documents, search (title / PNR / booking ID / airline / hotel / trip name), filter by type and by trip.
-- **Trip linking**: documents reference the existing Trip Planner `tripId` — no trip data is duplicated.
-- **Expiry reminders**: computed from the real current date (Expired / Expires today / Expires in X days / Valid) plus local notifications at 90 / 30 / 7 / 1 days before expiry through the existing `NotificationService` (only for documents that have an expiry date; reminders self-heal on every app start).
-- **⚠️ Deploy the rules once** (`bash scripts/deploy-rules.sh` from the project, owner login required) — until then vault reads/saves fail with a permission error by design; the app shows this exact instruction.
-- **Storage**: metadata in Firestore `users/{uid}/travelDocuments/{documentId}` (owner-only rules), files in Firebase Storage `users/{uid}/travelDocuments/{documentId}/file` (owner-only, PDF/image only, 10 MB cap). Firestore never stores the file itself. Old files are deleted/replaced in place — no orphans. Uploads show progress, can be cancelled and retried to the same path (stable IDs — retries can't duplicate).
-- **Privacy**: no document contents, numbers, PNRs or file URLs are logged or sent to analytics; files are never public.
-- **OCR**: this project has no OCR capability, so nothing pretends to read documents — entry is manual and verified by you.
-- **Packages added**: `file_picker` (PDF picking), `timezone` (reminder scheduling; already a transitive dependency of flutter_local_notifications). Manifest: `RECEIVE_BOOT_COMPLETED` added so scheduled reminders re-register after reboot.
-
-## Travel Booking Hub (🧳)
-
-**Round 2 update (2026-09-14):**
-- **Direct app hand-off:** Android `<queries>` package visibility added for Uber/Ola/Rapido/IRCTC, and the launch cascade now tries the provider's **native app scheme first** — `uber://?action=setPickup…` (prefills pickup & drop, per developer.uber.com "Standard Deep Links") and `olacabs://app/launch` (per developers.olacabs.com), then direct app launch, then the prefilled https web flow, then the Play Store. If the app is installed it opens the app — no more Play-Store detour.
-- **No fares:** Tourism shows no fare estimates — without partner APIs any number would be invented, so live prices come only from the provider app.
-
-Home card "Travel Booking Hub — Book rides, flights, trains, buses, hotels
-and activities." (route `/booking`).
-
-- One hub, seven categories (Ride, Flight, Train, Bus, Hotel/Stay, Car
-  Rental, Activities). Tourism starts the booking — the booking and payment
-  always happen in the provider's official app/site. No fares, seats,
-  availability, ratings or confirmations are ever shown here.
-- **Rides**: real GPS pickup (current-location button), MapTiler
-  destination search + map-pin selection, recent locations (clearable),
-  OSRM route preview (real distance/ETA). Bike/Auto/Cab selection, then
-  **verified official hand-off only**:
-  - **Uber** — official universal deep link (developer.uber.com documented
-    `m.uber.com/ul/?action=setPickup…`) with pickup + drop coordinates;
-    opens the Uber app when installed, else Uber mobile web.
-  - **Ola** — official out-of-app flow (developers.olacabs.com documented
-    `book.olacabs.com/?lat=…&lng=…&drop_lat=…&drop_lng=…`).
-  - **Rapido** — Bike/Auto/Cab selected in Tourism, then the official app
-    (com.rapido.passenger) is launched directly; Play Store page if not
-    installed. Rapido has no public deep link, so locations are NOT
-    prefilled — stated plainly, never faked.
-- **Trains**: official IRCTC Rail Connect app (cris.org.in.prs.ima) launch +
-  irctc.co.in fallback. **Flights**: MakeMyTrip's own public search URL
-  (route/date/pax/class filled) + Goibibo official site. **Buses**: redBus
-  official site. **Hotels**: Booking.com searchresults.html with official
-  parameters (ss/checkin/checkout/group_adults/no_rooms). **Car rental**:
-  Zoomcar official site. **Activities**: Headout/Klook official sites.
-  Providers with unverified links are NOT included — nothing invented.
-- Provider architecture: `BookingProvider` registry (id, category, verified
-  deep link / app package / official web URL, handoff format, note) +
-  `BookingApi` interface ready for a future official partner integration —
-  no UI rewrite needed. No private APIs, scraping, OTP reading or credential
-  storage — payments stay in the provider's secure flow.
-- After returning, Tourism offers **Save booking**: the user enters the
-  reference/PNR and status themselves (default "saved", never "confirmed").
-  Saved to Firestore `users/{uid}/bookingRefs` (owner-only rules) and shown
-  in "My saved bookings", linked to the active trip when one exists.
-- Honest launch results: opened app / opened official web / app not
-  installed (Play page opened) / link invalid / network error — never a
-  fake success.
-- Build tag `TRAVEL-BOOKING-HUB-2026-09-13-01` shown on the hub and ride
-  screens temporarily for install verification. Deploy rules via
-  `bash scripts/deploy-rules.sh` to enable saving booking references.
-
-## Travel Expense Guard (💰)
-
-Home card "Travel Expense Guard — Track every rupee of your trip."
-(route `/expenses`).
-
-- **Fast manual entry**: amount + category is enough; merchant, date/time,
-  currency (INR/USD/EUR/GBP/AED/…), linked trip, payment method, notes,
-  location (attached automatically ONLY if location permission was already
-  granted) are optional. No OCR engine exists in the project, so receipts
-  are stored as photos and the amount stays exactly what the user types —
-  no pretend-scanning.
-- **Database**: Firestore `users/{uid}/expenses/{id}` (owner-only rules,
-  `userId` field must equal the authenticated UID, amount/category/currency
-  validated). Receipts are compressed at pick time (max 1600 px, q80) and
-  uploaded to Storage `receipts/{uid}/{expenseId}.jpg` — Firestore keeps
-  only the download URL, never the binary. Delete removes the record and
-  best-effort deletes the receipt file.
-- **Offline-first**: every save/update/delete hits the local cache + an
-  idempotent op queue first (stable client-generated ids; replayed in
-  order). UI states are honest: "saved locally" / "Syncing…" / "Synced".
-  Nothing is ever reported as synced when the write failed; "Sync now"
-  retries.
-- **Dashboard**: local-cache-first load, then live Firestore refresh via a
-  single bounded listener (recent 200). Totals are shown PER CURRENCY —
-  never mixed (no conversion service exists, so no rates are invented).
-  Today's spend, category breakdown bars, deterministic insights ("You
-  spent ₹1,240 today", "Food is your highest expense category").
-- **Budgets**: optional daily budget stored in
-  `users/{uid}/expenseData/budget`; remaining + % used are computed from
-  real expenses, with 80% (warning) and 100%+ (over) states shown in-app.
-- **History**: search, filters (trip, category, date range, payment
-  method) and 4-way sort; details screen with edit/delete and split
-  settlements.
-- **Splits**: an expense can be shared (equal or custom amounts) saved
-  INSIDE the expense document; the split must sum to the amount (±1 paise)
-  before saving. "You paid / others owe you / you owe" comes only from
-  saved split data — no payment collection.
-- Deploy the rules after pulling: `bash scripts/deploy-rules.sh` (adds the
-  `users/{uid}/expenses`, `users/{uid}/expenseData` Firestore blocks and
-  the `receipts/{uid}` Storage block — nothing existing is weakened).
-- Build tag `TRAVEL-EXPENSE-GUARD-2026-09-13-01` is shown temporarily at
-  the bottom of the dashboard for install verification.
-
-## Travel Autopilot (🧭)
-
-A zero-itinerary trip engine on the Home screen: **"Tell us what you want to
-do. We'll help you figure out what to do next."**
-
-- Works with only **current location + available time** (30 min / 1 / 2 / 4 h /
-  all day / custom). Interests (Eat, Explore, Shopping, Relax, Historical,
-  Family, …), budget, travel mode, max-travel-time and an end destination are
-  all OPTIONAL. A free-text box parses things like *"I have 3 hours and want
-  to see historical places, budget of 500"* (deterministic parser — no fake AI).
-- **WHAT SHOULD I DO NOW?** skips every question and ranks the real cached
-  nearby dataset (the same Overpass/MapTiler system as Explore) with a
-  practical score: distance, real OSRM road time (one `/table` request),
-  OSM opening hours when mapped, remaining time fit, and session interests.
-- Every recommendation shows **understandable reasons** ("1.4 km away
-  (~6 min drive)", "Open until 9:00 PM — enough time to visit",
-  "Opening hours unavailable") and impractical places (arrival after closing,
-  doesn't fit remaining time) are listed separately with the exact reason.
-- **TAKE ME THERE** opens the existing OSRM navigation; arrival (≤80 m
-  geofence) triggers "✅ You've arrived — SHOW NEXT / STAY HERE / END".
-- ⚡ **AUTO PLAN** builds a multi-stop sequence that fits the available time
-  (🟢/🔴 verdict), with START THIS PLAN / REGENERATE / CHANGE.
-- 🛟 **FIX MY TRIP** recovers a late schedule by dropping tail stops with
-  real calculated reasons; 😴 **BREAK** finds nearby cafés/parks and banks a
-  30-minute break; **CHANGE PLAN** re-picks interests without touching
-  completed stops; **STOP AUTOPILOT** is always one tap away.
-- Budget mode is honest: transport is a labelled distance-based estimate;
-  entry/food show **"price unavailable"** — prices are never invented.
-- The session (stops, time, brief, learned interests) persists in
-  SharedPreferences per user and **survives app restarts** until the time
-  window ends. Interest learning uses only in-app choices and has
-  **Reset preferences**.
-- Developer-only simulation controls (simulated arrival/delay/skip/time) are
-  hidden in release builds — unlock with 7 taps on the screen title.
-
-## Honest limitations
-
-- Geofence monitoring runs while the app is alive (foreground or
-  background with location permission); it is not a separate OS-level
-  geofence service.
-- The release APK in CI is debug-keystore signed until you supply a
-  release keystore.
-- Incidents/SOS records are *stored and visible to admins* — the app
-  never contacts police or emergency services on your behalf; the call
-  buttons dial real local services through your phone app.
-- Blockchain is intentionally **not** claimed or used; the Digital ID is
-  modular so a chain-based anchoring could be added later.
-
-### Housekeeping (optional, no code impact)
-
-`rateLimits/{uid}:{endpoint}:{minute}` documents are written on every proxied
-call and carry an `expiresAt` field, but nothing deletes them. Firestore TTL is
-the right tool and is a one-time project command (no deploy needed):
+### Run locally
 
 ```bash
-gcloud firestore fields ttls update expiresAt --collection-group=rateLimits \
-  --database=(default) --project=tourism-39425
+flutter run
 ```
 
-Until that is run the collection simply grows ~1 small doc per active minute per
-user — harmless for correctness, only storage cost.
-
-## Bug-fix pass (2026-09-20) — **deploy required**
-
-Fixed after a full read of the shipped code. Both of these commands must be run
-once by the project owner for the fixes to reach installed apps:
+### Useful quality commands
 
 ```bash
-bash scripts/deploy-rules.sh     # Firestore + Storage security rules
-bash scripts/deploy-backend.sh   # Cloud Functions (photo proxy, Routes API)
+flutter analyze
+flutter test
 ```
 
-**Server-side (rules) — these were silently breaking whole features:**
-- `incidents` create validated top-level `lat`/`lng` while the app writes
-  `location.lat`/`location.lng`. A rule that reads a missing field is an
-  **evaluation error → deny**, so *no incident could ever be reported*.
-- `incidents` and `emergencyEvents` had `allow list: if isAdmin()` only, but the
-  app lists them with `where('uid', == me)` → every traveller's **incident
-  history and SOS history were permission-denied (always empty)**. Both now also
-  allow the owner's own documents.
-- `digitalIds` was `get, list: if signedIn()` — any signed-in user could
-  enumerate **every** traveller's name, emergency contact and 64-char
-  verification token. The record is now split:
-  * `digitalIds/{id}` — private (owner + admin),
-  * `digitalIdPublic/{token}` — the document id **is** the token, `get` only,
-    `list` denied: a rescuer with the QR can read it, the collection cannot be
-    harvested. The app writes/maintains both and `verify()` reads the public
-    half (with a legacy fallback while rules are still being deployed).
-- `verify.yml` (new) also sanity-checks both rules files in CI (balanced braces,
-  valid actions only), because an invalid action such as `allow query:` breaks the
-  whole deploy.
+---
 
-**Cloud Functions:**
-- `placesPhoto` URLs were built as `https://<host>/functions/v2/placesPhoto` —
-  `/functions/v2/` is the *callable* prefix, a 2nd-gen HTTP function lives at
-  `https://<host>/placesPhoto`, so every place photo 404'd. Fixed.
-- Rate limiting hard-failed with **429 for every request without a verified uid**
-  (and the photo GET sent no auth header at all). Anonymous traffic now gets a
-  tighter IP-keyed bucket instead of an instant 429, and the client now sends
-  the ID token on binary GETs.
-- `/route` (Google Routes) was POSTing to a non-existent host/path with the
-  field mask in the body; it now uses
-  `routes.googleapis.com/directions/v2:computeRoutes` + `X-Goog-FieldMask`,
-  `travelMode: DRIVE` and `routingPreference.trafficModel`.
+## Build and testing
 
-**Client:**
-- Notification channels are created up-front with their real importance
-  (`emergency` = max) — before that Android auto-created them at DEFAULT, so a
-  SOS alert could arrive silent. The channel description was also literally
-  `Tourism Closure: (String) => String` (an interpolated *function*, not a call).
-- Explore/Home/Autopilot "no places nearby" false negatives: category queries
-  (`tourist attractions near me`) were run through the *name*-relevance filter,
-  which dropped every real result because no attraction is literally named
-  "attraction". Category words are now excluded from name matching, Nearby
-  searches widen (25→250 km) like the copy always promised, the empty state
-  reports the radius actually searched, `_nearbyPois()` sweeps Photon in
-  parallel so a throttled Overpass mirror can no longer blank a category, and a
-  rejected "noise" list is no longer served back to the user (the Lucknow
-  "new Public college" search that returned New Delhi / Noida).
-- Home's Nearby-attractions card now asks for the `tourist_attraction`
-  category (bulk OSM sweep) instead of free-text matching.
-- Map: the search-results card is stacked under the search bar in one column, so
-  it can no longer cover the travel-mode selector (was pinned to a guessed
-  `top: 148`).
-- Autopilot: "NEXT BEST OPTIONS" had a header with nothing under it while
-  loading or when the dataset came back empty — it now has real loading, empty
-  and error states with a `SCAN AGAIN` action.
-- Digital ID: after a *successful* cloud create `_creating` was never cleared,
-  leaving the Create button disabled until you left the screen; a short/legacy
-  token also threw `RangeError` in the token label.
-- Profile: `_saving` was `final bool = false`, so Save stayed enabled the whole
-  time (double submit). There is now a real in-flight flag inside the sheet.
-- Geofence: `stop()` left the zones listener alive, and `pause()` kept the GPS
-  stream running (battery). Both now release what they claim to.
-- `LocationService` call sites: `mounted` guards after `await` gaps in the
-  expense/vault/safety/planner/autopilot sheets.
-- Android/CI: removed the AGP-8-obsolete `android.enableR8` Gradle flag; the
-  release job's "Analyze (fatal warnings)" step is now named after what it runs;
-  **publishing to the public `apk-latest` release is gated to pushes on `main`**
-  (a PR from any branch used to overwrite what testers download).
-
-### Brand mark (logo)
-
-`AppLogo` renders `assets/images/yatrawise-logo.png` when present and falls
-back to the committed `yatrawise-logo.jpg`. To install a new logo everywhere
-it belongs (login screen + all Android launcher densities, legacy and adaptive)
-without any image tooling:
+### Local release build
 
 ```bash
-# in-app brand mark: proportions kept, padded onto a square canvas
-convert assets/images/yatrawise-logo.jpg -crop 1254x820+0+50 +repage \
-        -fuzz 6% -fill none -draw "matte 3,3 floodfill" -trim +repage /tmp/brand.png
-python3 tools/install_logo.py /tmp/brand.png --fit pad --only asset
-# launcher icons: the emblem only, square-cropped, legacy icons flattened
-# onto the brand cream (Android 8.0 and older cannot show transparency)
-python3 tools/install_logo.py /tmp/emblem.png --only icons
+flutter build apk --release --split-per-abi
+flutter build apk --release
 ```
 
-Both are already applied for the current logo (`assets/images/yatrawise-logo.png`
-+ all five `mipmap-*` densities), so nothing has to be re-run unless the
-artwork changes. Then shrink it for shipping: the app only ever draws the mark at
-152 dp, so 512 px is already more than a 3x device needs, and quantising to
-256 colours is invisible on this artwork while cutting 330 KB to 64 KB:
+Generated files are normally placed under:
 
-```bash
-convert assets/images/yatrawise-logo.png -resize 512x512 -colors 256 \
-        -strip -define png:compression-level=9 assets/images/yatrawise-logo.png
+```text
+build/app/outputs/flutter-apk/
 ```
 
-The script square-centre-crops the source, writes the asset and regenerates
-`ic_launcher.png`, `ic_launcher_round.png` and `ic_launcher_foreground.png` in
-every `mipmap-*` folder (artwork kept inside the 66/108 adaptive safe zone).
-It is pure stdlib: the source must be a non-interlaced 8-bit PNG.
-`tools/gen_icons.py` remains available for the drawn fallback artwork.
+### GitHub Actions
+
+The repository contains:
+
+- `.github/workflows/verify.yml` — dependency install, static analysis, tests and rules checks.
+- `.github/workflows/build-apk.yml` — verification, signed release build, APK inspection and artifact preparation.
+
+The release pipeline verifies APK signing and Android package metadata. Public release publication is intentionally controlled by workflow conditions; feature branches must not overwrite the public rolling release.
+
+### APK selection
+
+- `arm64-v8a`: most modern Android phones.
+- `armeabi-v7a`: older 32-bit phones.
+- `x86_64`: compatible emulators or uncommon x86 devices.
+- `universal`: larger fallback APK containing multiple architectures.
+
+An APK is an installable package. Do not extract it as if it were a normal ZIP archive.
+
+---
+
+## Important instructions
+
+### For developers
+
+1. Keep the user-visible brand name **Tourism**.
+2. Do not commit API keys, service credentials, signing files, passwords, OTPs or personal records.
+3. Do not weaken Firestore or Storage rules to solve a UI error.
+4. Run `flutter analyze` and `flutter test` before release.
+5. Test permission denied, GPS disabled, no network, expired trip and missing-data states.
+6. Preserve canonical place coordinates after a user selects a search result.
+7. Use official provider APIs or links; do not scrape private interfaces.
+8. Label deterministic ride or travel prices as estimates unless an official live API supplies the fare.
+9. Keep totals separated by currency unless a real exchange-rate service is configured.
+10. Do not add manual or hardcoded device battery percentages.
+11. Avoid logging coordinates, document numbers, contact numbers, booking references or tokens.
+12. Update tests when changing scheduling, date, budget, route or security logic.
+
+### For administrators
+
+1. Deploy the repository’s Firestore and Storage rules before testing protected features.
+2. Configure an admin role only for trusted accounts.
+3. Restrict service keys by API, application, service account or infrastructure where supported.
+4. Monitor Firebase, map, weather and AI quotas.
+5. Review incident and emergency data according to a documented retention policy.
+6. Publish privacy, consent, support and data-deletion information before production distribution.
+7. Keep the Android release signing key secure and backed up.
+
+### For testers and users
+
+1. Grant only the permissions needed for the feature you choose to use.
+2. Verify booking price, availability, status and payment in the official provider application or website.
+3. Confirm emergency contacts and phone numbers before relying on SMS features.
+4. Do not rely on Tourism as the only source during an emergency.
+5. Use the local emergency number and official authorities when immediate help is required.
+6. Treat route, weather, place, opening-hour and safety information as changeable.
+7. Keep important original identity and travel documents available where legally required.
+8. Automation agents send reminders; they do not complete the underlying task for you.
+9. A “scheduled” automation depends on Android permission and operating-system delivery behavior.
+10. Power-off, low-signal and background behavior varies by manufacturer and cannot be guaranteed.
+
+### Before a production release
+
+- [ ] Correct Firebase project configuration is installed.
+- [ ] Authentication and OAuth fingerprints are verified.
+- [ ] Firestore and Storage rules are deployed and tested.
+- [ ] Required backend secrets are configured.
+- [ ] API restrictions and quotas are reviewed.
+- [ ] Privacy policy and terms are published.
+- [ ] Support and account/data deletion processes are documented.
+- [ ] Notification, location, SMS, camera and media permissions are tested.
+- [ ] Analyze and all tests pass.
+- [ ] Release APK is signed with the permanent certificate.
+- [ ] APK is installed and smoke-tested on a real Android device.
+- [ ] Safety wording and emergency limitations are reviewed.
+
+---
+
+## Known limitations
+
+- Tourism cannot guarantee emergency-message delivery, GPS availability, mobile network coverage or authority response.
+- Android background execution and notification timing can vary by manufacturer, battery optimization and permission state.
+- Weather, routes, place details and opening hours depend on external data sources and may be delayed or incomplete.
+- Provider prices and availability are not live unless an official partner API is configured.
+- Some provider apps do not expose public deep links for every field, so a user may need to re-enter information.
+- The app does not silently send WhatsApp messages; WhatsApp requires user action in its supported hand-off flow.
+- Uploaded travel documents are not automatically verified as authentic.
+- OCR is not claimed where it is not implemented.
+- Safety-zone awareness is informational and cannot guarantee that an area is safe or unsafe.
+- Eco tracking does not claim an exact carbon reduction without a verified methodology and input data.
+
+---
+
+## Future scope
+
+Potential future improvements include:
+
+- Official airline, rail, bus, hotel and ride partner APIs.
+- Verified live fare and availability comparison.
+- Encrypted offline travel-document access with device authentication.
+- End-to-end family trip coordination and consent controls.
+- Wear OS safety companion.
+- More offline maps and emergency content.
+- Accessibility audits and additional language support.
+- User-configurable automation timing and dependencies.
+- Calendar integration with explicit consent.
+- Verified exchange rates and travel-budget forecasting.
+- Privacy-preserving analytics and crash diagnostics.
+- Formal security review and penetration testing.
+
+Every future feature should continue to follow Tourism’s core rule: **do not present a capability, action, or data source as real until it is genuinely connected and verifiable.**
+
+---
 
 ## License
 
 Proprietary — all rights reserved.
+
+Third-party packages, map data, APIs and services remain subject to their respective licenses, terms, attribution requirements and acceptable-use policies.
