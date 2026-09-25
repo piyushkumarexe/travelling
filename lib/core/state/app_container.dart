@@ -17,6 +17,7 @@ import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/weather_repository.dart';
 import '../../data/repositories/zones_repository.dart';
 import '../../features/autopilot/autopilot_service.dart';
+import '../../features/automation/travel_automation_service.dart';
 import '../../features/booking/booking_service.dart';
 import '../../features/expenses/expense_repository.dart';
 import '../../features/vault/vault_service.dart';
@@ -151,6 +152,13 @@ class AppContainer {
     placesRepository: placesRepository,
     locationService: locationService,
   )..uidProvider = () => authRepository.currentUser?.uid;
+
+  /// Fifteen real local-notification automations derived from the active trip.
+  late final TravelAutomationService travelAutomation =
+      TravelAutomationService(
+    notifications: notificationService,
+    trips: tripPlanStore,
+  );
 
   /// Live location sharing with the SOS contact (started from the
   /// navigation flow after the user accepts the share prompt).

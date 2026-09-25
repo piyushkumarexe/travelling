@@ -8,6 +8,7 @@ import '../../features/admin/screens/zone_editor_screen.dart';
 import '../../features/assistant/screens/assistant_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/autopilot/screens/autopilot_screen.dart';
+import '../../features/automation/screens/travel_automation_screen.dart';
 import '../../features/booking/booking_models.dart';
 import '../../features/booking/screens/booking_hub_screen.dart';
 import '../../features/booking/screens/ride_booking_screen.dart';
@@ -105,6 +106,11 @@ class AppRouter {
         path: '/toolkit',
         builder: (BuildContext context, GoRouterState state) =>
             const TravellerToolkitScreen(),
+      ),
+      GoRoute(
+        path: '/automation',
+        builder: (BuildContext context, GoRouterState state) =>
+            const TravelAutomationScreen(),
       ),
       GoRoute(
         path: '/booking/ride',

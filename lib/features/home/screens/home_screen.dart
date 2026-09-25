@@ -393,6 +393,11 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Column(
         children: <Widget>[
+          _toolRow(Icons.auto_awesome_motion_outlined,
+                  'Travel Automation · 15 agents',
+                  'Real trip reminders for readiness, safety and budget.',
+                  '/automation'),
+          const Divider(height: 1, indent: 62),
           _toolRow(Icons.travel_explore, 'Traveller Toolkit · 6 advanced tools',
                   'Packing, phrases, budget and automatic safety checks.',
                   '/toolkit'),
