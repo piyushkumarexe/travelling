@@ -968,7 +968,23 @@ class _MapScreenState extends State<MapScreen> {
   void _recenter() {
     final Position? p = _position;
     if (p == null) return;
-    _controller.move(LatLng(p.latitude, p.longitude), 15);
+    if (_map3d) {
+      if (!_follow) setState(() => _follow = true);
+      return; // NavMap3D reacts to follow/position and moves its own camera.
+    }
+    try {
+      _controller.move(LatLng(p.latitude, p.longitude), 15);
+    } catch (_) {
+      // The 2D controller may be between mounts while switching map modes.
+    }
+  }
+
+  Future<void> _myLocation() async {
+    if (_position == null) {
+      await _enableLocation();
+    } else {
+      _recenter();
+    }
   }
 
   void _toggleStyle() {
@@ -1001,9 +1017,13 @@ class _MapScreenState extends State<MapScreen> {
         _ => Icons.map,
       };
 
-  /// Long-press anywhere to drop a pin, then get the distance, a route and
-  /// real turn-by-turn navigation from your location to that point.
-  void _dropPin(TapPosition tap, LatLng point) {
+  /// Tap or long-press anywhere to drop a pin, then get the distance, a route
+  /// and real turn-by-turn navigation from your location to that point.
+  void _dropPin(TapPosition _, LatLng point) => _dropPinAt(point);
+
+  /// Shared by flutter_map and MapLibre so location selection behaves the
+  /// same in both 2D and 3D modes.
+  void _dropPinAt(LatLng point) {
     if (_settingOrigin) {
       setState(() {
         _origin = point;
@@ -1175,6 +1195,8 @@ class _MapScreenState extends State<MapScreen> {
                   pins: pins3d,
                   follow: _follow,
                   satellite: _mapStyle != 'streets-v2',
+                  onTap: _dropPinAt,
+                  onLongPress: _dropPinAt,
                   onUnavailable: () {
                     if (!mounted || !_map3d) return;
                     setState(() {
@@ -1193,7 +1215,7 @@ class _MapScreenState extends State<MapScreen> {
               initialCenter: _initialCenter,
               initialZoom: _initialZoom,
               maxZoom: _maxZoom,
-              onTap: (TapPosition _, LatLng __) => _clearSelection(),
+              onTap: _dropPin,
               onLongPress: _dropPin,
             ),
             children: <Widget>[
@@ -1407,8 +1429,10 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'map-my-location',
-                  tooltip: 'My location',
-                  onPressed: _recenter,
+                  tooltip: _position == null
+                      ? 'Enable and find my location'
+                      : 'My location',
+                  onPressed: _myLocation,
                   child: const Icon(Icons.my_location),
                 ),
               ],
@@ -1590,8 +1614,8 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 child: Text(
                   _settingOrigin
-                      ? 'Now choose your START point — search or long-press'
-                      : 'Search or long-press the map to set your destination',
+                      ? 'Now choose your START point — search, tap or hold'
+                      : 'Search, tap or hold the map to set your destination',
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall

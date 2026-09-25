@@ -63,6 +63,8 @@ class NavMap3D extends StatefulWidget {
     required this.follow,
     required this.satellite,
     required this.onUnavailable,
+    this.onTap,
+    this.onLongPress,
     this.zones = const <Map3DZone>[],
     this.pins = const <Map3DPin>[],
   });
@@ -84,6 +86,11 @@ class NavMap3D extends StatefulWidget {
   /// Extra points to label (the Map tab's search results, so switching to 3D
   /// does not make the places you just searched for disappear).
   final List<Map3DPin> pins;
+
+  /// Optional location-picking callbacks. MapLibre coordinates are converted
+  /// to the shared latlong2 type before leaving this widget.
+  final ValueChanged<ll.LatLng>? onTap;
+  final ValueChanged<ll.LatLng>? onLongPress;
 
   /// Called when the 3D view cannot render (no MapTiler key / style
   /// failure) so the parent can fall back to the 2D map.
@@ -990,6 +997,11 @@ class _NavMap3DState extends State<NavMap3D> {
       compassEnabled: true,
       tiltGesturesEnabled: true,
       rotateGesturesEnabled: true,
+      onMapClick: (math.Point<double> _, ml.LatLng point) =>
+          widget.onTap?.call(ll.LatLng(point.latitude, point.longitude)),
+      onMapLongClick: (math.Point<double> _, ml.LatLng point) => widget
+          .onLongPress
+          ?.call(ll.LatLng(point.latitude, point.longitude)),
       onMapCreated: (ml.MapLibreMapController c) {
         _controller = c;
         // If the style never finishes loading (network/style problem),
