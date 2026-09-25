@@ -93,8 +93,8 @@ class AppTheme {
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: <TargetPlatform, PageTransitionsBuilder>{
           TargetPlatform.android: _AuroraPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: _AuroraPageTransitionsBuilder(),
+          TargetPlatform.macOS: _AuroraPageTransitionsBuilder(),
           TargetPlatform.linux: _AuroraPageTransitionsBuilder(),
           TargetPlatform.windows: _AuroraPageTransitionsBuilder(),
           TargetPlatform.fuchsia: _AuroraPageTransitionsBuilder(),
@@ -264,11 +264,6 @@ class AppTheme {
         thumbColor: scheme.primary,
         overlayColor: scheme.primary.withValues(alpha: 0.10),
         trackHeight: 4,
-      ),
-      refreshIndicatorTheme: RefreshIndicatorThemeData(
-        color: scheme.primary,
-        backgroundColor: scheme.surface,
-        elevation: 3,
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
