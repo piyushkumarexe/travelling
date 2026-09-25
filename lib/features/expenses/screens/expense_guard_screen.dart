@@ -6,6 +6,7 @@ import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/state_views.dart';
 import '../expense_math.dart';
+import '../expense_icons.dart';
 import '../expense_models.dart';
 import '../expense_repository.dart';
 
@@ -120,7 +121,7 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
             ExpenseMath.categoryTotals(all, cur);
 
         return Scaffold(
-          appBar: AppBar(title: const Text('💰 Travel Expense Guard')),
+          appBar: AppBar(title: const Text('Travel Expense Guard')),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () => context.push('/expenses/add'),
             icon: const Icon(Icons.add),
@@ -349,7 +350,7 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
       if (st.over)
         const Padding(
           padding: EdgeInsets.only(top: 4),
-          child: Text('🔴 You have crossed today\'s budget.',
+          child: Text('You have crossed today\'s budget.',
               style: TextStyle(fontSize: 12, color: AppTheme.danger)),
         ),
     ];
@@ -366,7 +367,7 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: <Widget>[
-                    Text(ExpenseCategory.of(c.$1).emoji),
+                    Icon(ExpenseCategory.of(c.$1).icon, size: 18),
                     const SizedBox(width: 8),
                     SizedBox(
                       width: 92,
@@ -431,8 +432,7 @@ class _ExpenseGuardScreenState extends State<ExpenseGuardScreen> {
       child: ListTile(
         onTap: () =>
             context.push('/expenses/detail', extra: <String, String>{'id': e.id}),
-        leading: Text(ExpenseCategory.of(e.category).emoji,
-            style: const TextStyle(fontSize: 20)),
+        leading: Icon(ExpenseCategory.of(e.category).icon),
         title: Text(e.merchant.isEmpty
             ? ExpenseCategory.of(e.category).label
             : e.merchant),

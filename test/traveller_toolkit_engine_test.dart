@@ -115,10 +115,66 @@ void main() {
           greaterThanOrEqualTo(3));
     });
 
-    test('empty search returns the complete useful set', () {
+    test('reported Hinglish query kya hua returns the exact useful phrase', () {
+      final List<TravelPhrase> found =
+          TravellerToolkitEngine.searchPhrases('kya hua');
+      expect(found, isNotEmpty);
+      expect(found.first.hindi, 'क्या हुआ?');
+      expect(found.first.roman, 'Kya hua?');
+      expect(TravellerToolkitEngine.searchPhrases('KYA, HUA?!'), isNotEmpty);
+    });
+
+    test('aliases and order-independent intent words are searchable', () {
+      final List<TravelPhrase> meter =
+          TravellerToolkitEngine.searchPhrases('taxi meter');
+      expect(meter.any((TravelPhrase p) => p.english == 'Please use the meter'),
+          isTrue);
+      expect(TravellerToolkitEngine.searchPhrases('emergency doctor'),
+          isNotEmpty);
+    });
+
+    test('empty search returns the complete 100+ useful set', () {
       expect(TravellerToolkitEngine.searchPhrases(''),
           TravellerToolkitEngine.phrases);
-      expect(TravellerToolkitEngine.phrases.length, greaterThanOrEqualTo(15));
+      expect(TravellerToolkitEngine.phrases.length, greaterThanOrEqualTo(100));
+    });
+  });
+
+  group('Tourist safety brief', () {
+    test('high-exposure answers produce concrete actions, not reassurance', () {
+      final SafetyBrief brief = TravellerToolkitEngine.assessSafety(
+        const SafetyInputs(
+          solo: true,
+          afterDark: true,
+          unfamiliarArea: true,
+          liveShareOn: false,
+          offlineMapReady: false,
+          emergencyContactReady: false,
+          batteryPercent: 10,
+          carryingLargeCash: true,
+        ),
+      );
+      expect(brief.level, SafetyLevel.high);
+      expect(brief.score, lessThan(40));
+      expect(brief.actions.length, greaterThanOrEqualTo(5));
+    });
+
+    test('prepared answers retain an honest non-guarantee action', () {
+      final SafetyBrief brief = TravellerToolkitEngine.assessSafety(
+        const SafetyInputs(
+          solo: false,
+          afterDark: false,
+          unfamiliarArea: false,
+          liveShareOn: true,
+          offlineMapReady: true,
+          emergencyContactReady: true,
+          batteryPercent: 90,
+          carryingLargeCash: false,
+        ),
+      );
+      expect(brief.level, SafetyLevel.prepared);
+      expect(brief.score, 100);
+      expect(brief.actions, isNotEmpty);
     });
   });
 

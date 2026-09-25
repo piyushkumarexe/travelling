@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
+import '../booking_icons.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
 
@@ -34,7 +35,16 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
   Widget build(BuildContext context) {
     final List<BookingCategory> cats = BookingCategory.values;
     return Scaffold(
-      appBar: AppBar(title: const Text('🧳 Travel Booking Hub')),
+      appBar: AppBar(
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.airplane_ticket_outlined),
+            SizedBox(width: 8),
+            Text('Travel Booking Hub'),
+          ],
+        ),
+      ),
       body: ListenableBuilder(
         listenable: _c.bookingService,
         builder: (BuildContext context, _) {
@@ -134,7 +144,8 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Text(c.emoji, style: const TextStyle(fontSize: 26)),
+              Icon(c.icon,
+                  size: 30, color: Theme.of(context).colorScheme.primary),
               const SizedBox(height: 6),
               Text(
                 c.label,
@@ -151,13 +162,6 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
     );
   }
 
-  String _emojiFor(String categoryName) {
-    for (final BookingCategory c in BookingCategory.values) {
-      if (c.name == categoryName) return c.emoji;
-    }
-    return '🧳';
-  }
-
   Widget _bookingTile(BookingRef b) {
     final String tripName = _c.bookingService.tripName(b.tripId);
     final Color statusColor = switch (b.status) {
@@ -168,8 +172,10 @@ class _BookingHubScreenState extends State<BookingHubScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: Text(_emojiFor(b.category),
-            style: const TextStyle(fontSize: 20)),
+        leading: Icon(
+          bookingCategoryByName(b.category)?.icon ?? Icons.travel_explore,
+          color: Theme.of(context).colorScheme.primary,
+        ),
         title: Text(
           '${b.provider}'
           '${b.destination == null || b.destination!.isEmpty ? '' : ' → ${b.destination}'}',

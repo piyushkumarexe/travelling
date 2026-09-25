@@ -1527,7 +1527,7 @@ class _MapScreenState extends State<MapScreen> {
                 scrollDirection: Axis.horizontal,
                 children: <Widget>[
                   _chip(
-                    _origin == null ? '📍 Set start' : 'Start: ${_originName ?? 'Pin'}',
+                    _origin == null ? 'Set start' : 'Start: ${_originName ?? 'Pin'}',
                     _toggleSetOrigin,
                     active: _settingOrigin || _origin != null,
                   ),

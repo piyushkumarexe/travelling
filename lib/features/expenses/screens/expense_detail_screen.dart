@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../expense_math.dart';
+import '../expense_icons.dart';
 import '../expense_models.dart';
 import '../expense_repository.dart';
 
@@ -100,8 +101,15 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
               ),
               const SizedBox(height: 4),
               Center(
-                  child: Text('${ExpenseCategory.of(e.category).emoji} '
-                      '${ExpenseCategory.of(e.category).label}')),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(ExpenseCategory.of(e.category).icon, size: 19),
+                    const SizedBox(width: 6),
+                    Text(ExpenseCategory.of(e.category).label),
+                  ],
+                ),
+              ),
               const SizedBox(height: 18),
               _row('Merchant / description',
                   e.merchant.isEmpty ? '—' : e.merchant),

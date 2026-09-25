@@ -12,6 +12,7 @@ import '../../../core/services/location_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/places.dart';
+import '../booking_icons.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
 import 'price_compare_sheet.dart';
@@ -75,7 +76,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     if (p == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text(
-              '📍 Your current location is unavailable. Enable GPS and try again.')));
+              'Your current location is unavailable. Enable GPS and try again.')));
       return;
     }
     setState(() {
@@ -242,9 +243,16 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('${provider.emoji} Continue with ${provider.providerName}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 16)),
+              Row(
+                children: <Widget>[
+                  Icon(providerIcon(provider.providerName,
+                      category: BookingCategory.ride)),
+                  const SizedBox(width: 8),
+                  Text('Continue with ${provider.providerName}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
               const SizedBox(height: 10),
               _row('Pickup', _pickup!.name),
               _row('Destination', _drop!.name),
@@ -362,7 +370,7 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
     final List<BookingProvider> providers =
         BookingProviders.forCategory(BookingCategory.ride);
     return Scaffold(
-      appBar: AppBar(title: const Text('🚕 Book a ride')),
+      appBar: AppBar(title: const Text('Book a ride')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: <Widget>[
@@ -418,9 +426,15 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
   Widget _serviceTypeChips() {
     return SegmentedButton<String>(
       segments: const <ButtonSegment<String>>[
-        ButtonSegment<String>(value: 'bike', label: Text('🏍️ Bike')),
-        ButtonSegment<String>(value: 'auto', label: Text('🛺 Auto')),
-        ButtonSegment<String>(value: 'cab', label: Text('🚕 Cab')),
+        ButtonSegment<String>(
+            value: 'bike', icon: Icon(Icons.two_wheeler_outlined),
+            label: Text('Bike')),
+        ButtonSegment<String>(
+            value: 'auto', icon: Icon(Icons.electric_rickshaw),
+            label: Text('Auto')),
+        ButtonSegment<String>(
+            value: 'cab', icon: Icon(Icons.local_taxi_outlined),
+            label: Text('Cab')),
       ],
       selected: <String>{_serviceType},
       onSelectionChanged: (Set<String> s) {
@@ -669,7 +683,8 @@ class _RideBookingScreenState extends State<RideBookingScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         onTap: busy ? null : () => _openSummary(p),
-        leading: Text(p.emoji, style: const TextStyle(fontSize: 22)),
+        leading: Icon(providerIcon(p.providerName,
+            category: BookingCategory.ride)),
         title: Text(p.providerName,
             style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text(

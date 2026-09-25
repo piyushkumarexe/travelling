@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:yatrawise/data/models/places.dart';
 import 'package:yatrawise/features/autopilot/autopilot_engine.dart';
 import 'package:yatrawise/features/autopilot/autopilot_models.dart';
+import 'package:yatrawise/features/autopilot/autopilot_service.dart';
 
 Place _p(
   String id,
@@ -50,6 +51,34 @@ void main() {
     }));
     expect(candidates.map((Place p) => p.category).toSet(),
         <String>{'cafe', 'restaurant'});
+  });
+
+  test('explicit Generate creates a clean session and a fresh deadline', () {
+    final DateTime generatedAt = DateTime(2026, 9, 25, 8);
+    final AutopilotSession fresh =
+        AutopilotService.freshSessionForGenerate(
+      const AutopilotBrief(availableMinutes: 590),
+      generatedAt,
+      id: 'fresh',
+    );
+    expect(fresh.id, 'fresh');
+    expect(fresh.stops, isEmpty);
+    expect(fresh.endsAt, generatedAt.add(const Duration(minutes: 590)));
+  });
+
+  test('provider taxonomy variants remain valid tourist candidates', () {
+    final List<Place> dataset = <Place>[
+      _p('1', 'Riverside Temple', 'hindu_temple', 1.0, <String, dynamic>{}),
+      _p('2', 'Old Fort', 'historical_landmark', 1.5, <String, dynamic>{}),
+      _p('3', 'City Icon', 'tourist_attraction', 2.0, <String, dynamic>{}),
+    ];
+    final List<Place> historical = AutopilotEngine.candidatesFor(
+      dataset,
+      const AutopilotBrief(
+          interests: <AutopilotInterest>{AutopilotInterest.historical}),
+    );
+    expect(historical.map((Place p) => p.placeId).toSet(),
+        <String>{'1', '2', '3'});
   });
 
   test('TEST 3: "2 hours" — everything shown fits, the rest is rejected '

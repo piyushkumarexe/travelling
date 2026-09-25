@@ -159,7 +159,7 @@ class LiveLocationShareService extends ChangeNotifier {
 
     notificationService.show(
       id: 4711001,
-      title: '📍 Live location sharing is ON',
+      title: 'Live location sharing is ON',
       body: 'Your location is being shared with $who'
           '${_smsEnabled ? ' by SMS' : ''}. Open Tourism to stop sharing.',
       channel: 'emergency',

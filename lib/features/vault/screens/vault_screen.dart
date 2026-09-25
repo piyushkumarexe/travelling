@@ -13,6 +13,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/state_views.dart';
 import '../travel_document.dart';
+import '../vault_icons.dart';
 
 enum _QuickFilter { all, upcoming, expiring }
 
@@ -50,7 +51,7 @@ class _VaultScreenState extends State<VaultScreen> {
     final String? uid = _c.authRepository.currentUser?.uid;
     if (uid == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('🗂️ Document Vault')),
+        appBar: AppBar(title: const Text('Document Vault')),
         body: const EmptyState(
           icon: Icons.lock_outline,
           title: 'Sign in required',
@@ -61,7 +62,16 @@ class _VaultScreenState extends State<VaultScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('🗂️ Travel Document & Booking Vault')),
+      appBar: AppBar(
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.folder_copy_outlined),
+            SizedBox(width: 8),
+            Text('Travel Document Vault'),
+          ],
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/vault/edit'),
         icon: const Icon(Icons.add),
@@ -200,7 +210,7 @@ class _VaultScreenState extends State<VaultScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Row(
                     children: <Widget>[
-                      Text(d.type.emoji, style: const TextStyle(fontSize: 18)),
+                      Icon(d.type.icon, size: 20),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(label,
@@ -347,9 +357,15 @@ class _VaultScreenState extends State<VaultScreen> {
                   value: null, child: Text('All types', style: TextStyle(fontSize: 13))),
               for (final TravelDocType t in TravelDocType.values)
                 DropdownMenuItem<TravelDocType?>(
-                    value: t,
-                    child: Text('${t.emoji} ${t.label}',
-                        style: const TextStyle(fontSize: 13))),
+                  value: t,
+                  child: Row(
+                    children: <Widget>[
+                      Icon(t.icon, size: 17),
+                      const SizedBox(width: 6),
+                      Text(t.label, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
             ],
             onChanged: (TravelDocType? v) => setState(() => _typeFilter = v),
           ),
@@ -411,7 +427,10 @@ class _VaultScreenState extends State<VaultScreen> {
             color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Center(child: Text(d.type.emoji, style: const TextStyle(fontSize: 18))),
+          child: Center(
+            child: Icon(d.type.icon,
+                size: 20, color: Theme.of(context).colorScheme.primary),
+          ),
         ),
         title: Text(d.title,
             maxLines: 1, overflow: TextOverflow.ellipsis,

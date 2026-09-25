@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../../../data/models/trip_plan.dart' show TripPlan;
 import '../travel_document.dart';
+import '../vault_icons.dart';
 import '../vault_service.dart';
 
 class VaultEditScreen extends StatefulWidget {
@@ -447,7 +448,8 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
         children: <Widget>[
           for (final TravelDocType t in TravelDocType.values)
             ChoiceChip(
-              label: Text('${t.emoji} ${t.label}',
+              avatar: Icon(t.icon, size: 17),
+              label: Text(t.label,
                   style: const TextStyle(fontSize: 12)),
               selected: _type == t,
               onSelected: (bool v) => setState(() => _type = v ? t : _type),

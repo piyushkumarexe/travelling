@@ -371,22 +371,24 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       child: Column(
         children: <Widget>[
-          _toolRow('🧰', 'Traveller Toolkit · 5 offline tools',
-                  'Packing, countdown, group budget, phrases and converter.',
+          _toolRow(Icons.travel_explore, 'Traveller Toolkit · 6 advanced tools',
+                  'Packing, countdown, phrases, safety brief and more.',
                   '/toolkit'),
-          const Divider(height: 1, indent: 54),
-          _toolRow('💰', 'Travel Expense Guard',
+          const Divider(height: 1, indent: 62),
+          _toolRow(Icons.account_balance_wallet_outlined,
+                  'Travel Expense Guard',
                   'Track every rupee of your trip.', '/expenses'),
-          const Divider(height: 1, indent: 54),
-          _toolRow('🧳', 'Travel Booking Hub',
+          const Divider(height: 1, indent: 62),
+          _toolRow(Icons.airplane_ticket_outlined, 'Travel Booking Hub',
                   'Book rides, flights, trains, buses, hotels and activities.',
                   '/booking'),
-          const Divider(height: 1, indent: 54),
-          _toolRow('🗂️', 'Travel Document & Booking Vault',
+          const Divider(height: 1, indent: 62),
+          _toolRow(Icons.folder_copy_outlined,
+                  'Travel Document & Booking Vault',
                   'All your travel documents and bookings in one secure place.',
                   '/vault'),
-          const Divider(height: 1, indent: 54),
-          _toolRow('🧠', 'Travel Intelligence',
+          const Divider(height: 1, indent: 62),
+          _toolRow(Icons.psychology_alt_outlined, 'Travel Intelligence',
                   'Robustness score, what-if simulator, recovery and constraints.',
                   '/intelligence'),
         ],
@@ -394,15 +396,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _toolRow(String emoji, String title, String subtitle, String route) {
+  Widget _toolRow(
+      IconData icon, String title, String subtitle, String route) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       onTap: () => context.push(route),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
         child: Row(
           children: <Widget>[
-            Text(emoji, style: const TextStyle(fontSize: 22)),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: <Color>[
+                  scheme.primary.withValues(alpha: 0.18),
+                  scheme.secondary.withValues(alpha: 0.10),
+                ]),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                    color: scheme.primary.withValues(alpha: 0.16)),
+              ),
+              child: Icon(icon, size: 21, color: scheme.primary),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -452,8 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: <Widget>[
             const Row(
               children: <Widget>[
-                Text('🧭',
-                    style: TextStyle(fontSize: 22)),
+                Icon(Icons.explore_outlined, color: Colors.white, size: 24),
                 SizedBox(width: 8),
                 Text('TRAVEL AUTOPILOT',
                     style: TextStyle(
@@ -568,14 +584,22 @@ class _HomeScreenState extends State<HomeScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
-              Text(
-                '💧 ${w.humidityPct}%',
-                style: Theme.of(context).textTheme.bodySmall,
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.water_drop_outlined, size: 15),
+                  const SizedBox(width: 4),
+                  Text('${w.humidityPct}%',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
               ),
               const SizedBox(height: 4),
-              Text(
-                '💨 ${(w.windMs * 3.6).toStringAsFixed(0)} km/h',
-                style: Theme.of(context).textTheme.bodySmall,
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.air, size: 15),
+                  const SizedBox(width: 4),
+                  Text('${(w.windMs * 3.6).toStringAsFixed(0)} km/h',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
               ),
             ],
           ),
@@ -683,11 +707,11 @@ class _HomeScreenState extends State<HomeScreen> {
       SafetyLevel.alert => AppTheme.danger,
       SafetyLevel.limited => Theme.of(context).colorScheme.outline,
     };
-    final String emoji = switch (_safety.level) {
-      SafetyLevel.normal => '🟢',
-      SafetyLevel.caution => '🟡',
-      SafetyLevel.alert => '🔴',
-      SafetyLevel.limited => '⚪',
+    final IconData statusIcon = switch (_safety.level) {
+      SafetyLevel.normal => Icons.check_circle,
+      SafetyLevel.caution => Icons.warning_amber_rounded,
+      SafetyLevel.alert => Icons.error,
+      SafetyLevel.limited => Icons.info_outline,
     };
     return AppCard(
       onTap: () => context.push('/safety'),
@@ -707,11 +731,19 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  '$emoji ${_safety.headline}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                Row(
+                  children: <Widget>[
+                    Icon(statusIcon, color: accent, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _safety.headline,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(

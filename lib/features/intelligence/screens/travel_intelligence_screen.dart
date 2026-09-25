@@ -55,7 +55,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
     try {
       final TripPlan? trip = _trip;
       return Scaffold(
-        appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
+        appBar: AppBar(title: const Text('Travel Intelligence')),
         body: _build(trip),
         bottomNavigationBar: const Padding(
           padding: EdgeInsets.all(10),
@@ -66,7 +66,7 @@ class _TravelIntelligenceScreenState extends State<TravelIntelligenceScreen> {
       );
     } catch (e) {
       return Scaffold(
-        appBar: AppBar(title: const Text('🧠 Travel Intelligence')),
+        appBar: AppBar(title: const Text('Travel Intelligence')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),

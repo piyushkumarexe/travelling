@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../travel_document.dart';
+import '../vault_icons.dart';
 import '../vault_service.dart';
 
 class VaultDetailScreen extends StatefulWidget {
@@ -84,7 +85,8 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(children: <Widget>[
-              Text(d.type.emoji, style: const TextStyle(fontSize: 30)),
+              Icon(d.type.icon,
+                  size: 32, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

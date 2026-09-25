@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/uiverse.dart';
@@ -46,6 +47,17 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
   final TextEditingController _phraseSearch = TextEditingController();
   final TextEditingController _convertValue = TextEditingController(text: '10');
   Conversion _conversion = Conversion.kmToMiles;
+
+  // Safety brief — intentionally session-only; these are situational answers,
+  // not profile facts that should silently carry into the next journey.
+  bool _safeSolo = true;
+  bool _safeAfterDark = false;
+  bool _safeUnfamiliar = true;
+  bool _safeShare = false;
+  bool _safeOfflineMap = false;
+  bool _safeContact = false;
+  bool _safeCash = false;
+  int _safeBattery = 60;
 
   @override
   void initState() {
@@ -199,12 +211,12 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text('5 tools · 100% offline',
+                    const Text('6 advanced tools · offline-first',
                         style: TextStyle(
                             fontWeight: FontWeight.w900, fontSize: 17)),
                     const SizedBox(height: 3),
                     Text(
-                      'Plan, pack, split, speak and convert without an API key.',
+                      'Plan, pack, split, communicate and run a tourist safety brief.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: s.onSurfaceVariant, height: 1.35),
                     ),
@@ -231,6 +243,8 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
                 Icons.pie_chart_outline, 'Group-ready'),
             _toolTile(ToolkitTool.phrases, const Color(0xFFEA580C),
                 Icons.translate, '${TravellerToolkitEngine.phrases.length} phrases'),
+            _toolTile(ToolkitTool.safety, const Color(0xFFDC2626),
+                Icons.health_and_safety_outlined, 'Risk + scam shield'),
             _toolTile(ToolkitTool.converter, const Color(0xFFDB2777),
                 Icons.swap_horiz, '10 conversions'),
           ],
@@ -262,6 +276,7 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
         ToolkitTool.countdown => _countdownTool(),
         ToolkitTool.budget => _budgetTool(),
         ToolkitTool.phrases => _phrasebookTool(),
+        ToolkitTool.safety => _safetyTool(),
         ToolkitTool.converter => _converterTool(),
       };
 
@@ -638,11 +653,14 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
           accent: const Color(0xFF059669),
           child: Column(
             children: <Widget>[
-              _budgetRow('🏨', 'Stay', 35, b.stay, money),
-              _budgetRow('🚆', 'Transport', 25, b.transport, money),
-              _budgetRow('🍛', 'Food', 20, b.food, money),
-              _budgetRow('🎟️', 'Activities', 10, b.activities, money),
-              _budgetRow('🛟', 'Emergency buffer', 10, b.emergencyBuffer, money),
+              _budgetRow(Icons.hotel_outlined, 'Stay', 35, b.stay, money),
+              _budgetRow(Icons.directions_transit, 'Transport', 25,
+                  b.transport, money),
+              _budgetRow(Icons.restaurant_outlined, 'Food', 20, b.food, money),
+              _budgetRow(Icons.local_activity_outlined, 'Activities', 10,
+                  b.activities, money),
+              _budgetRow(Icons.health_and_safety_outlined, 'Emergency buffer',
+                  10, b.emergencyBuffer, money),
               const Divider(),
               Text(
                 'Suggested planning split, not a spending limit. Adjust in '
@@ -691,13 +709,13 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
     );
   }
 
-  Widget _budgetRow(
-      String emoji, String label, int percent, double value, NumberFormat f) {
+  Widget _budgetRow(IconData icon, String label, int percent, double value,
+      NumberFormat f) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: <Widget>[
-          Text(emoji, style: const TextStyle(fontSize: 21)),
+          Icon(icon, size: 21, color: const Color(0xFF059669)),
           const SizedBox(width: 10),
           Expanded(child: Text('$label · $percent%')),
           Text(f.format(value),
@@ -720,15 +738,49 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
           child: TextField(
             controller: _phraseSearch,
-            decoration: const InputDecoration(
-              labelText: 'Search English, Hindi or category',
-              prefixIcon: Icon(Icons.search),
+            decoration: InputDecoration(
+              labelText: 'Search English, Hindi, Hinglish or category',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _phraseSearch.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear',
+                      onPressed: () {
+                        _phraseSearch.clear();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
             ),
             onChanged: (_) => setState(() {}),
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: phrases.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(Icons.manage_search,
+                            size: 52, color: Color(0xFFEA580C)),
+                        const SizedBox(height: 12),
+                        const Text('No phrase matched',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 5),
+                        Text(
+                          'Try a simple intent like “doctor”, “meter”, '
+                          '“kya hua”, “hotel” or “emergency”.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
             itemCount: phrases.length,
             itemBuilder: (BuildContext context, int index) {
@@ -787,6 +839,221 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Copied: ${p.roman}')),
     );
+  }
+
+  // ---------------------------------------------------------------------
+  // TOURIST SAFETY COMPANION
+  // ---------------------------------------------------------------------
+
+  SafetyBrief get _safetyBrief => TravellerToolkitEngine.assessSafety(
+        SafetyInputs(
+          solo: _safeSolo,
+          afterDark: _safeAfterDark,
+          unfamiliarArea: _safeUnfamiliar,
+          liveShareOn: _safeShare,
+          offlineMapReady: _safeOfflineMap,
+          emergencyContactReady: _safeContact,
+          batteryPercent: _safeBattery,
+          carryingLargeCash: _safeCash,
+        ),
+      );
+
+  Widget _safetyTool() {
+    final SafetyBrief brief = _safetyBrief;
+    final Color color = switch (brief.level) {
+      SafetyLevel.prepared => AppTheme.success,
+      SafetyLevel.elevated => AppTheme.warning,
+      SafetyLevel.high => AppTheme.danger,
+    };
+    final String label = switch (brief.level) {
+      SafetyLevel.prepared => 'Prepared',
+      SafetyLevel.elevated => 'Caution needed',
+      SafetyLevel.high => 'High exposure',
+    };
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+      children: <Widget>[
+        UiverseSurface(
+          accent: color,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Container(
+                    width: 58,
+                    height: 58,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: color.withValues(alpha: 0.35), width: 2),
+                    ),
+                    child: Text('${brief.score}',
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900)),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(label,
+                            style: TextStyle(
+                                color: color,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900)),
+                        const Text('Situational readiness · not a guarantee'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final String action in brief.actions.take(4))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Icon(Icons.arrow_right, size: 19, color: color),
+                      Expanded(child: Text(action)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        UiverseSurface(
+          accent: const Color(0xFFDC2626),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            children: <Widget>[
+              _safetySwitch('Travelling solo', Icons.person_outline, _safeSolo,
+                  (bool v) => _safeSolo = v),
+              _safetySwitch('Moving after dark', Icons.dark_mode_outlined,
+                  _safeAfterDark, (bool v) => _safeAfterDark = v),
+              _safetySwitch('Unfamiliar area', Icons.map_outlined,
+                  _safeUnfamiliar, (bool v) => _safeUnfamiliar = v),
+              _safetySwitch('Live sharing is ON', Icons.share_location_outlined,
+                  _safeShare, (bool v) => _safeShare = v),
+              _safetySwitch('Offline map ready', Icons.map_outlined,
+                  _safeOfflineMap, (bool v) => _safeOfflineMap = v),
+              _safetySwitch('SOS contact verified', Icons.contact_emergency_outlined,
+                  _safeContact, (bool v) => _safeContact = v),
+              _safetySwitch('Carrying significant cash', Icons.payments_outlined,
+                  _safeCash, (bool v) => _safeCash = v),
+              ListTile(
+                leading: const Icon(Icons.battery_5_bar),
+                title: Text('Battery · $_safeBattery%'),
+                subtitle: Slider(
+                  value: _safeBattery.toDouble(),
+                  min: 5,
+                  max: 100,
+                  divisions: 19,
+                  onChanged: (double v) =>
+                      setState(() => _safeBattery = v.round()),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: UiverseButton(
+                label: 'Call 112',
+                icon: Icons.local_police_outlined,
+                danger: true,
+                compact: true,
+                onPressed: () => _callNumber('112'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: UiverseButton(
+                label: 'Cyber 1930',
+                icon: Icons.security,
+                compact: true,
+                onPressed: () => _callNumber('1930'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Text('Scam response cards',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 8),
+        for (final ScamCard card in TravellerToolkitEngine.scamCards)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: UiverseSurface(
+              accent: AppTheme.warning,
+              padding: EdgeInsets.zero,
+              child: ExpansionTile(
+                title: Text(card.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                children: <Widget>[
+                  Text(card.action),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.warning.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(card.hindiScript,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: card.hindiScript));
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Safety phrase copied')));
+                        }
+                      },
+                      icon: const Icon(Icons.copy, size: 17),
+                      label: const Text('Copy phrase'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _safetySwitch(String title, IconData icon, bool value,
+      ValueChanged<bool> update) {
+    return SwitchListTile(
+      secondary: Icon(icon),
+      title: Text(title),
+      value: value,
+      onChanged: (bool v) {
+        setState(() => update(v));
+      },
+    );
+  }
+
+  Future<void> _callNumber(String number) async {
+    final bool opened = await launchUrl(Uri.parse('tel:$number'));
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open the phone app for $number')));
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -886,7 +1153,8 @@ enum ToolkitTool {
   packing('Smart Packing', 'Weather-aware list that remembers progress'),
   countdown('Trip Countdown', 'Departure clock and readiness checks'),
   budget('Group Budget', 'Split a trip by person, day and category'),
-  phrases('India Phrasebook', 'Hindi essentials, searchable and copyable'),
+  phrases('India Phrasebook', '145 Hindi essentials with Hinglish search'),
+  safety('Tourist Safety', 'Situational risk brief, helplines and scam shield'),
   converter('Travel Converter', 'Distance, weather, bags and fuel');
 
   const ToolkitTool(this.title, this.subtitle);

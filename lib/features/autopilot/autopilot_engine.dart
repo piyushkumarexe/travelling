@@ -57,16 +57,43 @@ class AutopilotEngine {
   /// existing nearby system (amenity=restaurant, tourism=museum, …).
   static const Map<AutopilotInterest, List<String>> interestCategories =
       <AutopilotInterest, List<String>>{
-    AutopilotInterest.eat: <String>['food', 'restaurant', 'cafe', 'fast_food'],
-    AutopilotInterest.explore: <String>['attraction', 'museum'],
-    AutopilotInterest.shopping: <String>['shopping'],
-    AutopilotInterest.relax: <String>['park'],
-    AutopilotInterest.entertainment: <String>['attraction'],
-    AutopilotInterest.sightseeing: <String>['attraction', 'museum'],
-    AutopilotInterest.historical: <String>['museum', 'attraction'],
-    AutopilotInterest.family: <String>['park', 'attraction', 'museum'],
-    AutopilotInterest.work: <String>['cafe', 'restaurant'],
-    AutopilotInterest.roadtrip: <String>['fuel', 'food', 'attraction'],
+    AutopilotInterest.eat: <String>[
+      'food', 'restaurant', 'cafe', 'fast_food', 'bakery', 'food_court'
+    ],
+    AutopilotInterest.explore: <String>[
+      'attraction', 'tourist_attraction', 'museum', 'point_of_interest',
+      'viewpoint', 'place_of_worship'
+    ],
+    AutopilotInterest.shopping: <String>[
+      'shopping', 'shopping_mall', 'market', 'marketplace', 'store'
+    ],
+    AutopilotInterest.relax: <String>[
+      'park', 'garden', 'viewpoint', 'nature_reserve'
+    ],
+    AutopilotInterest.entertainment: <String>[
+      'attraction', 'tourist_attraction', 'cinema', 'theatre',
+      'amusement_park', 'zoo'
+    ],
+    AutopilotInterest.sightseeing: <String>[
+      'attraction', 'tourist_attraction', 'museum', 'viewpoint',
+      'point_of_interest', 'place_of_worship'
+    ],
+    AutopilotInterest.historical: <String>[
+      'museum', 'attraction', 'tourist_attraction', 'historical_landmark',
+      'monument', 'fort', 'palace', 'archaeological_site', 'place_of_worship',
+      'hindu_temple', 'mosque', 'church', 'gurudwara'
+    ],
+    AutopilotInterest.family: <String>[
+      'park', 'garden', 'attraction', 'tourist_attraction', 'museum', 'zoo',
+      'amusement_park', 'aquarium'
+    ],
+    AutopilotInterest.work: <String>[
+      'cafe', 'restaurant', 'library', 'coworking_space'
+    ],
+    AutopilotInterest.roadtrip: <String>[
+      'fuel', 'food', 'restaurant', 'attraction', 'tourist_attraction',
+      'viewpoint'
+    ],
     // 'other' → no category filter (everything nearby is a candidate).
   };
 

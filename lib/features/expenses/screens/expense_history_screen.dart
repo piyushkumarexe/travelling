@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/state/app_container.dart';
 import '../expense_math.dart';
+import '../expense_icons.dart';
 import '../expense_models.dart';
 import '../expense_repository.dart';
 
@@ -141,8 +142,15 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                                 value: null, child: Text('All categories')),
                             for (final ExpenseCategory c in ExpenseCategory.all)
                               DropdownMenuItem<String?>(
-                                  value: c.id,
-                                  child: Text('${c.emoji} ${c.label}')),
+                                value: c.id,
+                                child: Row(
+                                  children: <Widget>[
+                                    Icon(c.icon, size: 18),
+                                    const SizedBox(width: 7),
+                                    Text(c.label),
+                                  ],
+                                ),
+                              ),
                           ],
                           onChanged: (String? v) =>
                               setState(() => _category = v),
@@ -286,9 +294,8 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
                             child: ListTile(
                               onTap: () => context.push('/expenses/detail',
                                   extra: <String, String>{'id': e.id}),
-                              leading: Text(
-                                  ExpenseCategory.of(e.category).emoji,
-                                  style: const TextStyle(fontSize: 20)),
+                              leading:
+                                  Icon(ExpenseCategory.of(e.category).icon),
                               title: Text(e.merchant.isEmpty
                                   ? ExpenseCategory.of(e.category).label
                                   : e.merchant),

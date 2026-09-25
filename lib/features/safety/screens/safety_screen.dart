@@ -602,11 +602,11 @@ class _SafetyScreenState extends State<SafetyScreen> {
       SafetyLevel.alert => AppTheme.danger,
       _ => scheme.outline,
     };
-    final String emoji = switch (a?.level) {
-      SafetyLevel.normal => '🟢',
-      SafetyLevel.caution => '🟡',
-      SafetyLevel.alert => '🔴',
-      _ => '⚪',
+    final IconData levelIcon = switch (a?.level) {
+      SafetyLevel.normal => Icons.check_circle,
+      SafetyLevel.caution => Icons.warning_amber_rounded,
+      SafetyLevel.alert => Icons.error,
+      _ => Icons.info_outline,
     };
     return AppCard(
       child: Column(
@@ -679,10 +679,18 @@ class _SafetyScreenState extends State<SafetyScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(
-                    '$emoji ${a.headline}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 14),
+                  Row(
+                    children: <Widget>[
+                      Icon(levelIcon, color: accent, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          a.headline,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 14),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(

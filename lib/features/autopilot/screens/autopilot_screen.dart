@@ -6,6 +6,7 @@ import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../core/widgets/uiverse.dart';
 import '../autopilot_engine.dart';
 import '../autopilot_models.dart';
 import '../autopilot_service.dart';
@@ -175,7 +176,14 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                         content: Text('Developer controls enabled')));
                   }
                 },
-                child: const Text('🧭 Travel Autopilot'),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.explore_outlined, size: 24),
+                    SizedBox(width: 9),
+                    Text('Travel Autopilot'),
+                  ],
+                ),
               ),
             ),
             body: _svc.session != null
@@ -219,7 +227,14 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           children: <Widget>[
             for (final AutopilotInterest i in AutopilotInterest.values)
               FilterChip(
-                label: Text('${i.emoji} ${i.label}'),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(i.icon, size: 17),
+                    const SizedBox(width: 6),
+                    Text(i.label),
+                  ],
+                ),
                 selected: _picked.contains(i),
                 onSelected: (bool on) => setState(() =>
                     on ? _picked.add(i) : _picked.remove(i)),
@@ -421,11 +436,14 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         SegmentedButton<AutopilotGroup>(
           segments: const <ButtonSegment<AutopilotGroup>>[
             ButtonSegment<AutopilotGroup>(
-                value: AutopilotGroup.solo, label: Text('👤 Solo')),
+                value: AutopilotGroup.solo,
+                icon: Icon(Icons.person_outline), label: Text('Solo')),
             ButtonSegment<AutopilotGroup>(
-                value: AutopilotGroup.family, label: Text('👨‍👩‍👧 Family')),
+                value: AutopilotGroup.family,
+                icon: Icon(Icons.family_restroom), label: Text('Family')),
             ButtonSegment<AutopilotGroup>(
-                value: AutopilotGroup.friends, label: Text('👫 Friends')),
+                value: AutopilotGroup.friends,
+                icon: Icon(Icons.group_outlined), label: Text('Friends')),
           ],
           selected: <AutopilotGroup>{_group},
           onSelectionChanged: (Set<AutopilotGroup> s) =>
@@ -449,7 +467,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         FilledButton.icon(
           onPressed: () => _generate(autoPlan: true),
           icon: const Icon(Icons.auto_mode),
-          label: const Text('⚡ AUTO PLAN'),
+          label: const Text('AUTO PLAN'),
         ),
         TextButton(
           onPressed: () => setState(() => _step = 1),
@@ -480,7 +498,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 .textTheme
                 .titleMedium
                 ?.copyWith(fontWeight: FontWeight.w800)),
-        Text('📍 Based on your current location',
+        Text('Based on your current location',
             style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 10),
         if (plan != null) ...<Widget>[
@@ -524,7 +542,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           if (_svc.error == AutopilotErrorKind.locationUnavailable) ...<Widget>[
             const Icon(Icons.location_off, size: 48, color: AppTheme.danger),
             const SizedBox(height: 12),
-            Text('📍 Your current location is unavailable.',
+            Text('Your current location is unavailable.',
                 style: Theme.of(context).textTheme.titleMedium,
                 textAlign: TextAlign.center),
             const SizedBox(height: 16),
@@ -566,8 +584,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Text(s.emoji,
-                    style: const TextStyle(fontSize: 20)),
+                Icon(s.icon, size: 22, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(s.name,
@@ -643,10 +660,10 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         for (final (AutopilotSuggestion, String) item in _svc.notPractical)
           ListTile(
             dense: true,
-            leading: Text(item.$1.emoji),
+            leading: Icon(item.$1.icon),
             title: Text(item.$1.name,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text('🔴 ${item.$2}'),
+            subtitle: Text(item.$2),
           ),
       ],
     );
@@ -699,7 +716,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('⚡ AUTO PLAN',
+            Text('AUTO PLAN',
                 style: Theme.of(context)
                     .textTheme
                     .titleSmall
@@ -728,8 +745,8 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 style: Theme.of(context).textTheme.bodySmall),
             Text(
                 plan.totalMinutes <= (_minutes ?? 120)
-                    ? '🟢 Fits your available time'
-                    : '🔴 Does not fit your available time',
+                    ? 'Fits your available time'
+                    : 'Does not fit your available time',
                 style: const TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
@@ -833,7 +850,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
               child: OutlinedButton.icon(
                 onPressed: _breakFlow,
                 icon: const Icon(Icons.self_improvement),
-                label: const Text('😴 BREAK'),
+                label: const Text('TAKE A BREAK'),
               ),
             ),
           ],
@@ -849,7 +866,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
             child: FilledButton.icon(
               onPressed: () => setState(() => _svc.generatePlan()),
               icon: const Icon(Icons.auto_mode),
-              label: const Text('⚡ AUTO PLAN (best order)'),
+              label: const Text('BUILD AUTO PLAN'),
             ),
           ),
           const SizedBox(height: 12),
@@ -898,13 +915,19 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
     } else {
       child = EmptyState(
         icon: Icons.place_outlined,
-        title: 'Nothing else practical right now',
-        message: _svc.atDestination
-            ? 'Everything nearby is already visited, closed, or too far for '
-                  'this leg. Change the plan (or your budget / time limit) and '
-                  'Autopilot will look again.'
-            : 'No suitable places were found near the destination yet. It can '
-                  'take a minute for the nearby data to arrive — scan again.',
+        title: _svc.notPractical.isNotEmpty
+            ? '${_svc.notPractical.length} places found — constraints blocked them'
+            : 'No nearby options loaded yet',
+        message: _svc.notPractical.isNotEmpty
+            ? '${_svc.notPractical.first.$1.name}: '
+                '${_svc.notPractical.first.$2}. Change the travel limit, mode '
+                'or available time and scan again.'
+            : _svc.atDestination
+                ? 'No real place results reached Autopilot. Scan again for a '
+                    'wider multi-category search; your visited history is not '
+                    'the reason.'
+                : 'No suitable places were found near the destination yet. '
+                    'Scan again for the wider search.',
         actionLabel: 'SCAN AGAIN',
         onAction: () => _svc.recompute(),
       );
@@ -927,30 +950,35 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
     final String liveTravel =
         liveEta > 0 ? '~$liveEta min of travel left' : 'travel window is up';
     final String liveSchedule =
-        liveLag >= 3 ? '⚠ $liveLag min behind plan' : '🟢 on schedule';
+        liveLag >= 3 ? '$liveLag min behind plan' : 'on schedule';
     final String liveDrift =
-        _svc.liveMovingAway ? ' · 🔴 moving away from it' : '';
+        _svc.liveMovingAway ? ' · moving away from it' : '';
     final String fixAge = fixAgeSec >= 3600
         ? '${(fixAgeSec / 3600).floor()} h'
         : '${(fixAgeSec / 60).ceil()} min';
-    return Card(
-      color: onTrack
-          ? AppTheme.success.withValues(alpha: 0.10)
-          : AppTheme.danger.withValues(alpha: 0.10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+    return UiverseSurface(
+      accent: onTrack ? AppTheme.success : AppTheme.danger,
+      padding: const EdgeInsets.all(16),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                Text(onTrack ? '🟢 On Track' : '🔴 Running behind',
+                Icon(
+                  onTrack ? Icons.check_circle : Icons.error,
+                  color: onTrack ? AppTheme.success : AppTheme.danger,
+                  size: 20,
+                ),
+                const SizedBox(width: 7),
+                Text(onTrack ? 'On Track' : 'Running behind',
                     style: Theme.of(context)
                         .textTheme
                         .titleSmall
                         ?.copyWith(fontWeight: FontWeight.w800)),
                 const Spacer(),
-                Text('⏳ ${AutopilotEngine.formatDurationLabel(left)} left',
+                const Icon(Icons.hourglass_bottom, size: 18),
+                const SizedBox(width: 5),
+                Text('${AutopilotEngine.formatDurationLabel(left)} left',
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
@@ -963,9 +991,9 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   _svc.atDestination
-                      ? '🎯 ${_svc.destinationName} — planning around '
+                      ? '${_svc.destinationName} — planning around '
                           'your current position'
-                      : '🎯 ${_svc.destinationName} · '
+                      : '${_svc.destinationName} · '
                           '${GeoUtils.formatDistance(_svc.destinationDistanceMeters)} '
                           'from you — suggestions come from there',
                   style: Theme.of(context)
@@ -975,7 +1003,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 ),
               ),
             Text(
-                'CURRENT: ${focus == null ? '📍 Pick your first stop' : '📍 ${focus.name}'}',
+                'CURRENT: ${focus == null ? 'Pick your first stop' : focus.name}',
                 style: Theme.of(context).textTheme.bodyMedium),
             // ── live monitoring: where you are vs where the plan expects
             // you at this minute. The traveller asked for exactly this — the
@@ -984,7 +1012,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '🧭 ${GeoUtils.formatDistance(liveDist)} to ${focus.name}'
+                  '${GeoUtils.formatDistance(liveDist)} to ${focus.name}'
                   ' · $liveTravel · $liveSchedule$liveDrift',
                   style: Theme.of(context)
                       .textTheme
@@ -996,13 +1024,13 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '🧭 Reading your position to track ${focus.name}…',
+                  'Reading your position to track ${focus.name}…',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
             if (focus != null && fixAgeSec > 120)
               Text(
-                '📡 GPS last seen $fixAge ago — '
+                'GPS last seen $fixAge ago — '
                 'tracking may lag while you move',
                 style: Theme.of(context)
                     .textTheme
@@ -1014,7 +1042,6 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                   style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
-      ),
     );
   }
 
@@ -1052,7 +1079,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                   Expanded(
                     child: Text(
                       journey[i].name == 'Break'
-                          ? '😴 Break (30 min)'
+                          ? 'Break (30 min)'
                           : journey[i].name,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1080,7 +1107,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('🛟 YOUR PLAN HAS CHANGED',
+            Text('YOUR PLAN HAS CHANGED',
                 style: Theme.of(context)
                     .textTheme
                     .titleSmall
@@ -1182,7 +1209,14 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 children: <Widget>[
                   for (final AutopilotInterest i in AutopilotInterest.values)
                     FilterChip(
-                      label: Text('${i.emoji} ${i.label}'),
+                      label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(i.icon, size: 17),
+                    const SizedBox(width: 6),
+                    Text(i.label),
+                  ],
+                ),
                       selected: picked.contains(i),
                       onSelected: (bool on) => setSheet(() =>
                           on ? picked.add(i) : picked.remove(i)),
@@ -1228,7 +1262,7 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Text(s.emoji),
+                  leading: Icon(s.icon),
                   title: Text(s.name),
                   subtitle: Text(
                       '~${s.travelMinutes} min away · ${s.reasons.first}',
@@ -1320,15 +1354,31 @@ class _AutopilotScreenState extends State<AutopilotScreen> {
 }
 
 extension on AutopilotSuggestion {
-  String get emoji => switch (category) {
-        'restaurant' || 'food' || 'fast_food' => '🍽️',
-        'cafe' => '☕',
-        'museum' => '🏛️',
-        'park' => '🌳',
-        'shopping' => '🛍️',
-        'hotel' => '🏨',
-        'attraction' => '📸',
-        'fuel' => '⛽',
-        _ => '📍',
+  IconData get icon => switch (category) {
+        'restaurant' || 'food' || 'fast_food' => Icons.restaurant_outlined,
+        'cafe' => Icons.local_cafe_outlined,
+        'museum' => Icons.museum_outlined,
+        'park' || 'garden' => Icons.park_outlined,
+        'shopping' || 'shopping_mall' => Icons.shopping_bag_outlined,
+        'hotel' => Icons.hotel_outlined,
+        'attraction' || 'tourist_attraction' => Icons.attractions_outlined,
+        'fuel' => Icons.local_gas_station_outlined,
+        _ => Icons.place_outlined,
+      };
+}
+
+extension on AutopilotInterest {
+  IconData get icon => switch (this) {
+        AutopilotInterest.eat => Icons.restaurant_outlined,
+        AutopilotInterest.explore => Icons.travel_explore,
+        AutopilotInterest.shopping => Icons.shopping_bag_outlined,
+        AutopilotInterest.relax => Icons.park_outlined,
+        AutopilotInterest.entertainment => Icons.theater_comedy_outlined,
+        AutopilotInterest.sightseeing => Icons.photo_camera_outlined,
+        AutopilotInterest.historical => Icons.account_balance_outlined,
+        AutopilotInterest.family => Icons.family_restroom,
+        AutopilotInterest.work => Icons.laptop_mac_outlined,
+        AutopilotInterest.roadtrip => Icons.directions_car_outlined,
+        AutopilotInterest.other => Icons.tune,
       };
 }

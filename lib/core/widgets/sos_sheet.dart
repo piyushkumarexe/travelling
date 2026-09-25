@@ -178,7 +178,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
     unawaited(_c.notificationsRepository
         .add(
       uid: _c.authRepository.currentUser?.uid ?? 'guest',
-      title: sent ? '📍 SOS location sent to your contact' : 'SOS contact alert',
+      title: sent ? 'SOS location sent to your contact' : 'SOS contact alert',
       body: sent
           ? 'Your coordinates and a map link were sent to your SOS contact '
               'by SMS.'

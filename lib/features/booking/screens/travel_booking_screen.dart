@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/state/app_container.dart';
+import '../booking_icons.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
 import '../price_compare.dart';
@@ -57,8 +58,15 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
         BookingProviders.forCategory(widget.category);
     return Scaffold(
       appBar: AppBar(
-          title: Text('${widget.category.emoji} Book '
-              '${widget.category.label}')),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(widget.category.icon),
+            const SizedBox(width: 8),
+            Text('Book ${widget.category.label}'),
+          ],
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: <Widget>[
@@ -240,7 +248,7 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
     if (!mounted) return;
     if (p == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('📍 Location unavailable — type the city instead.')));
+          content: Text('Location unavailable — type the city instead.')));
       return;
     }
     // FreeGeoClient has no reverse geocoding; label honestly with coords.
@@ -314,7 +322,8 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         onTap: busy ? null : () => _confirm(p),
-        leading: Text(p.emoji, style: const TextStyle(fontSize: 22)),
+        leading: Icon(
+            providerIcon(p.providerName, category: widget.category)),
         title: Text(p.providerName,
             style: const TextStyle(fontWeight: FontWeight.w800)),
         subtitle: Text(p.handoffNote,
@@ -412,9 +421,16 @@ class _TravelBookingScreenState extends State<TravelBookingScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text('${p.emoji} Continue with ${p.providerName}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 16)),
+              Row(
+                children: <Widget>[
+                  Icon(providerIcon(p.providerName,
+                      category: widget.category)),
+                  const SizedBox(width: 8),
+                  Text('Continue with ${p.providerName}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
               const SizedBox(height: 10),
               if (_needsFrom && _from.text.trim().isNotEmpty)
                 _row('From', _from.text.trim()),

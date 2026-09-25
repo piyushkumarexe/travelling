@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../expense_math.dart';
+import '../expense_icons.dart';
 import '../expense_models.dart';
 import '../expense_repository.dart';
 
@@ -282,7 +283,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             children: <Widget>[
               for (final ExpenseCategory c in ExpenseCategory.all)
                 ChoiceChip(
-                  label: Text('${c.emoji} ${c.label}'),
+                  avatar: Icon(c.icon, size: 18),
+                  label: Text(c.label),
                   selected: _category == c.id,
                   onSelected: (bool _) => setState(() => _category = c.id),
                 ),

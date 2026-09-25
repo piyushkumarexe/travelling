@@ -264,6 +264,23 @@ class AutopilotService extends ChangeNotifier {
 
   // ---------------- Flow: start ----------------
 
+  /// The one allowed construction path for an explicit Generate action.
+  /// Keeping this pure makes the no-history/no-old-deadline contract directly
+  /// testable without a GPS or place-provider fake.
+  @visibleForTesting
+  static AutopilotSession freshSessionForGenerate(
+    AutopilotBrief brief,
+    DateTime now, {
+    String? id,
+  }) =>
+      AutopilotSession(
+        id: id ?? 'ap-${now.millisecondsSinceEpoch}',
+        brief: brief,
+        startedAt: now,
+        endsAt: now.add(Duration(minutes: brief.availableMinutes ?? 120)),
+        stops: const <AutopilotStop>[],
+      );
+
   /// "What do you want to do?" → time → [GENERATE].
   /// Works with ZERO itinerary: only location (+ optional time) required.
   ///
@@ -289,15 +306,12 @@ class AutopilotService extends ChangeNotifier {
     // plan expects you) is driven by the session, and tying it to an optional
     // field meant that leaving the field blank gave suggestions with no
     // tracking at all.
-    final DateTime endsAt =
-        now().add(Duration(minutes: brief.availableMinutes ?? 120));
-    _session ??= AutopilotSession(
-      id: 'ap-${now().millisecondsSinceEpoch}',
-      brief: _brief,
-      startedAt: now(),
-      endsAt: endsAt,
-      stops: const <AutopilotStop>[],
-    );
+    // GENERATE means a NEW plan. `??=` reused a persisted session, including
+    // all its visited/skipped place IDs and old deadline; the next run then
+    // filtered every fresh result as "already visited" and showed the exact
+    // false empty state reported on-device. Resume happens on screen load —
+    // explicit Generate must always reset plan history and the clock.
+    _session = freshSessionForGenerate(_brief, now());
     notifyListeners();
     return recompute();
   }
@@ -357,7 +371,7 @@ class AutopilotService extends ChangeNotifier {
       if (_dataset.isEmpty) {
         try {
           _dataset =
-              await _wideSweep(center).timeout(const Duration(seconds: 30));
+              await _wideSweep(center).timeout(const Duration(seconds: 45));
         } catch (_) {
           // Timeout or total outage — reported as an empty area below.
         }
@@ -431,12 +445,26 @@ class AutopilotService extends ChangeNotifier {
   LatLng? _center;
 
   void _rank(LatLng center, {String? originLabel}) {
-    final List<Place> candidates = AutopilotEngine.candidatesFor(
+    List<Place> candidates = AutopilotEngine.candidatesFor(
       _dataset,
       _brief,
       excludeLat: center.latitude,
       excludeLng: center.longitude,
     );
+    // Provider taxonomies evolve independently (Google may say
+    // `historical_landmark`, OSM `tourism=attraction`, Photon just
+    // `point_of_interest`). If strict interest matching yields zero, recover
+    // with every non-essential real place instead of lying that the whole
+    // area is visited/closed. Interest remains a ranking preference whenever
+    // a recognised category exists.
+    if (candidates.isEmpty && _dataset.isNotEmpty) {
+      candidates = AutopilotEngine.candidatesFor(
+        _dataset,
+        _brief.copyWith(interests: const <AutopilotInterest>{}),
+        excludeLat: center.latitude,
+        excludeLng: center.longitude,
+      );
+    }
     // Already-visited/skipped/removed places never come back.
     final Set<String> used = <String>{
       for (final AutopilotStop s in _session?.stops ?? const <AutopilotStop>[])
@@ -728,25 +756,27 @@ class AutopilotService extends ChangeNotifier {
   /// dropped by name + position so a place found under two interests counts
   /// once.
   Future<List<Place>> _wideSweep(LatLng center) async {
-    final List<String> wanted = <String>[
+    final List<String> wanted = <String>{
       ..._brief.interests
           .map((AutopilotInterest i) => _interestSearchTerm[i] ?? 'attraction'),
       'tourist attraction',
-      'viewpoint',
+      'historical landmark',
+      'place of worship',
       'museum',
       'park',
       'restaurant',
-    ];
+      'shopping mall',
+    }.toList();
     final List<Place> out = <Place>[];
     final Set<String> seen = <String>{};
-    for (final String label in wanted.take(5)) {
-      // Ten good options is plenty for a plan — stopping here is what keeps
-      // the sweep from turning into a 45-second wait.
-      if (out.length >= 10) break;
+    for (final String label in wanted.take(8)) {
+      // A useful 10-hour plan needs more than two cards. Stop at 18 unique
+      // places, while still keeping provider calls sequential/rate-safe.
+      if (out.length >= 18) break;
       try {
         final List<Place> found = await _places
             .search(label, location: center, radiusMeters: 25000)
-            .timeout(const Duration(seconds: 14));
+            .timeout(const Duration(seconds: 10));
         for (final Place p in found) {
           if (p.category == 'locality' ||
               p.category == 'administrative' ||

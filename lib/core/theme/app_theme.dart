@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
-/// Tourism "clean" theme — shadcn-inspired: neutral surfaces, hairline
-/// borders, restrained shadows and a single indigo accent. No gradients, no
-/// neon glow — professional, neat and consistent.
+/// Tourism Aurora V2 — an intentionally visible visual redesign: lavender
+/// canvas, elevated pearl surfaces, indigo/cyan identity, larger radii and
+/// tactile controls. Expensive live blur is avoided so the stronger look does
+/// not cost map/list performance on mid-range Android phones.
 class AppTheme {
   AppTheme._();
 
   // Indigo accent (shadcn-style primary).
-  static const Color brandStart = Color(0xFF4F46E5);
-  static const Color brandEnd = Color(0xFF6366F1);
+  static const Color brandStart = Color(0xFF5B4BDB);
+  static const Color brandEnd = Color(0xFF06B6D4);
 
   // Kept for backwards-compat with existing call sites.
   static const Color seed = brandStart;
@@ -18,7 +19,7 @@ class AppTheme {
   static const Color warning = Color(0xFFD97706);
   static const Color success = Color(0xFF16A34A);
 
-  static const double cardRadius = 14;
+  static const double cardRadius = 20;
 
   /// Subtle, shadcn-style shadow (1px hairline + faint elevation).
   static List<BoxShadow> softShadow(BuildContext context) {
@@ -43,11 +44,22 @@ class AppTheme {
     ).copyWith(
       primary: dark ? brandEnd : brandStart,
       onPrimary: Colors.white,
-      surface: dark ? const Color(0xFF18181B) : Colors.white,
-      outline: dark ? const Color(0xFF3F3F46) : const Color(0xFFE4E4E7),
+      surface: dark ? const Color(0xFF151824) : const Color(0xFFFEFDFF),
+      surfaceContainerLowest:
+          dark ? const Color(0xFF10131D) : const Color(0xFFFFFFFF),
+      surfaceContainerLow:
+          dark ? const Color(0xFF191C29) : const Color(0xFFF9F7FF),
+      surfaceContainer:
+          dark ? const Color(0xFF1F2230) : const Color(0xFFF0EEFF),
+      secondary: dark ? const Color(0xFF22D3EE) : const Color(0xFF0891B2),
+      tertiary: dark ? const Color(0xFFF9A8D4) : const Color(0xFFDB2777),
+      outline: dark ? const Color(0xFF41465B) : const Color(0xFFD9D5F0),
+      outlineVariant:
+          dark ? const Color(0xFF2C3040) : const Color(0xFFE7E3F7),
     );
 
-    final Color scaffold = dark ? const Color(0xFF09090B) : const Color(0xFFFAFAFA);
+    final Color scaffold =
+        dark ? const Color(0xFF090B12) : const Color(0xFFF3F1FC);
 
     return ThemeData(
       useMaterial3: true,
@@ -61,17 +73,24 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
+        toolbarHeight: 64,
+        titleSpacing: 18,
         titleTextStyle: TextStyle(
           color: scheme.onSurface,
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.2,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.45,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: dark ? const Color(0xFF18181B) : Colors.white,
-        indicatorColor: brandStart.withValues(alpha: dark ? 0.22 : 0.10),
-        elevation: 1,
+        backgroundColor:
+            dark ? const Color(0xFF151824) : const Color(0xFFFEFDFF),
+        indicatorColor: brandStart.withValues(alpha: dark ? 0.28 : 0.14),
+        elevation: 8,
+        height: 72,
+        indicatorShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
         labelTextStyle: WidgetStatePropertyAll<TextStyle>(
           TextStyle(
             fontSize: 12,
@@ -92,20 +111,26 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: scheme.primary,
           foregroundColor: Colors.white,
+          minimumSize: const Size(48, 52),
+          elevation: 3,
+          shadowColor: scheme.primary.withValues(alpha: 0.28),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(17),
           ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: scheme.onSurface,
+          foregroundColor: scheme.primary,
+          backgroundColor: scheme.surface.withValues(alpha: 0.78),
+          minimumSize: const Size(48, 52),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(17),
           ),
-          side: BorderSide(color: scheme.outline),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          side: BorderSide(
+              color: scheme.primary.withValues(alpha: 0.24), width: 1.2),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -119,32 +144,56 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: dark ? const Color(0xFF27272A) : const Color(0xFFF4F4F5),
-        isDense: true,
+        fillColor:
+            dark ? const Color(0xFF1D2130) : const Color(0xFFFEFDFF),
+        isDense: false,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.outline),
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.outline),
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.primary, width: 1.4),
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: scheme.primary, width: 1.8),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide(color: scheme.error),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: scheme.error, width: 1.4),
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: scheme.error, width: 1.8),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 2,
+        shadowColor: scheme.primary.withValues(alpha: dark ? 0.18 : 0.10),
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(cardRadius),
+          side: BorderSide(
+              color: scheme.primary.withValues(alpha: dark ? 0.22 : 0.12)),
         ),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        side: BorderSide(color: scheme.outline),
+        backgroundColor: scheme.surface,
+        selectedColor: scheme.primary.withValues(alpha: 0.16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        side: BorderSide(color: scheme.primary.withValues(alpha: 0.18)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color?>((states) =>
+            states.contains(WidgetState.selected) ? Colors.white : null),
+        trackColor: WidgetStateProperty.resolveWith<Color?>((states) =>
+            states.contains(WidgetState.selected) ? scheme.primary : null),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,

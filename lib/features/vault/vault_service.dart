@@ -219,7 +219,7 @@ class VaultService extends ChangeNotifier {
         previous.remove(id);
         final bool ok = await _notifications.schedule(
           id: id,
-          title: '${doc.type.emoji} ${doc.type.label} reminder',
+          title: '${doc.type.label} reminder',
           body: '${doc.title} expires on '
               '${expiry.day}/${expiry.month}/${expiry.year}.',
           at: at,

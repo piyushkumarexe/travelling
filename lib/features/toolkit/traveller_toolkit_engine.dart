@@ -169,51 +169,260 @@ class TravellerToolkitEngine {
   // 4. INDIA PHRASEBOOK
   // -----------------------------------------------------------------------
 
-  static const List<TravelPhrase> phrases = <TravelPhrase>[
-    TravelPhrase('Hello / Namaste', 'नमस्ते', 'Namaste', 'Basics'),
-    TravelPhrase('Thank you', 'धन्यवाद', 'Dhanyavaad', 'Basics'),
-    TravelPhrase('Please', 'कृपया', 'Kripya', 'Basics'),
-    TravelPhrase('Yes / No', 'हाँ / नहीं', 'Haan / Nahin', 'Basics'),
-    TravelPhrase('How much does this cost?', 'यह कितने का है?',
-        'Yeh kitne ka hai?', 'Shopping'),
-    TravelPhrase('Please use the meter', 'कृपया मीटर चलाइए',
-        'Kripya meter chalaiye', 'Transport'),
-    TravelPhrase('Take me to this address', 'मुझे इस पते पर ले चलिए',
-        'Mujhe is pate par le chaliye', 'Transport'),
-    TravelPhrase('Please stop here', 'कृपया यहाँ रोकिए',
-        'Kripya yahaan rokiye', 'Transport'),
-    TravelPhrase('Where is the toilet?', 'शौचालय कहाँ है?',
-        'Shauchalay kahaan hai?', 'Essentials'),
-    TravelPhrase('No onion / garlic', 'बिना प्याज़ / लहसुन के',
-        'Bina pyaaz / lehsun ke', 'Food'),
-    TravelPhrase('I have an allergy', 'मुझे एलर्जी है',
-        'Mujhe allergy hai', 'Health'),
-    TravelPhrase('I need a doctor', 'मुझे डॉक्टर चाहिए',
-        'Mujhe doctor chahiye', 'Emergency'),
-    TravelPhrase('Please call the police', 'कृपया पुलिस को बुलाइए',
-        'Kripya police ko bulaiye', 'Emergency'),
-    TravelPhrase('I am lost', 'मैं रास्ता भूल गया / गई हूँ',
-        'Main raasta bhool gaya / gayi hoon', 'Emergency'),
-    TravelPhrase('Is it safe to go there?', 'क्या वहाँ जाना सुरक्षित है?',
-        'Kya vahaan jaana surakshit hai?', 'Safety'),
-    TravelPhrase('Can I pay by UPI?', 'क्या मैं UPI से भुगतान कर सकता हूँ?',
-        'Kya main UPI se bhugtaan kar sakta hoon?', 'Shopping'),
-  ];
+  static const String _phraseRows = r'''
+Hello / Namaste|नमस्ते|Namaste|Basics|hello hi
+Good morning|सुप्रभात|Suprabhat|Basics|morning
+Good evening|शुभ संध्या|Shubh sandhya|Basics|evening
+Good night|शुभ रात्रि|Shubh ratri|Basics|night
+Thank you|धन्यवाद|Dhanyavaad|Basics|thanks
+Please|कृपया|Kripya|Basics|request
+Sorry|माफ़ कीजिए|Maaf kijiye|Basics|apology
+Excuse me|सुनिए|Suniye|Basics|attention
+Yes|हाँ|Haan|Basics|agree
+No|नहीं|Nahin|Basics|refuse
+Okay|ठीक है|Theek hai|Basics|ok fine
+What happened?|क्या हुआ?|Kya hua?|Basics|problem wrong happened
+I understand|मैं समझ गया / गई|Main samajh gaya / gayi|Basics|understand
+I do not understand|मुझे समझ नहीं आया|Mujhe samajh nahin aaya|Basics|confused repeat
+Please speak slowly|कृपया धीरे बोलिए|Kripya dheere boliye|Basics|slow speak
+Can you repeat that?|क्या आप दोबारा बोल सकते हैं?|Kya aap dobara bol sakte hain?|Basics|repeat again
+Do you speak English?|क्या आप अंग्रेज़ी बोलते हैं?|Kya aap Angrezi bolte hain?|Basics|english language
+My name is…|मेरा नाम … है|Mera naam … hai|Basics|name introduction
+Nice to meet you|आपसे मिलकर अच्छा लगा|Aapse milkar achha laga|Basics|meet
+How are you?|आप कैसे हैं?|Aap kaise hain?|Basics|wellbeing
+I am fine|मैं ठीक हूँ|Main theek hoon|Basics|fine
+Where is this place?|यह जगह कहाँ है?|Yeh jagah kahaan hai?|Directions|location
+How do I get there?|मैं वहाँ कैसे जाऊँ?|Main vahaan kaise jaaun?|Directions|route reach
+Please show me on the map|कृपया नक्शे पर दिखाइए|Kripya nakshe par dikhaiye|Directions|map show
+Is it far?|क्या यह दूर है?|Kya yeh door hai?|Directions|distance
+Is it nearby?|क्या यह पास में है?|Kya yeh paas mein hai?|Directions|near
+Turn left|बाएँ मुड़िए|Baayen mudiye|Directions|left
+Turn right|दाएँ मुड़िए|Daayen mudiye|Directions|right
+Go straight|सीधे जाइए|Seedhe jaiye|Directions|straight
+Stop here|यहाँ रोकिए|Yahaan rokiye|Directions|stop
+Which road is this?|यह कौन सी सड़क है?|Yeh kaun si sadak hai?|Directions|street road
+I am lost|मैं रास्ता भूल गया / गई हूँ|Main raasta bhool gaya / gayi hoon|Directions|lost help
+Where is the entrance?|प्रवेश द्वार कहाँ है?|Pravesh dwaar kahaan hai?|Directions|entry gate
+Where is the exit?|निकास कहाँ है?|Nikaas kahaan hai?|Directions|way out
+Which platform?|कौन सा प्लेटफ़ॉर्म?|Kaun sa platform?|Transport|train platform
+When does the train leave?|ट्रेन कब चलेगी?|Train kab chalegi?|Transport|departure rail
+Is the train on time?|क्या ट्रेन समय पर है?|Kya train samay par hai?|Transport|delay rail
+Where is the bus stop?|बस स्टॉप कहाँ है?|Bus stop kahaan hai?|Transport|bus
+Which bus goes there?|वहाँ कौन सी बस जाती है?|Vahaan kaun si bus jaati hai?|Transport|bus route
+Please use the meter|कृपया मीटर चलाइए|Kripya meter chalaiye|Transport|taxi auto meter
+Take me to this address|मुझे इस पते पर ले चलिए|Mujhe is pate par le chaliye|Transport|cab taxi address
+Please stop here|कृपया यहाँ रोकिए|Kripya yahaan rokiye|Transport|cab stop
+How long will it take?|कितना समय लगेगा?|Kitna samay lagega?|Transport|eta time
+What is the fare?|किराया कितना है?|Kiraya kitna hai?|Transport|price cost
+That fare is too high|यह किराया बहुत ज़्यादा है|Yeh kiraya bahut zyada hai|Transport|overcharge expensive
+Please follow the map route|कृपया नक्शे वाला रास्ता लीजिए|Kripya nakshe wala raasta lijiye|Transport|route map
+I booked this ride|मैंने यह राइड बुक की है|Maine yeh ride book ki hai|Transport|booking cab
+This is not my destination|यह मेरी मंज़िल नहीं है|Yeh meri manzil nahin hai|Transport|wrong drop
+Where is the airport?|हवाई अड्डा कहाँ है?|Hawai adda kahaan hai?|Transport|flight airport
+Where is the railway station?|रेलवे स्टेशन कहाँ है?|Railway station kahaan hai?|Transport|train station
+I have a reservation|मेरी बुकिंग है|Meri booking hai|Hotel|reservation
+I need a room|मुझे एक कमरा चाहिए|Mujhe ek kamra chahiye|Hotel|room
+Is a room available?|क्या कमरा उपलब्ध है?|Kya kamra uplabdh hai?|Hotel|vacancy
+What is the price per night?|एक रात का किराया कितना है?|Ek raat ka kiraya kitna hai?|Hotel|rate cost
+May I see the room?|क्या मैं कमरा देख सकता / सकती हूँ?|Kya main kamra dekh sakta / sakti hoon?|Hotel|inspect
+The room is not clean|कमरा साफ़ नहीं है|Kamra saaf nahin hai|Hotel|dirty complaint
+The AC is not working|एसी काम नहीं कर रहा|AC kaam nahin kar raha|Hotel|air conditioning broken
+There is no hot water|गरम पानी नहीं आ रहा|Garam paani nahin aa raha|Hotel|bathroom water
+Please change my room|कृपया मेरा कमरा बदल दीजिए|Kripya mera kamra badal dijiye|Hotel|complaint
+What time is checkout?|चेकआउट कितने बजे है?|Checkout kitne baje hai?|Hotel|checkout time
+Please keep my luggage|कृपया मेरा सामान रख लीजिए|Kripya mera samaan rakh lijiye|Hotel|bags storage
+What is the Wi-Fi password?|वाई-फ़ाई का पासवर्ड क्या है?|Wi-Fi ka password kya hai?|Hotel|internet
+Where is breakfast?|नाश्ता कहाँ मिलेगा?|Nashta kahaan milega?|Hotel|food morning
+A table for two please|दो लोगों के लिए मेज़ चाहिए|Do logon ke liye mez chahiye|Food|restaurant table
+May I see the menu?|क्या मैं मेन्यू देख सकता / सकती हूँ?|Kya main menu dekh sakta / sakti hoon?|Food|menu
+What do you recommend?|आप क्या सुझाएँगे?|Aap kya sujhayenge?|Food|recommend dish
+Not spicy please|कृपया कम मसालेदार|Kripya kam masaledaar|Food|spice mild
+Very spicy please|कृपया ज़्यादा मसालेदार|Kripya zyada masaledaar|Food|spice hot
+No onion|बिना प्याज़ के|Bina pyaaz ke|Food|allergy onion
+No garlic|बिना लहसुन के|Bina lehsun ke|Food|allergy garlic
+I am vegetarian|मैं शाकाहारी हूँ|Main shakahari hoon|Food|veg
+I am vegan|मैं वीगन हूँ|Main vegan hoon|Food|vegan
+I do not eat eggs|मैं अंडा नहीं खाता / खाती|Main anda nahin khata / khati|Food|egg
+Is this halal?|क्या यह हलाल है?|Kya yeh halal hai?|Food|halal
+I have a food allergy|मुझे खाने से एलर्जी है|Mujhe khaane se allergy hai|Food|allergy
+Please give bottled water|कृपया बोतलबंद पानी दीजिए|Kripya bottled paani dijiye|Food|water sealed
+The bill please|कृपया बिल दीजिए|Kripya bill dijiye|Food|payment
+Please pack this|कृपया इसे पैक कर दीजिए|Kripya ise pack kar dijiye|Food|takeaway parcel
+How much does this cost?|यह कितने का है?|Yeh kitne ka hai?|Shopping|price
+Can you reduce the price?|क्या दाम कम हो सकता है?|Kya daam kam ho sakta hai?|Shopping|bargain discount
+Fixed price?|क्या दाम तय है?|Kya daam tay hai?|Shopping|fixed rate
+This is too expensive|यह बहुत महँगा है|Yeh bahut mehnga hai|Shopping|cost high
+Do you have a smaller size?|क्या छोटा साइज़ है?|Kya chhota size hai?|Shopping|clothes
+Do you have a larger size?|क्या बड़ा साइज़ है?|Kya bada size hai?|Shopping|clothes
+Can I pay by UPI?|क्या मैं UPI से भुगतान कर सकता हूँ?|Kya main UPI se bhugtaan kar sakta hoon?|Shopping|payment digital
+Can I pay by card?|क्या कार्ड से भुगतान हो सकता है?|Kya card se bhugtaan ho sakta hai?|Shopping|payment
+Please give me a receipt|कृपया रसीद दीजिए|Kripya raseed dijiye|Shopping|bill proof
+I do not want this|मुझे यह नहीं चाहिए|Mujhe yeh nahin chahiye|Shopping|refuse
+Where is the toilet?|शौचालय कहाँ है?|Shauchalay kahaan hai?|Essentials|washroom bathroom
+Where can I get water?|पानी कहाँ मिलेगा?|Paani kahaan milega?|Essentials|drink
+Where is an ATM?|एटीएम कहाँ है?|ATM kahaan hai?|Essentials|cash
+Where is a pharmacy?|दवाई की दुकान कहाँ है?|Dawai ki dukaan kahaan hai?|Essentials|medicine chemist
+Where can I charge my phone?|फ़ोन कहाँ चार्ज कर सकता / सकती हूँ?|Phone kahaan charge kar sakta / sakti hoon?|Essentials|battery
+Is there free Wi-Fi?|क्या मुफ़्त वाई-फ़ाई है?|Kya muft Wi-Fi hai?|Essentials|internet
+I need a SIM card|मुझे सिम कार्ड चाहिए|Mujhe SIM card chahiye|Essentials|mobile
+Please write it down|कृपया लिख दीजिए|Kripya likh dijiye|Essentials|write
+I need a doctor|मुझे डॉक्टर चाहिए|Mujhe doctor chahiye|Health|medical urgent emergency
+Call an ambulance|एम्बुलेंस बुलाइए|Ambulance bulaiye|Health|emergency 108
+Where is the hospital?|अस्पताल कहाँ है?|Aspataal kahaan hai?|Health|medical
+I feel sick|मेरी तबीयत खराब है|Meri tabiyat kharab hai|Health|ill
+I have a fever|मुझे बुखार है|Mujhe bukhaar hai|Health|temperature
+I have pain here|मुझे यहाँ दर्द है|Mujhe yahaan dard hai|Health|injury
+I am allergic to this medicine|मुझे इस दवा से एलर्जी है|Mujhe is dawa se allergy hai|Health|medicine
+I need ORS|मुझे ओआरएस चाहिए|Mujhe ORS chahiye|Health|dehydration
+I cannot breathe properly|मुझे साँस लेने में दिक्कत है|Mujhe saans lene mein dikkat hai|Health|urgent
+I am diabetic|मुझे मधुमेह है|Mujhe madhumeh hai|Health|diabetes
+Please call the police|कृपया पुलिस को बुलाइए|Kripya police ko bulaiye|Emergency|112 police
+Help me|मेरी मदद कीजिए|Meri madad kijiye|Emergency|help
+I am in danger|मैं खतरे में हूँ|Main khatre mein hoon|Emergency|unsafe
+My phone was stolen|मेरा फ़ोन चोरी हो गया|Mera phone chori ho gaya|Emergency|theft
+My wallet was stolen|मेरा बटुआ चोरी हो गया|Mera batua chori ho gaya|Emergency|theft money
+I lost my passport|मेरा पासपोर्ट खो गया|Mera passport kho gaya|Emergency|document
+Please contact my family|कृपया मेरे परिवार से संपर्क कीजिए|Kripya mere parivaar se sampark kijiye|Emergency|contact
+I need the embassy|मुझे दूतावास जाना है|Mujhe dootavaas jaana hai|Emergency|consulate
+Do not touch me|मुझे मत छूइए|Mujhe mat chhuiye|Safety|harassment
+Leave me alone|मुझे अकेला छोड़ दीजिए|Mujhe akela chhod dijiye|Safety|harassment
+I do not consent|मैं सहमत नहीं हूँ|Main sahmat nahin hoon|Safety|consent
+Is it safe to go there?|क्या वहाँ जाना सुरक्षित है?|Kya vahaan jaana surakshit hai?|Safety|risk
+Show me your official ID|अपना आधिकारिक पहचान पत्र दिखाइए|Apna adhikarik pehchan patra dikhaiye|Safety|scam police id
+I will call 112|मैं 112 पर कॉल करूँगा / करूँगी|Main 112 par call karunga / karungi|Safety|police emergency
+Please do not take a detour|कृपया दूसरा लंबा रास्ता मत लीजिए|Kripya doosra lamba raasta mat lijiye|Safety|taxi route
+I will pay only the shown amount|मैं केवल दिखाया गया पैसा दूँगा / दूँगी|Main keval dikhaya gaya paisa doonga / doongi|Safety|overcharge
+Where is the ticket counter?|टिकट काउंटर कहाँ है?|Ticket counter kahaan hai?|Sightseeing|entry
+What is the entry fee?|प्रवेश शुल्क कितना है?|Pravesh shulk kitna hai?|Sightseeing|ticket price
+What time does it open?|यह कितने बजे खुलता है?|Yeh kitne baje khulta hai?|Sightseeing|hours
+What time does it close?|यह कितने बजे बंद होता है?|Yeh kitne baje band hota hai?|Sightseeing|hours
+Is photography allowed?|क्या फ़ोटो लेना मना है?|Kya photo lena mana hai?|Sightseeing|camera
+Can you take my photo?|क्या आप मेरी फ़ोटो ले सकते हैं?|Kya aap meri photo le sakte hain?|Sightseeing|camera
+I need a local guide|मुझे स्थानीय गाइड चाहिए|Mujhe sthaniya guide chahiye|Sightseeing|tour
+Where is the information desk?|जानकारी केंद्र कहाँ है?|Jaankari kendra kahaan hai?|Sightseeing|help desk
+Is there an audio guide?|क्या ऑडियो गाइड उपलब्ध है?|Kya audio guide uplabdh hai?|Sightseeing|tour
+How old is this place?|यह जगह कितनी पुरानी है?|Yeh jagah kitni purani hai?|Sightseeing|history
+May I enter?|क्या मैं अंदर जा सकता / सकती हूँ?|Kya main andar ja sakta / sakti hoon?|Sightseeing|permission
+Please remove your shoes here|कृपया यहाँ जूते उतारिए|Kripya yahaan joote utariye|Culture|temple etiquette
+Is there a dress code?|क्या कोई पहनावे का नियम है?|Kya koi pehnaave ka niyam hai?|Culture|clothes temple
+May I take a photo here?|क्या मैं यहाँ फ़ोटो ले सकता / सकती हूँ?|Kya main yahaan photo le sakta / sakti hoon?|Culture|permission
+Where should I queue?|लाइन कहाँ लगेगी?|Line kahaan lagegi?|Culture|queue
+Ladies queue where?|महिलाओं की लाइन कहाँ है?|Mahilaon ki line kahaan hai?|Culture|women queue
+Please cover your head|कृपया सिर ढक लीजिए|Kripya sir dhak lijiye|Culture|religious etiquette
+Is this drinking water?|क्या यह पीने का पानी है?|Kya yeh peene ka paani hai?|Essentials|safe water
+I need mobile data|मुझे मोबाइल डेटा चाहिए|Mujhe mobile data chahiye|Connectivity|internet sim
+The network is not working|नेटवर्क काम नहीं कर रहा|Network kaam nahin kar raha|Connectivity|signal
+Please share the Wi-Fi|कृपया वाई-फ़ाई बताइए|Kripya Wi-Fi bataiye|Connectivity|password
+Can I use your phone?|क्या मैं आपका फ़ोन इस्तेमाल कर सकता / सकती हूँ?|Kya main aapka phone istemaal kar sakta / sakti hoon?|Connectivity|call
+Please send the location|कृपया लोकेशन भेजिए|Kripya location bhejiye|Connectivity|map share
+''';
+
+  static final List<TravelPhrase> phrases = _phraseRows
+      .trim()
+      .split('\n')
+      .map((String row) {
+        final List<String> p = row.split('|');
+        return TravelPhrase(
+          p[0],
+          p[1],
+          p[2],
+          p[3],
+          keywords: p.length > 4 ? p[4] : '',
+        );
+      })
+      .toList(growable: false);
 
   static List<TravelPhrase> searchPhrases(String query) {
-    final String q = query.trim().toLowerCase();
+    String normalise(String value) => value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\u0900-\u097f]+'), ' ')
+        .trim();
+    final String q = normalise(query);
     if (q.isEmpty) return phrases;
-    return phrases
-        .where((TravelPhrase p) =>
-            p.english.toLowerCase().contains(q) ||
-            p.hindi.toLowerCase().contains(q) ||
-            p.roman.toLowerCase().contains(q) ||
-            p.category.toLowerCase().contains(q))
-        .toList();
+    final List<String> tokens =
+        q.split(RegExp(r'\s+')).where((String t) => t.isNotEmpty).toList();
+    return phrases.where((TravelPhrase p) {
+      final String haystack = normalise(
+          '${p.english} ${p.hindi} ${p.roman} ${p.category} ${p.keywords}');
+      // Full phrase first ("kya hua"), then order-independent token search
+      // ("doctor emergency", "meter taxi"). This remains deterministic and
+      // offline, unlike pretending a remote translation model is available.
+      return haystack.contains(q) ||
+          tokens.every((String token) => haystack.contains(token));
+    }).toList();
   }
 
   // -----------------------------------------------------------------------
-  // 5. TRAVEL UNIT CONVERTER
+  // 5. TOURIST SAFETY BRIEF
+  // -----------------------------------------------------------------------
+
+  static SafetyBrief assessSafety(SafetyInputs input) {
+    int risk = 0;
+    final List<String> actions = <String>[];
+    if (input.solo) {
+      risk += 12;
+      actions.add('Share your live trip with a trusted contact.');
+    }
+    if (input.afterDark) {
+      risk += 20;
+      actions.add('Prefer a verified ride and a well-lit pickup point.');
+    }
+    if (input.unfamiliarArea) {
+      risk += 16;
+      actions.add('Download the route and identify a staffed safe place.');
+    }
+    if (!input.liveShareOn) {
+      risk += 14;
+      actions.add('Turn on live location sharing before moving.');
+    }
+    if (!input.offlineMapReady) {
+      risk += 10;
+      actions.add('Download an offline map and save the destination address.');
+    }
+    if (!input.emergencyContactReady) {
+      risk += 18;
+      actions.add('Add an SOS contact and verify their phone number.');
+    }
+    if (input.batteryPercent < 30) {
+      risk += input.batteryPercent < 15 ? 18 : 10;
+      actions.add('Charge now or carry a power bank; preserve battery.');
+    }
+    if (input.carryingLargeCash) {
+      risk += 8;
+      actions.add('Split cash across secure locations and prefer traceable payment.');
+    }
+    risk = risk.clamp(0, 100);
+    if (actions.isEmpty) {
+      actions.add('Your basics are covered. Keep the route visible and stay alert.');
+    }
+    final SafetyLevel level = risk >= 65
+        ? SafetyLevel.high
+        : risk >= 35
+            ? SafetyLevel.elevated
+            : SafetyLevel.prepared;
+    return SafetyBrief(score: 100 - risk, level: level, actions: actions);
+  }
+
+  static const List<ScamCard> scamCards = <ScamCard>[
+    ScamCard('Taxi refuses meter / app fare',
+        'Do not argue in an isolated place. Ask for the shown fare, note the vehicle number, and move to a staffed pickup point.',
+        'मैं केवल ऐप / मीटर में दिखाया गया किराया दूँगा / दूँगी।'),
+    ScamCard('Fake police or document check',
+        'Ask for official ID, stay in public, and call 112 yourself. Never hand over an unlocked phone or wallet.',
+        'अपना आधिकारिक पहचान पत्र दिखाइए। मैं 112 पर कॉल करूँगा / करूँगी।'),
+    ScamCard('Card / UPI payment pressure',
+        'Verify the recipient name and amount. Never share an OTP, UPI PIN, screen share, or install an app.',
+        'मैं OTP या UPI PIN साझा नहीं करूँगा / करूँगी।'),
+    ScamCard('Closed attraction / hotel diversion',
+        'Check the official listing yourself. Do not follow a stranger to an alternative shop, hotel, or ticket office.',
+        'मैं आधिकारिक जानकारी स्वयं जाँचूँगा / जाँचूँगी।'),
+    ScamCard('Overfriendly guide demands money',
+        'Agree on service, duration and total price in writing before starting. Keep valuables with you.',
+        'पहले कुल कीमत लिखकर बताइए।'),
+  ];
+
+  // -----------------------------------------------------------------------
+  // 6. TRAVEL UNIT CONVERTER
   // -----------------------------------------------------------------------
 
   static double convert(double value, Conversion conversion) =>
@@ -314,11 +523,59 @@ class BudgetSplit {
 }
 
 class TravelPhrase {
-  const TravelPhrase(this.english, this.hindi, this.roman, this.category);
+  const TravelPhrase(
+    this.english,
+    this.hindi,
+    this.roman,
+    this.category, {
+    this.keywords = '',
+  });
   final String english;
   final String hindi;
   final String roman;
   final String category;
+  final String keywords;
+}
+
+class SafetyInputs {
+  const SafetyInputs({
+    required this.solo,
+    required this.afterDark,
+    required this.unfamiliarArea,
+    required this.liveShareOn,
+    required this.offlineMapReady,
+    required this.emergencyContactReady,
+    required this.batteryPercent,
+    required this.carryingLargeCash,
+  });
+  final bool solo;
+  final bool afterDark;
+  final bool unfamiliarArea;
+  final bool liveShareOn;
+  final bool offlineMapReady;
+  final bool emergencyContactReady;
+  final int batteryPercent;
+  final bool carryingLargeCash;
+}
+
+enum SafetyLevel { prepared, elevated, high }
+
+class SafetyBrief {
+  const SafetyBrief({
+    required this.score,
+    required this.level,
+    required this.actions,
+  });
+  final int score;
+  final SafetyLevel level;
+  final List<String> actions;
+}
+
+class ScamCard {
+  const ScamCard(this.title, this.action, this.hindiScript);
+  final String title;
+  final String action;
+  final String hindiScript;
 }
 
 enum Conversion {

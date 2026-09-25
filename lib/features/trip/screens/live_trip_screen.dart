@@ -774,9 +774,9 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
         final int lag = ap.liveLagMinutes;
         final ColorScheme scheme = Theme.of(context).colorScheme;
         final String status =
-            lag >= 3 ? '⚠ $lag min behind plan' : '🟢 on plan';
+            lag >= 3 ? '$lag min behind plan' : 'on plan';
         final String drift =
-            ap.liveMovingAway ? ' · 🔴 moving away' : '';
+            ap.liveMovingAway ? ' · moving away' : '';
         final String text =
             '${GeoUtils.formatDistance(d)} to ${stop.name} · $status$drift';
         return Padding(

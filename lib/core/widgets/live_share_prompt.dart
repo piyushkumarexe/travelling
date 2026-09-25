@@ -114,7 +114,7 @@ Future<LiveShareStartResult> showLiveSharePrompt(
   );
   if (ok) {
     c.liveLocationShare.recordHistoryEvent(
-      '📍 Live location sharing started',
+      'Live location sharing started',
       destinationName != null
           ? 'Your live location is being shared while you navigate to '
               '$destinationName.'

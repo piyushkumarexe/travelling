@@ -5,6 +5,7 @@ import '../../../core/state/app_container.dart';
 import '../../../core/utils/geo.dart';
 import '../../../data/models/places.dart';
 import '../../../data/repositories/places_repository.dart';
+import '../booking_icons.dart';
 import '../booking_models.dart';
 import '../booking_service.dart';
 import '../price_compare.dart';
@@ -152,9 +153,15 @@ class _PriceCompareBody extends StatelessWidget {
         controller: scroll,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: <Widget>[
-          Text('${category.emoji} Compare ${category.label} prices',
-              style: theme.textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+          Row(
+            children: <Widget>[
+              Icon(category.icon, color: scheme.primary),
+              const SizedBox(width: 9),
+              Text('Compare ${category.label} prices',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             km == null
@@ -198,7 +205,7 @@ class _PriceCompareBody extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('🧳 Whole-trip budget (${t.days} day(s), ${t.pax} pax)',
+            Text('Whole-trip budget (${t.days} day(s), ${t.pax} pax)',
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
@@ -267,7 +274,8 @@ class _PriceCompareBody extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Text(q.emoji, style: const TextStyle(fontSize: 20)),
+                Icon(providerIcon(q.providerName, category: category),
+                    size: 22, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(q.providerName,
