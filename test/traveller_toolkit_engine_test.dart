@@ -141,6 +141,45 @@ void main() {
   });
 
   group('Tourist safety brief', () {
+    test('automatic device failures produce a high-priority brief', () {
+      final SafetyBrief brief = TravellerToolkitEngine.assessAutomaticSafety(
+        const DeviceSafetySignals(
+          batteryPercent: 9,
+          batteryCharging: false,
+          afterDark: true,
+          locationServiceEnabled: false,
+          locationPermissionGranted: false,
+          hasRecentLocation: false,
+          liveSharing: false,
+          hasSosContact: false,
+          offlineEmergencySms: false,
+          powerOffSafety: false,
+        ),
+      );
+      expect(brief.level, SafetyLevel.high);
+      expect(brief.actions.join(' '), contains('Battery'));
+      expect(brief.actions.join(' '), contains('SOS contact'));
+    });
+
+    test('real automatic readiness signals can reach prepared state', () {
+      final SafetyBrief brief = TravellerToolkitEngine.assessAutomaticSafety(
+        const DeviceSafetySignals(
+          batteryPercent: 85,
+          batteryCharging: false,
+          afterDark: false,
+          locationServiceEnabled: true,
+          locationPermissionGranted: true,
+          hasRecentLocation: true,
+          liveSharing: true,
+          hasSosContact: true,
+          offlineEmergencySms: true,
+          powerOffSafety: true,
+        ),
+      );
+      expect(brief.level, SafetyLevel.prepared);
+      expect(brief.score, 100);
+    });
+
     test('high-exposure answers produce concrete actions, not reassurance', () {
       final SafetyBrief brief = TravellerToolkitEngine.assessSafety(
         const SafetyInputs(

@@ -403,6 +403,64 @@ Please send the location|कृपया लोकेशन भेजिए|Krip
     return SafetyBrief(score: 100 - risk, level: level, actions: actions);
   }
 
+  /// Produces an automatic readiness assessment from device/app signals.
+  /// Unknown data is reported but never silently treated as safe.
+  static SafetyBrief assessAutomaticSafety(DeviceSafetySignals signal) {
+    int risk = 0;
+    final List<String> actions = <String>[];
+
+    final int? battery = signal.batteryPercent;
+    if (battery == null) {
+      actions.add('Battery status is unavailable — check it before leaving.');
+      risk += 5;
+    } else if (battery <= 15 && !signal.batteryCharging) {
+      actions.add('Battery is critically low. Charge before continuing.');
+      risk += 24;
+    } else if (battery <= 30 && !signal.batteryCharging) {
+      actions.add('Battery is low. Carry a charged power bank.');
+      risk += 12;
+    }
+    if (!signal.locationServiceEnabled) {
+      actions.add('Turn on device location so SOS can attach your position.');
+      risk += 25;
+    } else if (!signal.locationPermissionGranted) {
+      actions.add('Allow location access for emergency and live sharing.');
+      risk += 20;
+    } else if (!signal.hasRecentLocation) {
+      actions.add('Move near an open area and refresh the GPS safety scan.');
+      risk += 8;
+    }
+    if (!signal.hasSosContact) {
+      actions.add('Add a verified SOS contact before travelling.');
+      risk += 22;
+    }
+    if (signal.afterDark && !signal.liveSharing) {
+      actions.add('It is after dark — start live sharing with your SOS contact.');
+      risk += 16;
+    } else if (!signal.liveSharing) {
+      actions.add('Live sharing is off. Start it when entering an unfamiliar route.');
+      risk += 5;
+    }
+    if (!signal.offlineEmergencySms) {
+      actions.add('Enable offline emergency SMS for outages without mobile data.');
+      risk += 7;
+    }
+    if (!signal.powerOffSafety) {
+      actions.add('Power-off safety is disabled; enable it for shutdown protection.');
+      risk += 4;
+    }
+    risk = risk.clamp(0, 100);
+    if (actions.isEmpty) {
+      actions.add('Automatic checks are ready. Stay alert and keep your route visible.');
+    }
+    final SafetyLevel level = risk >= 55
+        ? SafetyLevel.high
+        : risk >= 25
+            ? SafetyLevel.elevated
+            : SafetyLevel.prepared;
+    return SafetyBrief(score: 100 - risk, level: level, actions: actions);
+  }
+
   static const List<ScamCard> scamCards = <ScamCard>[
     ScamCard('Taxi refuses meter / app fare',
         'Do not argue in an isolated place. Ask for the shown fare, note the vehicle number, and move to a staffed pickup point.',
@@ -535,6 +593,32 @@ class TravelPhrase {
   final String roman;
   final String category;
   final String keywords;
+}
+
+class DeviceSafetySignals {
+  const DeviceSafetySignals({
+    required this.batteryPercent,
+    required this.batteryCharging,
+    required this.afterDark,
+    required this.locationServiceEnabled,
+    required this.locationPermissionGranted,
+    required this.hasRecentLocation,
+    required this.liveSharing,
+    required this.hasSosContact,
+    required this.offlineEmergencySms,
+    required this.powerOffSafety,
+  });
+
+  final int? batteryPercent;
+  final bool batteryCharging;
+  final bool afterDark;
+  final bool locationServiceEnabled;
+  final bool locationPermissionGranted;
+  final bool hasRecentLocation;
+  final bool liveSharing;
+  final bool hasSosContact;
+  final bool offlineEmergencySms;
+  final bool powerOffSafety;
 }
 
 class SafetyInputs {

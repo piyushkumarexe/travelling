@@ -1,17 +1,21 @@
 import 'dart:async';
 
+import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/uiverse.dart';
 import '../traveller_toolkit_engine.dart';
 
-/// Five genuinely offline travel utilities in one fast, state-preserving hub.
-/// No API key, account, network or backend is needed for any calculation.
+/// Six travel utilities in one fast, state-preserving hub. Core calculations
+/// are offline; Safety Mode deliberately reuses the app's real GPS/SOS stack.
 class TravellerToolkitScreen extends StatefulWidget {
   const TravellerToolkitScreen({super.key});
 
@@ -48,28 +52,50 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
   final TextEditingController _convertValue = TextEditingController(text: '10');
   Conversion _conversion = Conversion.kmToMiles;
 
-  // Safety brief — intentionally session-only; these are situational answers,
-  // not profile facts that should silently carry into the next journey.
-  bool _safeSolo = true;
-  bool _safeAfterDark = false;
-  bool _safeUnfamiliar = true;
-  bool _safeShare = false;
-  bool _safeOfflineMap = false;
-  bool _safeContact = false;
-  bool _safeCash = false;
-  int _safeBattery = 60;
+  // Automatic Safety Agent. Values are read from the device and existing app
+  // safety services; no slider or pretend status is shown as real telemetry.
+  final Battery _battery = Battery();
+  DeviceSafetySignals? _safetySignals;
+  DateTime? _safetyScannedAt;
+  bool _safetyScanning = false;
+  bool _startingSafetyMode = false;
+  bool _didBindSafetyServices = false;
+  AppContainer? _container;
 
   @override
   void initState() {
     super.initState();
     _load();
     _clock = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted && _active == ToolkitTool.countdown) setState(() {});
+      if (!mounted) return;
+      if (_active == ToolkitTool.countdown) setState(() {});
+      if (_active == ToolkitTool.safety) unawaited(_scanSafety());
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didBindSafetyServices) return;
+    _didBindSafetyServices = true;
+    final AppContainer c = AppScope.of(context);
+    _container = c;
+    c.settings.addListener(_safetyServiceChanged);
+    c.liveLocationShare.addListener(_safetyServiceChanged);
+    unawaited(_scanSafety());
+  }
+
+  void _safetyServiceChanged() {
+    if (mounted && _active == ToolkitTool.safety) unawaited(_scanSafety());
+  }
+
+  @override
   void dispose() {
+    final AppContainer? c = _container;
+    if (_didBindSafetyServices && c != null) {
+      c.settings.removeListener(_safetyServiceChanged);
+      c.liveLocationShare.removeListener(_safetyServiceChanged);
+    }
     _clock?.cancel();
     _destination.dispose();
     _budget.dispose();
@@ -216,7 +242,7 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
                             fontWeight: FontWeight.w900, fontSize: 17)),
                     const SizedBox(height: 3),
                     Text(
-                      'Plan, pack, split, communicate and run a tourist safety brief.',
+                      'Plan, pack, communicate and run an automatic device safety scan.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: s.onSurfaceVariant, height: 1.35),
                     ),
@@ -244,7 +270,7 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
             _toolTile(ToolkitTool.phrases, const Color(0xFFEA580C),
                 Icons.translate, '${TravellerToolkitEngine.phrases.length} phrases'),
             _toolTile(ToolkitTool.safety, const Color(0xFFDC2626),
-                Icons.health_and_safety_outlined, 'Risk + scam shield'),
+                Icons.health_and_safety_outlined, 'Automatic device scan'),
             _toolTile(ToolkitTool.converter, const Color(0xFFDB2777),
                 Icons.swap_horiz, '10 conversions'),
           ],
@@ -261,7 +287,10 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
       subtitle: tool.subtitle,
       color: color,
       badge: badge,
-      onTap: () => setState(() => _active = tool),
+      onTap: () {
+        setState(() => _active = tool);
+        if (tool == ToolkitTool.safety) unawaited(_scanSafety());
+      },
     );
   }
 
@@ -842,34 +871,101 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
   }
 
   // ---------------------------------------------------------------------
-  // TOURIST SAFETY COMPANION
+  // AUTOMATIC TOURIST SAFETY AGENT
   // ---------------------------------------------------------------------
 
-  SafetyBrief get _safetyBrief => TravellerToolkitEngine.assessSafety(
-        SafetyInputs(
-          solo: _safeSolo,
-          afterDark: _safeAfterDark,
-          unfamiliarArea: _safeUnfamiliar,
-          liveShareOn: _safeShare,
-          offlineMapReady: _safeOfflineMap,
-          emergencyContactReady: _safeContact,
-          batteryPercent: _safeBattery,
-          carryingLargeCash: _safeCash,
-        ),
-      );
+  Future<void> _scanSafety() async {
+    if (_safetyScanning) return;
+    final AppContainer? c = _container;
+    if (c == null) return;
+    setState(() => _safetyScanning = true);
+
+    int? batteryPercent;
+    BatteryState batteryState = BatteryState.unknown;
+    bool locationEnabled = false;
+    LocationPermission permission = LocationPermission.denied;
+    bool recentLocation = false;
+    try {
+      batteryPercent = (await _battery.batteryLevel).clamp(0, 100);
+      batteryState = await _battery.batteryState;
+    } catch (_) {
+      // Unknown stays explicit in the UI; no percentage is fabricated.
+    }
+    try {
+      locationEnabled = await c.locationService.isServiceEnabled();
+      permission = await c.locationService.checkPermission();
+      if (locationEnabled &&
+          permission != LocationPermission.denied &&
+          permission != LocationPermission.deniedForever) {
+        final Position? fix = await c.locationService.bestRecentFix(
+          maxAge: const Duration(minutes: 15),
+        );
+        recentLocation = fix != null;
+      }
+    } catch (_) {
+      // The individual location rows explain the unavailable state.
+    }
+    final DateTime now = DateTime.now();
+    final DeviceSafetySignals signals = DeviceSafetySignals(
+      batteryPercent: batteryPercent,
+      batteryCharging: batteryState == BatteryState.charging ||
+          batteryState == BatteryState.full,
+      afterDark: now.hour >= 20 || now.hour < 6,
+      locationServiceEnabled: locationEnabled,
+      locationPermissionGranted: permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse,
+      hasRecentLocation: recentLocation,
+      liveSharing: c.liveLocationShare.active,
+      hasSosContact: c.settings.sosContactPhone.trim().isNotEmpty,
+      offlineEmergencySms: c.settings.offlineEmergencySms,
+      powerOffSafety: c.settings.powerOffSafety,
+    );
+    if (!mounted) return;
+    setState(() {
+      _safetySignals = signals;
+      _safetyScannedAt = now;
+      _safetyScanning = false;
+    });
+  }
 
   Widget _safetyTool() {
-    final SafetyBrief brief = _safetyBrief;
+    final DeviceSafetySignals? signal = _safetySignals;
+    if (signal == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const CircularProgressIndicator(),
+            const SizedBox(height: 14),
+            Text(_safetyScanning
+                ? 'Safety Agent is reading this device…'
+                : 'Device safety signals are unavailable.'),
+            if (!_safetyScanning)
+              TextButton.icon(
+                onPressed: _scanSafety,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Scan again'),
+              ),
+          ],
+        ),
+      );
+    }
+    final SafetyBrief brief =
+        TravellerToolkitEngine.assessAutomaticSafety(signal);
     final Color color = switch (brief.level) {
       SafetyLevel.prepared => AppTheme.success,
       SafetyLevel.elevated => AppTheme.warning,
       SafetyLevel.high => AppTheme.danger,
     };
     final String label = switch (brief.level) {
-      SafetyLevel.prepared => 'Prepared',
-      SafetyLevel.elevated => 'Caution needed',
-      SafetyLevel.high => 'High exposure',
+      SafetyLevel.prepared => 'Device ready',
+      SafetyLevel.elevated => 'Action recommended',
+      SafetyLevel.high => 'Fix before travel',
     };
+    final AppContainer c = _container!;
+    final String batteryLabel = signal.batteryPercent == null
+        ? 'Unavailable'
+        : '${signal.batteryPercent}%${signal.batteryCharging ? ' · charging' : ''}';
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
       children: <Widget>[
@@ -881,8 +977,8 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
               Row(
                 children: <Widget>[
                   Container(
-                    width: 58,
-                    height: 58,
+                    width: 62,
+                    height: 62,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.12),
@@ -893,7 +989,7 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
                     child: Text('${brief.score}',
                         style: TextStyle(
                             color: color,
-                            fontSize: 21,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900)),
                   ),
                   const SizedBox(width: 13),
@@ -901,19 +997,37 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(label,
-                            style: TextStyle(
-                                color: color,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w900)),
-                        const Text('Situational readiness · not a guarantee'),
+                        Row(
+                          children: <Widget>[
+                            Icon(Icons.auto_awesome, color: color, size: 18),
+                            const SizedBox(width: 6),
+                            Text(label,
+                                style: TextStyle(
+                                    color: color,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                        Text(
+                          'Automatic scan · ${DateFormat('h:mm a').format(_safetyScannedAt!)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Run scan again',
+                    onPressed: _safetyScanning ? null : _scanSafety,
+                    icon: _safetyScanning
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.refresh),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              for (final String action in brief.actions.take(4))
+              for (final String action in brief.actions.take(3))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(
@@ -929,38 +1043,62 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
         ),
         const SizedBox(height: 12),
         UiverseSurface(
-          accent: const Color(0xFFDC2626),
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          accent: Theme.of(context).colorScheme.primary,
+          padding: const EdgeInsets.symmetric(vertical: 5),
           child: Column(
             children: <Widget>[
-              _safetySwitch('Travelling solo', Icons.person_outline, _safeSolo,
-                  (bool v) => _safeSolo = v),
-              _safetySwitch('Moving after dark', Icons.dark_mode_outlined,
-                  _safeAfterDark, (bool v) => _safeAfterDark = v),
-              _safetySwitch('Unfamiliar area', Icons.map_outlined,
-                  _safeUnfamiliar, (bool v) => _safeUnfamiliar = v),
-              _safetySwitch('Live sharing is ON', Icons.share_location_outlined,
-                  _safeShare, (bool v) => _safeShare = v),
-              _safetySwitch('Offline map ready', Icons.map_outlined,
-                  _safeOfflineMap, (bool v) => _safeOfflineMap = v),
-              _safetySwitch('SOS contact verified', Icons.contact_emergency_outlined,
-                  _safeContact, (bool v) => _safeContact = v),
-              _safetySwitch('Carrying significant cash', Icons.payments_outlined,
-                  _safeCash, (bool v) => _safeCash = v),
-              ListTile(
-                leading: const Icon(Icons.battery_5_bar),
-                title: Text('Battery · $_safeBattery%'),
-                subtitle: Slider(
-                  value: _safeBattery.toDouble(),
-                  min: 5,
-                  max: 100,
-                  divisions: 19,
-                  onChanged: (double v) =>
-                      setState(() => _safeBattery = v.round()),
-                ),
-              ),
+              _agentSignal(Icons.battery_5_bar, 'Real battery', batteryLabel,
+                  signal.batteryPercent != null &&
+                      (signal.batteryPercent! > 30 || signal.batteryCharging)),
+              _agentSignal(
+                  signal.afterDark
+                      ? Icons.dark_mode_outlined
+                      : Icons.light_mode_outlined,
+                  'Local time',
+                  signal.afterDark ? 'After dark' : 'Daylight',
+                  !signal.afterDark),
+              _agentSignal(Icons.my_location, 'GPS readiness',
+                  signal.hasRecentLocation ? 'Recent fix ready' : 'Needs attention',
+                  signal.hasRecentLocation),
+              _agentSignal(Icons.contact_emergency_outlined, 'SOS contact',
+                  signal.hasSosContact ? 'Configured' : 'Missing',
+                  signal.hasSosContact),
+              _agentSignal(Icons.share_location_outlined, 'Live sharing',
+                  signal.liveSharing ? 'Active now' : 'Off',
+                  signal.liveSharing),
+              _agentSignal(Icons.sms_outlined, 'Offline emergency SMS',
+                  signal.offlineEmergencySms ? 'Enabled' : 'Disabled',
+                  signal.offlineEmergencySms),
+              _agentSignal(Icons.power_settings_new, 'Power-off safety',
+                  signal.powerOffSafety ? 'Enabled' : 'Disabled',
+                  signal.powerOffSafety),
             ],
           ),
+        ),
+        const SizedBox(height: 12),
+        UiverseButton(
+          label: signal.liveSharing
+              ? 'SAFETY MODE ACTIVE'
+              : signal.hasSosContact
+                  ? 'START SAFETY MODE'
+                  : 'SET UP SOS CONTACT',
+          icon: signal.liveSharing
+              ? Icons.verified_user_outlined
+              : Icons.shield_outlined,
+          loading: _startingSafetyMode,
+          onPressed: signal.liveSharing
+              ? () => context.push('/safety')
+              : signal.hasSosContact
+                  ? _startSafetyMode
+                  : () => context.push('/safety'),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          signal.liveSharing
+              ? 'Your live position is being shared through the existing SOS service.'
+              : 'Safety Mode obtains a real GPS fix and starts live sharing with your saved SOS contact.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
         Row(
@@ -984,6 +1122,12 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => context.push('/safety'),
+          icon: const Icon(Icons.tune),
+          label: const Text('OPEN FULL SAFETY CENTER'),
         ),
         const SizedBox(height: 16),
         const Text('Scam response cards',
@@ -1036,16 +1180,49 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
     );
   }
 
-  Widget _safetySwitch(String title, IconData icon, bool value,
-      ValueChanged<bool> update) {
-    return SwitchListTile(
-      secondary: Icon(icon),
+  Widget _agentSignal(
+      IconData icon, String title, String value, bool ready) {
+    final Color color = ready ? AppTheme.success : AppTheme.warning;
+    return ListTile(
+      leading: Icon(icon, color: color),
       title: Text(title),
-      value: value,
-      onChanged: (bool v) {
-        setState(() => update(v));
-      },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(ready ? Icons.check_circle : Icons.info_outline,
+              color: color, size: 17),
+          const SizedBox(width: 5),
+          Text(value,
+              style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+        ],
+      ),
     );
+  }
+
+  Future<void> _startSafetyMode() async {
+    final AppContainer c = _container!;
+    setState(() => _startingSafetyMode = true);
+    bool started = false;
+    try {
+      started = await c.liveLocationShare.start(
+        reason: 'tourist-safety-agent',
+        travelerName:
+            c.authRepository.currentUser?.displayName?.trim().isNotEmpty == true
+                ? c.authRepository.currentUser!.displayName!.trim()
+                : 'Traveler',
+      );
+    } catch (_) {
+      started = false;
+    }
+    if (!mounted) return;
+    setState(() => _startingSafetyMode = false);
+    await _scanSafety();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(started
+          ? 'Safety Mode started. Live location sharing is active.'
+          : 'Safety Mode could not start. Check SOS contact, sign-in and GPS.'),
+    ));
   }
 
   Future<void> _callNumber(String number) async {
@@ -1154,7 +1331,7 @@ enum ToolkitTool {
   countdown('Trip Countdown', 'Departure clock and readiness checks'),
   budget('Group Budget', 'Split a trip by person, day and category'),
   phrases('India Phrasebook', '145 Hindi essentials with Hinglish search'),
-  safety('Tourist Safety', 'Situational risk brief, helplines and scam shield'),
+  safety('Safety Agent', 'Automatic battery, GPS, SOS and sharing checks'),
   converter('Travel Converter', 'Distance, weather, bags and fuel');
 
   const ToolkitTool(this.title, this.subtitle);
