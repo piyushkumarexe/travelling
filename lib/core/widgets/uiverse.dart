@@ -163,19 +163,23 @@ class UiverseButton extends StatelessWidget {
                   )
                 else if (icon != null)
                   Icon(icon, size: 18, color: Colors.white),
-                if ((icon != null || loading) && label.isNotEmpty)
+                if (!loading && icon != null && label.isNotEmpty)
                   const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
+                // Preserve PrimaryButton's established contract: loading
+                // means spinner only, so users cannot mistake it for another
+                // tappable action and existing accessibility tests stay true.
+                if (!loading)
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
