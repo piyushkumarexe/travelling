@@ -962,7 +962,6 @@ class _TravellerToolkitScreenState extends State<TravellerToolkitScreen> {
       SafetyLevel.elevated => 'Action recommended',
       SafetyLevel.high => 'Fix before travel',
     };
-    final AppContainer c = _container!;
     final String batteryLabel = signal.batteryPercent == null
         ? 'Unavailable'
         : '${signal.batteryPercent}%${signal.batteryCharging ? ' · charging' : ''}';
