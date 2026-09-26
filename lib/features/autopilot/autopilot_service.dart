@@ -273,6 +273,70 @@ class AutopilotService extends ChangeNotifier {
   @visibleForTesting
   static List<Place> bundledDestinationPlaces(String? destinationName) {
     final String city = destinationName?.trim().toLowerCase() ?? '';
+    if (city == 'mumbai') {
+      return <Place>[
+        Place(
+          placeId: 'bundled:mumbai:gateway-of-india',
+          name: 'Gateway of India',
+          lat: 18.922064,
+          lng: 72.834641,
+          primaryType: 'historical_landmark',
+          types: const <String>['tourist_attraction', 'historical_landmark'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        ),
+        Place(
+          placeId: 'bundled:mumbai:marine-drive',
+          name: 'Marine Drive',
+          lat: 18.944,
+          lng: 72.823,
+          primaryType: 'tourist_attraction',
+          types: const <String>['tourist_attraction', 'promenade'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        ),
+        Place(
+          placeId: 'bundled:mumbai:csmt',
+          name: 'Chhatrapati Shivaji Maharaj Terminus',
+          lat: 18.93985,
+          lng: 72.83544,
+          primaryType: 'historical_landmark',
+          types: const <String>['tourist_attraction', 'historical_landmark'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        ),
+        Place(
+          placeId: 'bundled:mumbai:sea-link',
+          name: 'Bandra-Worli Sea Link',
+          lat: 19.0364,
+          lng: 72.8172,
+          primaryType: 'tourist_attraction',
+          types: const <String>['tourist_attraction', 'landmark'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        ),
+        Place(
+          placeId: 'bundled:mumbai:siddhivinayak',
+          name: 'Shri Siddhivinayak Temple',
+          lat: 19.016920,
+          lng: 72.830409,
+          primaryType: 'tourist_attraction',
+          types: const <String>['tourist_attraction', 'hindu_temple'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+        ),
+      ];
+    }
     if (city == 'kanpur') {
       return <Place>[
         Place(

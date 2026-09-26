@@ -4,7 +4,7 @@
 
 **Tourism** is a Flutter-based Android application designed to help travellers plan, automate, navigate, monitor, and manage a journey from one place. It combines trip planning, live navigation, travel safety, expense control, booking hand-offs, document storage, nearby discovery, AI assistance, and real notification automations without pretending that unavailable data is live or verified.
 
-> **Current application version:** `1.0.29+30`
+> **Current application version:** `1.0.30+31`
 > **Android requirement:** Android 7.0 or later (`minSdk 24`)
 > **Application ID:** `app.roamio.tourism`
 > **Status:** Active development

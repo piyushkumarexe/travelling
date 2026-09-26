@@ -141,6 +141,21 @@ class PlacesRepository {
     for (final List<Place> batch in batches) {
       allPlaces.addAll(batch);
     }
+    // Strong multi-word verified matches may be merged with live geocoders.
+    // This is deliberately NOT the broad one-word directory fallback: a weak
+    // live row containing only "Lucknow" used to suppress the exact curated
+    // Nilmatha/Neelmatha locality and leave unrelated Mahatma results.
+    final String compactQuery = q.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    final int meaningfulWords = q
+        .split(RegExp(r'\s+'))
+        .where((String word) => word.length >= 3)
+        .length;
+    if (location != null &&
+        (meaningfulWords >= 2 ||
+            compactQuery.contains('neelmatha') ||
+            compactQuery.contains('nilmatha'))) {
+      allPlaces.addAll(_lucknowFallback(q, location));
+    }
     if (allPlaces.isEmpty) {
       // Every live provider failed — only now serve the verified local
       // fallback (it is marked `curated` so the UI can label it honestly).

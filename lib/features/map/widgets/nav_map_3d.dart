@@ -106,7 +106,7 @@ class _NavMap3DState extends State<NavMap3D> {
   bool _failed = false;
   Timer? _styleTimeout;
   double _lastBearing = 0;
-  double _lastZoom = 16.5;
+  double _lastZoom = 17.5;
   List<ll.LatLng> _lastRoute = const <ll.LatLng>[];
   ll.LatLng? _lastDest;
 
@@ -139,7 +139,7 @@ class _NavMap3DState extends State<NavMap3D> {
   double _zoomForSpeed(double kmh) {
     if (kmh >= 80) return 15.5;
     if (kmh >= 45) return 16.5;
-    return 17.0;
+    return 17.5;
   }
 
   Future<void> _updateCamera() async {
@@ -1055,6 +1055,12 @@ class _NavMap3DState extends State<NavMap3D> {
     if (widget.destination != _lastDest) {
       _lastDest = widget.destination;
       c.setGeoJsonSource('nav_dest_src', _destGeoJson());
+      // Search selection must visibly move to the result in 3D as it does in
+      // the flat map. Previously only the hidden destination source changed,
+      // leaving the camera over the user's old neighbourhood.
+      if (!widget.follow && widget.destination != null) {
+        unawaited(_centreOnDestination(widget.destination!));
+      }
     }
     if (widget.follow) {
       unawaited(_updateCamera());
@@ -1063,6 +1069,26 @@ class _NavMap3DState extends State<NavMap3D> {
       // fix exists, then never fight their gestures again.
       _autoCentered = true;
       unawaited(_centreOnUser());
+    }
+  }
+
+  Future<void> _centreOnDestination(ll.LatLng destination) async {
+    final ml.MapLibreMapController? c = _controller;
+    if (c == null || !mounted || !_styleReady.isCompleted) return;
+    try {
+      await c.animateCamera(
+        ml.CameraUpdate.newCameraPosition(
+          ml.CameraPosition(
+            target: ml.LatLng(destination.latitude, destination.longitude),
+            zoom: 17.0,
+            bearing: 0,
+            tilt: _tilt,
+          ),
+        ),
+        duration: const Duration(milliseconds: 450),
+      );
+    } catch (_) {
+      // Style/camera races are harmless; the destination pin still updates.
     }
   }
 

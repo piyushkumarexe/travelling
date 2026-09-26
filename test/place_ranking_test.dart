@@ -387,6 +387,17 @@ void main() {
     });
   });
 
+  test('Neelmatha alias resolves to the verified Nilmatha locality', () {
+    final List<Place> results = FreeGeoClient().lucknowFallback(
+      'neelmatha lucknow',
+      const gm.LatLng(26.80, 81.00),
+    );
+    expect(results, isNotEmpty);
+    expect(results.first.name, 'Nilmatha (Neelmatha)');
+    expect(results.first.lat, closeTo(26.79125, 0.00001));
+    expect(results.first.lng, closeTo(81.01095, 0.00001));
+  });
+
   test('verified directory rescues Lucknow categories without fake venues', () {
     const gm.LatLng lucknow = gm.LatLng(26.8467, 80.9462);
     final List<Place> transit =

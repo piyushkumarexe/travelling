@@ -517,6 +517,21 @@ class FreeGeoClient {
   /// user's own city/region before other cities, states and countries, and
   /// within the same area, exact → prefix → substring matches first.
   static final List<Place> _kLucknowKnownPlaces = <Place>[
+    // Verified locality alias: Google labels this area "Nilmatha", while
+    // travellers commonly type "Neelmatha" or "Neel Matha".
+    Place(
+      placeId: 'lucknow-nilmatha-locality',
+      name: 'Nilmatha (Neelmatha)',
+      lat: 26.79125,
+      lng: 81.01095,
+      address: 'Nilmatha, Lucknow, Uttar Pradesh 226002',
+      primaryType: 'locality',
+      types: <String>['locality', 'neighborhood', 'place'],
+      provider: 'curated',
+      city: 'Lucknow',
+      state: 'Uttar Pradesh',
+      country: 'India',
+    ),
     // TS Mishra University & Medical College
     Place(
       placeId: 'lucknow-ts-mishra-university',
@@ -1055,6 +1070,13 @@ class FreeGeoClient {
       final String combined = '$nameLo $addrLo';
 
       // Special acronyms and aliases
+      final String compactQuery = q.replaceAll(RegExp(r'\s+'), '');
+      if ((compactQuery.contains('neelmatha') ||
+              compactQuery.contains('neelmathalucknow')) &&
+          p.placeId == 'lucknow-nilmatha-locality') {
+        matching.add(p);
+        continue;
+      }
       if (q == 'cms' && nameLo.contains('city montessori')) {
         matching.add(p);
         continue;

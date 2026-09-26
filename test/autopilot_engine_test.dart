@@ -85,6 +85,8 @@ void main() {
     final List<Place> dataset = <Place>[
       _p('1', 'City Fire Station', 'fire_station', 1, <String, dynamic>{}),
       _p('2', 'Nearest Restaurant', 'restaurant', 0.5, <String, dynamic>{}),
+      _p('mosque', 'Generic Nearby Masjid', 'place_of_worship', 0.2,
+          <String, dynamic>{}),
       _p('3', 'Famous Fort', 'tourist_attraction', 4, <String, dynamic>{}),
     ];
     final List<Place> candidates = AutopilotEngine.candidatesFor(
@@ -336,7 +338,10 @@ void main() {
     expect(kanpur.map((Place p) => p.name),
         contains('Blue World Theme Park'));
     expect(kanpur.map((Place p) => p.name), contains('Moti Jheel'));
-    expect(AutopilotService.bundledDestinationPlaces('Mumbai'), isEmpty);
+    final List<Place> mumbai =
+        AutopilotService.bundledDestinationPlaces('Mumbai');
+    expect(mumbai.map((Place p) => p.name), contains('Gateway of India'));
+    expect(mumbai.map((Place p) => p.name), contains('Marine Drive'));
   });
 
   test('DESTINATION: failed explicit lookup cannot become nearby mode', () {

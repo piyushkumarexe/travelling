@@ -65,8 +65,8 @@ class AutopilotEngine {
     ],
     AutopilotInterest.explore: <String>[
       'attraction', 'tourist_attraction', 'museum', 'viewpoint',
-      'place_of_worship', 'historical_landmark', 'monument', 'fort', 'palace',
-      'zoo', 'amusement_park', 'water_park'
+      'historical_landmark', 'monument', 'fort', 'palace', 'zoo',
+      'amusement_park', 'water_park'
     ],
     AutopilotInterest.shopping: <String>[
       'shopping', 'shopping_mall', 'market', 'marketplace', 'store'
@@ -456,6 +456,13 @@ class AutopilotEngine {
         score += math
             .min(10.0, math.log(p.userRatingCount! + 1) / math.ln10 * 3)
             .toDouble();
+      }
+      // Bundled-directory entries are manually verified, stable city
+      // landmarks—not generated POIs. Prefer them over an anonymous nearby
+      // worship node when the traveller explicitly asks to Explore.
+      if (p.provider == 'bundled_directory' &&
+          textPriorities.contains(AutopilotInterest.explore)) {
+        score += 25;
       }
       if (brief.group == AutopilotGroup.family &&
           (cat == 'park' || cat == 'attraction' || cat == 'museum')) {

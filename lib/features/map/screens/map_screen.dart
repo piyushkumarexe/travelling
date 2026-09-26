@@ -1401,7 +1401,15 @@ class _MapScreenState extends State<MapScreen> {
                           : 'The 3D view needs a MapTiler key'),
                   onPressed: can3d
                       ? () => setState(() {
-                            _map3d = !_map3d;
+                            final bool entering3d = !_map3d;
+                            _map3d = entering3d;
+                            // Satellite imagery supplies the real roof/ground
+                            // appearance beneath vector building geometry.
+                            // Generic street-style blocks looked like a model
+                            // city and hid the recognizable neighbourhood.
+                            if (entering3d && _mapStyle == 'streets-v2') {
+                              _mapStyle = 'hybrid';
+                            }
                             _map3dNotice = null;
                           })
                       : null,
@@ -1421,14 +1429,16 @@ class _MapScreenState extends State<MapScreen> {
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'map-follow',
-                  tooltip: _follow
-                      ? 'Stop following my location'
-                      : 'Follow my location live',
+                  tooltip: _position == null
+                      ? 'Enable and find my location'
+                      : (_follow
+                          ? 'Stop following my location'
+                          : 'Find and follow my location'),
                   backgroundColor: _follow ? scheme.primary : null,
                   foregroundColor: _follow ? scheme.onPrimary : null,
-                  onPressed: _toggleFollow,
+                  onPressed: _position == null ? _myLocation : _toggleFollow,
                   child: Icon(
-                    _follow ? Icons.gps_fixed : Icons.gps_not_fixed,
+                    _follow ? Icons.my_location : Icons.location_searching,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1450,15 +1460,6 @@ class _MapScreenState extends State<MapScreen> {
                     _controller.camera.zoom - 1,
                   ),
                   child: const Icon(Icons.remove),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'map-my-location',
-                  tooltip: _position == null
-                      ? 'Enable and find my location'
-                      : 'My location',
-                  onPressed: _myLocation,
-                  child: const Icon(Icons.my_location),
                 ),
               ],
             ),
@@ -1937,23 +1938,33 @@ class _MapScreenState extends State<MapScreen> {
                           scheme.primaryContainer.withValues(alpha: 0.6),
                       child: Icon(Icons.place, color: scheme.primary),
                     ),
-                    title: Text(p.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(
+                      p.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     subtitle: Text(
                       PlaceRanking.subtitleFor(
                           p, _searchOriginLatLng()),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => _select(p),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        TextButton(
+                        IconButton(
+                          tooltip: 'Set as start',
                           onPressed: () => _setOriginFrom(p),
-                          child: const Text('Start'),
+                          icon: const Icon(Icons.trip_origin, size: 20),
+                          visualDensity: VisualDensity.compact,
                         ),
                         FilledButton(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(48, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            visualDensity: VisualDensity.compact,
+                          ),
                           onPressed: () => _select(p),
                           child: const Text('Go'),
                         ),
