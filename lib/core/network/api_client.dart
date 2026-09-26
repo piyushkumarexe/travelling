@@ -30,6 +30,13 @@ class ApiClient {
   DateTime? _downSince;
 
   static const Duration _retryAfter = Duration(seconds: 45);
+  static const Duration _tokenReuseWindow = Duration(minutes: 5);
+
+  String? _cachedToken;
+  String? _cachedTokenUid;
+  DateTime? _tokenFetchedAt;
+  Future<String?>? _tokenInFlight;
+  String? _tokenInFlightUid;
 
   bool get _skipBackend {
     final DateTime? since = _downSince;
@@ -47,14 +54,43 @@ class ApiClient {
     _downSince = null;
   }
 
-  Future<String?> _idToken() async {
-    try {
-      final User? user = FirebaseAuth.instance.currentUser;
-      if (user == null) return null;
-      return await user.getIdToken();
-    } catch (_) {
-      return null;
+  Future<String?> _idToken() {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _cachedToken = null;
+      _cachedTokenUid = null;
+      _tokenFetchedAt = null;
+      return Future<String?>.value(null);
     }
+
+    final DateTime? fetchedAt = _tokenFetchedAt;
+    if (_cachedTokenUid == user.uid &&
+        _cachedToken != null &&
+        fetchedAt != null &&
+        DateTime.now().difference(fetchedAt) < _tokenReuseWindow) {
+      return Future<String?>.value(_cachedToken);
+    }
+    final Future<String?>? pending = _tokenInFlight;
+    if (pending != null && _tokenInFlightUid == user.uid) return pending;
+
+    final Future<String?> request = user.getIdToken().then((String? token) {
+      // Do not retain a token if the account changed while the asynchronous
+      // refresh was running.
+      if (FirebaseAuth.instance.currentUser?.uid == user.uid) {
+        _cachedToken = token;
+        _cachedTokenUid = user.uid;
+        _tokenFetchedAt = DateTime.now();
+      }
+      return token;
+    }).catchError((Object _) => null);
+    _tokenInFlight = request;
+    _tokenInFlightUid = user.uid;
+    return request.whenComplete(() {
+      if (identical(_tokenInFlight, request)) {
+        _tokenInFlight = null;
+        _tokenInFlightUid = null;
+      }
+    });
   }
 
   /// POST a JSON body and decode the JSON object response.

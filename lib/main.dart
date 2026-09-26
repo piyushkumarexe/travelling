@@ -21,6 +21,15 @@ Future<void> _persistUiError(String text) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Bound decoded-image memory globally. Flutter's default cache can retain
+  // up to 1,000 images / 100 MB; together with map textures that causes
+  // avoidable GC churn and occasional low-memory kills on travel phones.
+  // Network images remain cached, but at a deliberate mobile-sized budget.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 180
+    ..maximumSizeBytes = 64 << 20;
+
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
   ]);
@@ -110,19 +119,24 @@ Future<void> main() async {
     app: app,
   );
 
-  // Local device settings (e.g. auto-read AI replies) — independent of
-  // Firebase, so they load even when Firebase/Cloud Functions are absent.
+  // Local settings and the auth listener do not block first paint. Firebase
+  // already caches the current user, so starting the listener synchronously
+  // is enough; channel creation and permission APIs can wait until the first
+  // frame is visible instead of extending the native splash screen.
   unawaited(container.settings.load());
-
-  if (firebaseReady) {
-    // Best effort: create notification channels + ask for permission.
-    await container.notificationService.init();
-    container.authState.start();
-  }
-
-  // Warm up location permission up-front so Explore "nearby", the map and
-  // the AI assistant can auto-detect the user's location immediately.
-  unawaited(container.locationService.requestPermission());
+  if (firebaseReady) container.authState.start();
 
   runApp(TourismApp(container: container));
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (firebaseReady) {
+      unawaited(container.notificationService.init());
+    }
+    // Let the first frame and auth redirect settle before touching the GPS
+    // permission service. Feature screens still await the same shared
+    // LocationService, so no capability is removed.
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 700), () async {
+      await container.locationService.requestPermission();
+    }));
+  });
 }

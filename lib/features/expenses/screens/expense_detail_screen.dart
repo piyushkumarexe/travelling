@@ -139,6 +139,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   child: Image.network(
                     e.receiptUrl!,
                     height: 220,
+                    cacheWidth: 1200,
                     fit: BoxFit.cover,
                     loadingBuilder: (BuildContext ctx, Widget child,
                             ImageChunkEvent? progress) =>

@@ -265,6 +265,8 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                       id.photoUrl!,
                       width: 68,
                       height: 68,
+                      cacheWidth: 204,
+                      cacheHeight: 204,
                       fit: BoxFit.cover,
                       errorBuilder: (BuildContext context, Object e,
                               StackTrace? s) =>

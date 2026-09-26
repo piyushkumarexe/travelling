@@ -14,6 +14,17 @@ class LocationService {
   Position? _cached;
   Future<Position?>? _freshInFlight;
 
+  // GPS streams can emit every second. Persisting every fix opened
+  // SharedPreferences and rewrote JSON for every listener, creating needless
+  // flash I/O and UI-isolate work. Memory is updated immediately; disk is
+  // coalesced to one latest fix per interval.
+  static const Duration _cachePersistInterval = Duration(seconds: 15);
+  final Future<SharedPreferences> _preferences =
+      SharedPreferences.getInstance();
+  Timer? _cachePersistTimer;
+  Position? _pendingCachePersist;
+  DateTime? _lastCachePersistedAt;
+
   Future<bool> isServiceEnabled() => Geolocator.isLocationServiceEnabled();
 
   Future<LocationPermission> checkPermission() => Geolocator.checkPermission();
@@ -192,7 +203,7 @@ class LocationService {
       await sub.cancel();
       if (result != null) {
         _cached = result;
-        await _writeCache(result);
+        await _persistCacheNow(result);
         return result;
       }
       // No stream emission in time — the legacy blocking tiers as a last
@@ -217,7 +228,7 @@ class LocationService {
             locationSettings: settings,
           ).timeout(Duration(seconds: seconds + 2));
           _cached = pos;
-          await _writeCache(pos);
+          await _persistCacheNow(pos);
           return pos;
         } catch (_) {
           // Next tier.
@@ -243,9 +254,42 @@ class LocationService {
       ),
     ).map((Position p) {
       _cached = p;
-      unawaited(_writeCache(p));
+      _scheduleCachePersist(p);
       return p;
     });
+  }
+
+  void _scheduleCachePersist(Position position) {
+    _pendingCachePersist = position;
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastCachePersistedAt;
+    final Duration elapsed =
+        last == null ? _cachePersistInterval : now.difference(last);
+    if (elapsed >= _cachePersistInterval && _cachePersistTimer == null) {
+      final Position latest = _pendingCachePersist!;
+      _pendingCachePersist = null;
+      _lastCachePersistedAt = now;
+      unawaited(_writeCache(latest));
+      return;
+    }
+    if (_cachePersistTimer != null) return;
+    final Duration delay = _cachePersistInterval - elapsed;
+    _cachePersistTimer = Timer(delay, () {
+      _cachePersistTimer = null;
+      final Position? latest = _pendingCachePersist;
+      _pendingCachePersist = null;
+      if (latest == null) return;
+      _lastCachePersistedAt = DateTime.now();
+      unawaited(_writeCache(latest));
+    });
+  }
+
+  Future<void> _persistCacheNow(Position position) async {
+    _cachePersistTimer?.cancel();
+    _cachePersistTimer = null;
+    _pendingCachePersist = null;
+    _lastCachePersistedAt = DateTime.now();
+    await _writeCache(position);
   }
 
   // ---- on-device cache (instant cold start) ----
@@ -253,7 +297,7 @@ class LocationService {
 
   Future<Position?> _readCache() async {
     try {
-      final SharedPreferences p = await SharedPreferences.getInstance();
+      final SharedPreferences p = await _preferences;
       final String? raw = p.getString(_cacheKey);
       if (raw == null) return null;
       final Map<String, dynamic> m =
@@ -267,7 +311,7 @@ class LocationService {
 
   Future<void> _writeCache(Position pos) async {
     try {
-      final SharedPreferences p = await SharedPreferences.getInstance();
+      final SharedPreferences p = await _preferences;
       await p.setString(_cacheKey, jsonEncode(pos.toJson()));
     } catch (_) {}
   }

@@ -430,6 +430,8 @@ class _AppShellState extends State<AppShell> {
                     photo,
                     width: 42,
                     height: 42,
+                    cacheWidth: 128,
+                    cacheHeight: 128,
                     fit: BoxFit.cover,
                     errorBuilder: (BuildContext context, Object e,
                             StackTrace? s) =>

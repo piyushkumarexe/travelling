@@ -181,6 +181,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
                               inc.photoUrl!,
                               height: 200,
                               width: double.infinity,
+                              cacheWidth: 1200,
                               fit: BoxFit.cover,
                               errorBuilder: (BuildContext context,
                                   Object error, StackTrace? stackTrace) {

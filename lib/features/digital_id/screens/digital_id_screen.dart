@@ -335,6 +335,8 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                               id.photoUrl!,
                               width: 64,
                               height: 64,
+                              cacheWidth: 192,
+                              cacheHeight: 192,
                               fit: BoxFit.cover,
                               errorBuilder: (BuildContext context,
                                   Object e, StackTrace? s) =>

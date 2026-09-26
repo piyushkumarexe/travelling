@@ -122,9 +122,11 @@ class _WeatherScreenState extends State<WeatherScreen> {
       'https://openweathermap.org/img/wn/$icon@2x.png',
       width: size,
       height: size,
+      cacheWidth: 200,
+      cacheHeight: 200,
       loadingBuilder: (BuildContext context, Widget child,
-          ImageChunkEvent? _) =>
-          fallback,
+              ImageChunkEvent? progress) =>
+          progress == null ? child : fallback,
       errorBuilder: (BuildContext context, Object e, StackTrace? s) =>
           fallback,
     );

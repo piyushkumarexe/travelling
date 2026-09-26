@@ -697,11 +697,12 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   Widget _header(Place p, ColorScheme scheme) {
     final Widget image;
     if (_photoBytes != null) {
-      image = Image.memory(_photoBytes!, fit: BoxFit.cover);
+      image = Image.memory(_photoBytes!, fit: BoxFit.cover, cacheWidth: 1200);
     } else if (_imageUrl != null) {
       image = Image.network(
         _imageUrl!,
         fit: BoxFit.cover,
+        cacheWidth: 1200,
         loadingBuilder: (BuildContext context, Widget child,
             ImageChunkEvent? progress) {
           if (progress == null) return child;

@@ -394,6 +394,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 p.photoUrl!,
                                 width: 80,
                                 height: 80,
+                                cacheWidth: 240,
+                                cacheHeight: 240,
                                 fit: BoxFit.cover,
                                 errorBuilder: (BuildContext context,
                                         Object e, StackTrace? s) =>
