@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/app_config.dart';
 import '../../../core/network/free_geo_client.dart';
 import '../../../core/state/app_container.dart';
+import '../../../core/utils/external_map_urls.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
@@ -920,6 +921,45 @@ class _MapScreenState extends State<MapScreen> {
       setState(() => _routeLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not get a route: $e')),
+      );
+    }
+  }
+
+  /// Opens the selected point in Google Earth's own supported experience.
+  /// This is intentionally a provider hand-off: it gives travellers access
+  /// to Google's available photorealistic 3D coverage without putting a
+  /// billable Google SDK in Tourism or illegally caching Google imagery.
+  Future<void> _openExact3dView() async {
+    final Place? p = _selected;
+    if (p == null) return;
+
+    bool opened = false;
+    try {
+      opened = await launchUrl(
+        ExternalMapUrls.googleEarth3d(latitude: p.lat, longitude: p.lng),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // Fall through to Maps when Earth is unavailable on this device.
+    }
+    if (opened || !mounted) return;
+
+    // Earth may not be installed and some Android browsers do not claim its
+    // app link. Google Maps is a useful, universally available fallback.
+    bool fallbackOpened = false;
+    try {
+      fallbackOpened = await launchUrl(
+        ExternalMapUrls.googleMapsPlace(latitude: p.lat, longitude: p.lng),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // The user gets one clear message below rather than a platform error.
+    }
+    if (!fallbackOpened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open Google Earth or Google Maps.'),
+        ),
       );
     }
   }
@@ -2221,6 +2261,15 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openExact3dView,
+              icon: const Icon(Icons.public, size: 19),
+              label: const Text('Photorealistic 3D in Google Earth — free'),
+            ),
           ),
         ],
       ),
