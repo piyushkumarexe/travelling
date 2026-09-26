@@ -338,10 +338,11 @@ void main() {
     expect(kanpur.map((Place p) => p.name),
         contains('Blue World Theme Park'));
     expect(kanpur.map((Place p) => p.name), contains('Moti Jheel'));
-    final List<Place> mumbai =
+    final List<Place> mumbaiPlaces =
         AutopilotService.bundledDestinationPlaces('Mumbai');
-    expect(mumbai.map((Place p) => p.name), contains('Gateway of India'));
-    expect(mumbai.map((Place p) => p.name), contains('Marine Drive'));
+    expect(mumbaiPlaces.map((Place p) => p.name),
+        contains('Gateway of India'));
+    expect(mumbaiPlaces.map((Place p) => p.name), contains('Marine Drive'));
   });
 
   test('DESTINATION: failed explicit lookup cannot become nearby mode', () {
