@@ -15,6 +15,7 @@ import '../../features/booking/screens/ride_booking_screen.dart';
 import '../../features/booking/screens/travel_booking_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
+import '../../features/digital_twin/digital_twin_screen.dart';
 import '../../features/eco/screens/eco_screen.dart';
 import '../../features/essentials/screens/essentials_screen.dart';
 import '../../features/expenses/expense_models.dart';
@@ -286,6 +287,14 @@ class AppRouter {
           placeId: state.pathParameters['placeId'] ?? '',
           place: state.extra is Place ? state.extra as Place : null,
         ),
+      ),
+      GoRoute(
+        path: '/digital-twin',
+        builder: (BuildContext context, GoRouterState state) {
+          final Object? extra = state.extra;
+          if (extra is Place) return DigitalTwinScreen(destination: extra);
+          return const ExploreScreen();
+        },
       ),
       GoRoute(
         path: '/assistant',

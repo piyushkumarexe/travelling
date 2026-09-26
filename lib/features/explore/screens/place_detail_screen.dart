@@ -621,6 +621,15 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.model_training_outlined),
+                    label: const Text('Simulate My Visit'),
+                    onPressed: () => context.push('/digital-twin', extra: p),
+                  ),
+                ),
                 if (p.phone != null && p.phone!.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 10),
                   Row(

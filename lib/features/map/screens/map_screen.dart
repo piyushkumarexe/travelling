@@ -2080,6 +2080,9 @@ class _MapScreenState extends State<MapScreen> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final RouteInfo? r = _route;
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+      ),
       padding: EdgeInsets.fromLTRB(
           16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
       decoration: BoxDecoration(
@@ -2087,11 +2090,12 @@ class _MapScreenState extends State<MapScreen> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
             children: <Widget>[
               Expanded(
                 child: Text(
@@ -2265,13 +2269,23 @@ class _MapScreenState extends State<MapScreen> {
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: () => context.push('/digital-twin', extra: p),
+              icon: const Icon(Icons.model_training_outlined, size: 19),
+              label: const Text('Simulate My Visit'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _openExact3dView,
               icon: const Icon(Icons.public, size: 19),
               label: const Text('Photorealistic 3D in Google Earth — free'),
             ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
