@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'journey_operations_models.dart';
 
@@ -8,8 +12,13 @@ class JourneyOperationsService {
 
   final FirebaseFirestore? _firestore;
   final Set<String> _profileFallbackUsers = <String>{};
+  final Set<String> _localFallbackUsers = <String>{};
   final Map<String, List<JourneyOperation>> _latest =
       <String, List<JourneyOperation>>{};
+  final Map<String, StreamController<List<JourneyOperation>>> _localStreams =
+      <String, StreamController<List<JourneyOperation>>>{};
+
+  static const String _localPrefix = 'journey_operations.v1.';
 
   FirebaseFirestore get _db => _firestore ?? FirebaseFirestore.instance;
 
@@ -20,9 +29,10 @@ class JourneyOperationsService {
       _db.collection('profiles').doc(uid);
 
   /// Uses the dedicated owner-only collection when its rules are deployed.
-  /// Existing installations whose server rules predate this feature
-  /// transparently use an owner-only field in profiles/{uid}; unlike the old
-  /// screen, the feature stays functional and still syncs across devices.
+  /// Older rules fall back first to the owner's profile and finally to the
+  /// app's private on-device preference storage. The feature never
+  /// becomes a developer-instruction dead screen merely because cloud rules
+  /// lag behind the APK.
   Stream<List<JourneyOperation>> watch(String uid) async* {
     try {
       await for (final QuerySnapshot<Map<String, dynamic>> snapshot
@@ -41,21 +51,33 @@ class JourneyOperationsService {
     } on FirebaseException catch (error) {
       if (error.code != 'permission-denied') rethrow;
       _profileFallbackUsers.add(uid);
-      await for (final DocumentSnapshot<Map<String, dynamic>> snapshot
-          in _profile(uid).snapshots()) {
-        final Object? raw = snapshot.data()?['journeyOperationsV1'];
-        final List<JourneyOperation> items = raw is List
-            ? raw
-                .whereType<Map>()
-                .map((Map item) => JourneyOperation.fromFirestore(
-                    Map<String, dynamic>.from(item)))
-                .where((JourneyOperation item) => item.id.isNotEmpty)
-                .toList()
-            : <JourneyOperation>[];
-        items.sort((JourneyOperation a, JourneyOperation b) =>
-            b.updatedAt.compareTo(a.updatedAt));
-        _latest[uid] = items;
-        yield List<JourneyOperation>.unmodifiable(items);
+      try {
+        await for (final DocumentSnapshot<Map<String, dynamic>> snapshot
+            in _profile(uid).snapshots()) {
+          final Object? raw = snapshot.data()?['journeyOperationsV1'];
+          final List<JourneyOperation> items = raw is List
+              ? raw
+                  .whereType<Map>()
+                  .map((Map item) => JourneyOperation.fromFirestore(
+                      Map<String, dynamic>.from(item)))
+                  .where((JourneyOperation item) => item.id.isNotEmpty)
+                  .toList()
+              : <JourneyOperation>[];
+          items.sort((JourneyOperation a, JourneyOperation b) =>
+              b.updatedAt.compareTo(a.updatedAt));
+          _latest[uid] = items;
+          yield List<JourneyOperation>.unmodifiable(items);
+        }
+      } on FirebaseException catch (profileError) {
+        if (profileError.code != 'permission-denied') rethrow;
+        // The currently deployed rules can predate both server locations.
+        // Keep all twelve tools fully usable on this phone instead of showing
+        // a developer-only "deploy rules" dead screen.
+        _localFallbackUsers.add(uid);
+        final List<JourneyOperation> local = await _readLocal(uid);
+        _latest[uid] = local;
+        yield List<JourneyOperation>.unmodifiable(local);
+        yield* _localStream(uid).stream;
       }
     }
   }
@@ -86,8 +108,18 @@ class JourneyOperationsService {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     );
+    if (_localFallbackUsers.contains(uid)) {
+      await _upsertLocal(uid, item);
+      return;
+    }
     if (_profileFallbackUsers.contains(uid)) {
-      await _upsertFallback(uid, item);
+      try {
+        await _upsertFallback(uid, item);
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _upsertLocal(uid, item);
+      }
       return;
     }
     try {
@@ -95,7 +127,13 @@ class JourneyOperationsService {
     } on FirebaseException catch (error) {
       if (error.code != 'permission-denied') rethrow;
       _profileFallbackUsers.add(uid);
-      await _upsertFallback(uid, item);
+      try {
+        await _upsertFallback(uid, item);
+      } on FirebaseException catch (profileError) {
+        if (profileError.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _upsertLocal(uid, item);
+      }
     }
   }
 
@@ -105,8 +143,18 @@ class JourneyOperationsService {
     required bool completed,
   }) async {
     final JourneyOperation updated = item.copyWith(completed: completed);
+    if (_localFallbackUsers.contains(uid)) {
+      await _upsertLocal(uid, updated);
+      return;
+    }
     if (_profileFallbackUsers.contains(uid)) {
-      await _upsertFallback(uid, updated);
+      try {
+        await _upsertFallback(uid, updated);
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _upsertLocal(uid, updated);
+      }
       return;
     }
     try {
@@ -117,13 +165,29 @@ class JourneyOperationsService {
     } on FirebaseException catch (error) {
       if (error.code != 'permission-denied') rethrow;
       _profileFallbackUsers.add(uid);
-      await _upsertFallback(uid, updated);
+      try {
+        await _upsertFallback(uid, updated);
+      } on FirebaseException catch (profileError) {
+        if (profileError.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _upsertLocal(uid, updated);
+      }
     }
   }
 
   Future<void> delete(String uid, String id) async {
+    if (_localFallbackUsers.contains(uid)) {
+      await _deleteLocal(uid, id);
+      return;
+    }
     if (_profileFallbackUsers.contains(uid)) {
-      await _deleteFallback(uid, id);
+      try {
+        await _deleteFallback(uid, id);
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _deleteLocal(uid, id);
+      }
       return;
     }
     try {
@@ -131,7 +195,13 @@ class JourneyOperationsService {
     } on FirebaseException catch (error) {
       if (error.code != 'permission-denied') rethrow;
       _profileFallbackUsers.add(uid);
-      await _deleteFallback(uid, id);
+      try {
+        await _deleteFallback(uid, id);
+      } on FirebaseException catch (profileError) {
+        if (profileError.code != 'permission-denied') rethrow;
+        _localFallbackUsers.add(uid);
+        await _deleteLocal(uid, id);
+      }
     }
   }
 
@@ -159,5 +229,61 @@ class JourneyOperationsService {
           .map((JourneyOperation value) => value.toFirestore())
           .toList(growable: false),
     }, SetOptions(merge: true));
+  }
+
+  StreamController<List<JourneyOperation>> _localStream(String uid) =>
+      _localStreams.putIfAbsent(
+        uid,
+        () => StreamController<List<JourneyOperation>>.broadcast(),
+      );
+
+  Future<List<JourneyOperation>> _readLocal(String uid) async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? raw = prefs.getString('$_localPrefix$uid');
+      if (raw == null) return <JourneyOperation>[];
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return <JourneyOperation>[];
+      final List<JourneyOperation> items = decoded
+          .whereType<Map>()
+          .map((Map value) => JourneyOperation.fromFirestore(
+              Map<String, dynamic>.from(value)))
+          .where((JourneyOperation item) => item.id.isNotEmpty)
+          .toList()
+        ..sort((JourneyOperation a, JourneyOperation b) =>
+            b.updatedAt.compareTo(a.updatedAt));
+      return items;
+    } catch (_) {
+      return <JourneyOperation>[];
+    }
+  }
+
+  Future<void> _writeLocal(
+      String uid, List<JourneyOperation> items) async {
+    _latest[uid] = List<JourneyOperation>.unmodifiable(items);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      '$_localPrefix$uid',
+      jsonEncode(items
+          .map((JourneyOperation item) => item.toFirestore())
+          .toList(growable: false)),
+    );
+    _localStream(uid).add(List<JourneyOperation>.unmodifiable(items));
+  }
+
+  Future<void> _upsertLocal(String uid, JourneyOperation item) async {
+    final List<JourneyOperation> items =
+        List<JourneyOperation>.from(_latest[uid] ?? await _readLocal(uid))
+          ..removeWhere((JourneyOperation value) => value.id == item.id)
+          ..insert(0, item);
+    if (items.length > 300) items.removeRange(300, items.length);
+    await _writeLocal(uid, items);
+  }
+
+  Future<void> _deleteLocal(String uid, String id) async {
+    final List<JourneyOperation> items =
+        List<JourneyOperation>.from(_latest[uid] ?? await _readLocal(uid))
+          ..removeWhere((JourneyOperation value) => value.id == id);
+    await _writeLocal(uid, items);
   }
 }

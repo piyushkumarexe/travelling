@@ -1429,6 +1429,7 @@ extension on AutopilotSuggestion {
 extension on AutopilotInterest {
   IconData get icon => switch (this) {
         AutopilotInterest.eat => Icons.restaurant_outlined,
+        AutopilotInterest.stay => Icons.hotel_outlined,
         AutopilotInterest.explore => Icons.travel_explore,
         AutopilotInterest.shopping => Icons.shopping_bag_outlined,
         AutopilotInterest.relax => Icons.park_outlined,

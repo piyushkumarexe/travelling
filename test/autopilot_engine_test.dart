@@ -81,6 +81,65 @@ void main() {
         <String>{'1', '2', '3'});
   });
 
+  test('Explore never substitutes emergency services or restaurants', () {
+    final List<Place> dataset = <Place>[
+      _p('1', 'City Fire Station', 'fire_station', 1, <String, dynamic>{}),
+      _p('2', 'Nearest Restaurant', 'restaurant', 0.5, <String, dynamic>{}),
+      _p('3', 'Famous Fort', 'tourist_attraction', 4, <String, dynamic>{}),
+    ];
+    final List<Place> candidates = AutopilotEngine.candidatesFor(
+      dataset,
+      const AutopilotBrief(
+          interests: <AutopilotInterest>{AutopilotInterest.explore}),
+    );
+    expect(candidates.map((Place p) => p.name).toList(), <String>['Famous Fort']);
+  });
+
+  test('same nearby station from two providers is shown once', () {
+    final List<Place> candidates = AutopilotEngine.candidatesFor(
+      <Place>[
+        Place(
+          placeId: 'a',
+          name: 'Ayodhya Junction',
+          lat: 26.7950,
+          lng: 82.2000,
+          category: 'attraction',
+        ),
+        Place(
+          placeId: 'b',
+          name: 'Ayodhya  Junction',
+          lat: 26.7951,
+          lng: 82.2001,
+          category: 'attraction',
+        ),
+      ],
+      const AutopilotBrief(
+          interests: <AutopilotInterest>{AutopilotInterest.explore}),
+    );
+    expect(candidates, hasLength(1));
+  });
+
+  test('typed Explore intent outranks a closer stale Eat selection', () {
+    final List<Place> candidates = <Place>[
+      _p('food', 'Nearby Food', 'restaurant', 0.5, <String, dynamic>{}),
+      _p('sight', 'Famous Museum', 'museum', 4, <String, dynamic>{}),
+    ];
+    final AutopilotRanking ranking = AutopilotEngine.rankPlaces(
+      candidates: candidates,
+      brief: const AutopilotBrief(
+        interests: <AutopilotInterest>{
+          AutopilotInterest.eat,
+          AutopilotInterest.explore,
+        },
+        freeText: 'I want to explore Kanpur',
+      ),
+      here: here,
+      now: now,
+      minutesLeft: 600,
+    );
+    expect(ranking.practical.first.name, 'Famous Museum');
+  });
+
   test('TEST 3: "2 hours" — everything shown fits, the rest is rejected '
       'with a real reason', () {
     final List<Place> dataset = <Place>[
@@ -240,6 +299,14 @@ void main() {
         'lucknow old city');
     // No place named → null (local nearby mode).
     expect(AutopilotEngine.destinationCandidate('I want to eat food'), isNull);
+    expect(AutopilotEngine.destinationCandidate('find hotels in Kanpur'), 'kanpur');
+    expect(
+      AutopilotEngine.parseBrief('water park and hotel in Kanpur').interests,
+      containsAll(<AutopilotInterest>[
+        AutopilotInterest.entertainment,
+        AutopilotInterest.stay,
+      ]),
+    );
     expect(AutopilotEngine.destinationCandidate('explore'), isNull);
     // Hindi fillers are stripped, the place name survives.
     expect(
@@ -264,6 +331,11 @@ void main() {
     expect(fallback.map((Place p) => p.name), contains('Hanuman Garhi'));
     expect(fallback.every((Place p) => p.provider == 'bundled_directory'),
         isTrue);
+    final List<Place> kanpur =
+        AutopilotService.bundledDestinationPlaces('Kanpur');
+    expect(kanpur.map((Place p) => p.name),
+        contains('Blue World Theme Park'));
+    expect(kanpur.map((Place p) => p.name), contains('Moti Jheel'));
     expect(AutopilotService.bundledDestinationPlaces('Mumbai'), isEmpty);
   });
 

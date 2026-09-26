@@ -227,6 +227,7 @@ class AutopilotService extends ChangeNotifier {
     const Map<String, ({String name, double lat, double lng})> cities =
         <String, ({String name, double lat, double lng})>{
       'ayodhya': (name: 'Ayodhya', lat: 26.7922, lng: 82.1998),
+      'kanpur': (name: 'Kanpur', lat: 26.449923, lng: 80.331871),
       'lucknow': (name: 'Lucknow', lat: 26.8467, lng: 80.9462),
       'mumbai': (name: 'Mumbai', lat: 19.0760, lng: 72.8777),
       'new delhi': (name: 'New Delhi', lat: 28.6139, lng: 77.2090),
@@ -271,9 +272,74 @@ class AutopilotService extends ChangeNotifier {
   /// sourced coordinates; live/cache results always take precedence.
   @visibleForTesting
   static List<Place> bundledDestinationPlaces(String? destinationName) {
-    if (destinationName?.trim().toLowerCase() != 'ayodhya') {
-      return const <Place>[];
+    final String city = destinationName?.trim().toLowerCase() ?? '';
+    if (city == 'kanpur') {
+      return <Place>[
+        Place(
+          placeId: 'bundled:kanpur:zoo',
+          name: 'Kanpur Zoological Park (Allen Forest Zoo)',
+          lat: 26.5029234,
+          lng: 80.303404,
+          primaryType: 'zoo',
+          types: const <String>['zoo', 'tourist_attraction'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Kanpur',
+          state: 'Uttar Pradesh',
+        ),
+        Place(
+          placeId: 'bundled:kanpur:blue-world',
+          name: 'Blue World Theme Park',
+          lat: 26.5708319,
+          lng: 80.2382292,
+          primaryType: 'amusement_park',
+          types: const <String>[
+            'amusement_park', 'water_park', 'tourist_attraction'
+          ],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Kanpur',
+          state: 'Uttar Pradesh',
+        ),
+        Place(
+          placeId: 'bundled:kanpur:moti-jheel',
+          name: 'Moti Jheel',
+          lat: 26.4761,
+          lng: 80.314055,
+          primaryType: 'park',
+          types: const <String>['park', 'tourist_attraction'],
+          category: 'park',
+          provider: 'bundled_directory',
+          city: 'Kanpur',
+          state: 'Uttar Pradesh',
+        ),
+        Place(
+          placeId: 'bundled:kanpur:jk-temple',
+          name: 'JK Temple',
+          lat: 26.4730,
+          lng: 80.3070,
+          primaryType: 'hindu_temple',
+          types: const <String>['place_of_worship', 'tourist_attraction'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Kanpur',
+          state: 'Uttar Pradesh',
+        ),
+        Place(
+          placeId: 'bundled:kanpur:memorial-church',
+          name: 'Kanpur Memorial Church',
+          lat: 26.4506,
+          lng: 80.3693,
+          primaryType: 'church',
+          types: const <String>['place_of_worship', 'historical_landmark'],
+          category: 'attraction',
+          provider: 'bundled_directory',
+          city: 'Kanpur',
+          state: 'Uttar Pradesh',
+        ),
+      ];
     }
+    if (city != 'ayodhya') return const <Place>[];
     return <Place>[
       Place(
         placeId: 'bundled:ayodhya:ram-mandir',
@@ -512,18 +578,44 @@ class AutopilotService extends ChangeNotifier {
       }
       _dataset = near?.places ?? const <Place>[];
       _datasetKey = near?.key;
-      if (_dataset.isEmpty) {
-        try {
-          _dataset =
-              await _wideSweep(center).timeout(const Duration(seconds: 45));
-        } catch (_) {
-          // Timeout or total outage — reported as an empty area below.
+
+      List<Place> mergePlaces(List<Place> current, Iterable<Place> incoming) {
+        final Map<String, Place> merged = <String, Place>{};
+        for (final Place p in <Place>[...current, ...incoming]) {
+          final String name = p.name
+              .toLowerCase()
+              .replaceAll(RegExp(r'[^a-z0-9\u0900-\u097F]+'), ' ')
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .trim();
+          final String key = '$name@${p.lat.toStringAsFixed(3)},'
+              '${p.lng.toStringAsFixed(3)}';
+          merged.putIfAbsent(key, () => p);
         }
+        return merged.values.toList();
       }
-      if (_dataset.isEmpty) {
-        _dataset = bundledDestinationPlaces(_brief.endName);
-        if (_dataset.isNotEmpty) {
-          _datasetKey = 'bundled:${_brief.endName!.toLowerCase()}';
+
+      // Stable famous landmarks supplement provider rows even when a generic
+      // dataset exists. Previously they were used only on total outage, so an
+      // Ayodhya response containing stations/fire services hid Ram Mandir.
+      final List<Place> bundled = bundledDestinationPlaces(_brief.endName);
+      if (bundled.isNotEmpty) {
+        _dataset = mergePlaces(_dataset, bundled);
+        _datasetKey ??= 'bundled:${_brief.endName!.toLowerCase()}';
+      }
+
+      final int relevantCount = AutopilotEngine.candidatesFor(
+        _dataset,
+        _brief,
+        excludeLat: center.latitude,
+        excludeLng: center.longitude,
+      ).length;
+      if (_dataset.isEmpty || relevantCount < 6) {
+        try {
+          final List<Place> supplemental =
+              await _wideSweep(center).timeout(const Duration(seconds: 45));
+          _dataset = mergePlaces(_dataset, supplemental);
+        } catch (_) {
+          // Timeout or total outage — bundled/cache rows remain usable.
         }
       }
       if (_dataset.isEmpty) {
@@ -601,20 +693,11 @@ class AutopilotService extends ChangeNotifier {
       excludeLat: center.latitude,
       excludeLng: center.longitude,
     );
-    // Provider taxonomies evolve independently (Google may say
-    // `historical_landmark`, OSM `tourism=attraction`, Photon just
-    // `point_of_interest`). If strict interest matching yields zero, recover
-    // with every non-essential real place instead of lying that the whole
-    // area is visited/closed. Interest remains a ranking preference whenever
-    // a recognised category exists.
-    if (candidates.isEmpty && _dataset.isNotEmpty) {
-      candidates = AutopilotEngine.candidatesFor(
-        _dataset,
-        _brief.copyWith(interests: const <AutopilotInterest>{}),
-        excludeLat: center.latitude,
-        excludeLng: center.longitude,
-      );
-    }
+    // Never defeat the traveller's category choice. The previous fallback
+    // replaced an empty Explore result with every nearby object, which is why
+    // restaurants, railway duplicates and a fire station were presented as
+    // sightseeing. Unknown provider taxonomies are supplemented upstream;
+    // if nothing matches, an honest category-specific empty state is safer.
     // Already-visited/skipped/removed places never come back.
     final Set<String> used = <String>{
       for (final AutopilotStop s in _session?.stops ?? const <AutopilotStop>[])
@@ -887,6 +970,7 @@ class AutopilotService extends ChangeNotifier {
   static const Map<AutopilotInterest, String> _interestSearchTerm =
       <AutopilotInterest, String>{
     AutopilotInterest.eat: 'restaurant',
+    AutopilotInterest.stay: 'hotel',
     AutopilotInterest.explore: 'tourist attraction',
     AutopilotInterest.shopping: 'shopping mall',
     AutopilotInterest.relax: 'park',
@@ -906,40 +990,78 @@ class AutopilotService extends ChangeNotifier {
   /// dropped by name + position so a place found under two interests counts
   /// once.
   Future<List<Place>> _wideSweep(LatLng center) async {
-    final List<String> wanted = <String>{
-      ..._brief.interests
-          .map((AutopilotInterest i) => _interestSearchTerm[i] ?? 'attraction'),
-      'tourist attraction',
-      'historical landmark',
-      'place of worship',
-      'museum',
-      'park',
-      'restaurant',
-      'shopping mall',
-    }.toList();
+    final Set<AutopilotInterest> interests = _brief.interests.isEmpty
+        ? const <AutopilotInterest>{AutopilotInterest.explore}
+        : _brief.interests;
+    const Map<AutopilotInterest, List<String>> categoryRequests =
+        <AutopilotInterest, List<String>>{
+      AutopilotInterest.eat: <String>['food'],
+      AutopilotInterest.stay: <String>['hotel'],
+      AutopilotInterest.explore: <String>['tourist_places', 'museum', 'park'],
+      AutopilotInterest.shopping: <String>['shopping'],
+      AutopilotInterest.relax: <String>['park'],
+      AutopilotInterest.entertainment: <String>['tourist_places', 'park'],
+      AutopilotInterest.sightseeing: <String>['tourist_places', 'museum'],
+      AutopilotInterest.historical: <String>['tourist_places', 'museum'],
+      AutopilotInterest.family: <String>['park', 'tourist_places'],
+      AutopilotInterest.work: <String>['cafe'],
+      AutopilotInterest.roadtrip: <String>['tourist_places', 'food'],
+      AutopilotInterest.other: <String>['tourist_places'],
+    };
+    final List<String> categories = <String>{
+      for (final AutopilotInterest interest in interests)
+        ...(categoryRequests[interest] ?? const <String>[]),
+    }.take(6).toList();
     final List<Place> out = <Place>[];
     final Set<String> seen = <String>{};
-    for (final String label in wanted.take(8)) {
-      // A useful 10-hour plan needs more than two cards. Stop at 18 unique
-      // places, while still keeping provider calls sequential/rate-safe.
-      if (out.length >= 18) break;
-      try {
-        final List<Place> found = await _places
-            .search(label, location: center, radiusMeters: 25000)
-            .timeout(const Duration(seconds: 10));
-        for (final Place p in found) {
-          if (p.category == 'locality' ||
-              p.category == 'administrative' ||
-              p.category == 'country') {
-            continue;
-          }
-          final String k = '${p.name.toLowerCase()}'
-              '@${p.lat.toStringAsFixed(3)},${p.lng.toStringAsFixed(3)}';
-          if (!seen.add(k)) continue;
-          out.add(p);
+
+    void addAll(Iterable<Place> places) {
+      for (final Place p in places) {
+        if (p.category == 'locality' ||
+            p.category == 'administrative' ||
+            p.category == 'country') {
+          continue;
         }
+        final String name = p.name
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9\u0900-\u097F]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        final String k = '$name@${p.lat.toStringAsFixed(3)},'
+            '${p.lng.toStringAsFixed(3)}';
+        if (seen.add(k)) out.add(p);
+      }
+    }
+
+    // Category APIs preserve semantics. A request for Explore cannot turn
+    // into restaurants/fire stations merely because those are closer.
+    for (final String category in categories) {
+      if (out.length >= 24) break;
+      try {
+        final NearbyResult result = await _places
+            .nearbyCategory(center, category, radiusMeters: 25000)
+            .timeout(const Duration(seconds: 18));
+        addAll(result.places);
       } catch (_) {
-        // One interest failing must not sink the whole sweep.
+        // Continue to the independent text-provider rescue below.
+      }
+    }
+
+    // Some geocoders do not expose category endpoints. Query only the user's
+    // requested intents—never the old unconditional restaurant/shopping mix.
+    if (out.length < 8) {
+      final List<String> terms = <String>{
+        for (final AutopilotInterest i in interests)
+          _interestSearchTerm[i] ?? 'tourist attraction',
+      }.toList();
+      for (final String term in terms.take(4)) {
+        try {
+          addAll(await _places
+              .search(term, location: center, radiusMeters: 25000)
+              .timeout(const Duration(seconds: 10)));
+        } catch (_) {
+          // One provider family failing must not sink useful earlier rows.
+        }
       }
     }
     return out;

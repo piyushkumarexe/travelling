@@ -45,8 +45,7 @@ class _JourneyOperationsScreenState extends State<JourneyOperationsScreen> {
         setState(() {
           _loading = false;
           _error = error.toString().contains('permission-denied')
-              ? 'Journey Operations needs the latest Firestore rules. '
-                  'Deploy firestore.rules and try again.'
+              ? 'Journey Operations could not open cloud sync. Restart the screen to use the private on-device copy.'
               : 'Could not sync your journey operations. Check the connection and retry.';
         });
       },

@@ -60,9 +60,13 @@ class AutopilotEngine {
     AutopilotInterest.eat: <String>[
       'food', 'restaurant', 'cafe', 'fast_food', 'bakery', 'food_court'
     ],
+    AutopilotInterest.stay: <String>[
+      'hotel', 'lodging', 'hostel', 'guest_house', 'motel', 'resort'
+    ],
     AutopilotInterest.explore: <String>[
-      'attraction', 'tourist_attraction', 'museum', 'point_of_interest',
-      'viewpoint', 'place_of_worship'
+      'attraction', 'tourist_attraction', 'museum', 'viewpoint',
+      'place_of_worship', 'historical_landmark', 'monument', 'fort', 'palace',
+      'zoo', 'amusement_park', 'water_park'
     ],
     AutopilotInterest.shopping: <String>[
       'shopping', 'shopping_mall', 'market', 'marketplace', 'store'
@@ -76,7 +80,7 @@ class AutopilotEngine {
     ],
     AutopilotInterest.sightseeing: <String>[
       'attraction', 'tourist_attraction', 'museum', 'viewpoint',
-      'point_of_interest', 'place_of_worship'
+      'place_of_worship', 'historical_landmark', 'monument'
     ],
     AutopilotInterest.historical: <String>[
       'museum', 'attraction', 'tourist_attraction', 'historical_landmark',
@@ -142,15 +146,17 @@ class AutopilotEngine {
     // pronouns / auxiliaries
     'i', 'we', 'my', 'me', 'mine', 'you', 'your', 'is', 'are', 'was', 'be',
     'want', 'wanted', 'would', 'will', 'like', 'likes', 'love', 'going',
-    'go', 'get', 'got', 'plan', 'planning', 'make', 'makes', 'need',
+    'go', 'get', 'got', 'find', 'show', 'recommend', 'suggest', 'plan',
+    'planning', 'make', 'makes', 'need',
     // prepositions / articles / conjunctions
     'for', 'in', 'at', 'near', 'around', 'to', 'the', 'a', 'an', 'of',
     'and', 'or', 'with', 'from', 'by', 'about', 'some', 'something', 'else',
     // activity words (parseBrief already turns these into interests/modes)
     'explore', 'exploring', 'visit', 'visiting', 'see', 'seeing',
     'sightseeing', 'sightsee', 'travel', 'travelling', 'traveling',
-    'eat', 'eating', 'food', 'shopping', 'shop', 'relax', 'relaxing',
-    'chill', 'entertainment', 'historical', 'history', 'family', 'friends',
+    'eat', 'eating', 'food', 'restaurant', 'restaurants', 'hotel', 'hotels',
+    'stay', 'stays', 'shopping', 'shop', 'relax', 'relaxing', 'chill',
+    'entertainment', 'historical', 'history', 'family', 'friends',
     'friend', 'solo', 'alone', 'work', 'working', 'laptop', 'road', 'trip',
     'biking', 'cycling', 'bike', 'driving', 'drive', 'walking', 'walk',
     'cycle', 'cyclo',
@@ -162,7 +168,8 @@ class AutopilotEngine {
     // generic place words
     'places', 'place', 'spots', 'spot', 'somewhere', 'anywhere', 'here',
     'there', 'things', 'thing', 'attractions', 'attraction', 'tour', 'tours',
-    'sight', 'sights',
+    'sight', 'sights', 'park', 'parks', 'water', 'theme', 'amusement',
+    'cinema', 'movie', 'movies', 'theatre', 'zoo', 'museum', 'museums',
     // common Hindi/Hinglish fillers ("main Ayodhya jaana chahta hoon")
     'main', 'maine', 'hain', 'hai', 'jaana', 'jaane', 'jaau', 'jaun', 'ja',
     'chahta', 'chahata', 'chahati', 'chahti', 'hoon', 'ho', 'karna', 'karo',
@@ -249,6 +256,9 @@ class AutopilotEngine {
         r'eat|food|lunch|dinner|breakfast|khana|restaurant|street food'))) {
       found.add(AutopilotInterest.eat);
     }
+    if (re(RegExp(r'hotel|hostel|resort|guest\s*house|lodg|\bstay\b'))) {
+      found.add(AutopilotInterest.stay);
+    }
     if (re(RegExp(r'histor|fort|museum|palace|heritage|monument'))) {
       found.add(AutopilotInterest.historical);
     }
@@ -258,8 +268,12 @@ class AutopilotEngine {
     if (re(RegExp(r'relax|peaceful|calm|chill|nature|park|garden'))) {
       found.add(AutopilotInterest.relax);
     }
-    if (re(RegExp(r'explore|sightsee|tourist|see places'))) {
+    if (re(RegExp(r'explore|sightsee|tourist|see places|famous|ghumna|ghumne'))) {
       found.add(AutopilotInterest.explore);
+    }
+    if (re(RegExp(
+        r'water\s*park|amusement|theme\s*park|cinema|movie|theatre|entertainment|fun'))) {
+      found.add(AutopilotInterest.entertainment);
     }
     if (re(RegExp(r'family|kids|children'))) {
       found.add(AutopilotInterest.family);
@@ -305,14 +319,30 @@ class AutopilotEngine {
               p.types.any((String t) => wanted.contains(t)))) {
         continue;
       }
-      const Set<String> skip = <String>{'atm', 'police', 'hospital', 'pharmacy'};
-      if (p.category != null && skip.contains(p.category)) continue;
+      const Set<String> skip = <String>{
+        'atm', 'police', 'police_station', 'hospital', 'pharmacy',
+        'fire_station', 'fuel', 'gas_station', 'bank', 'post_office',
+      };
+      if ((p.category != null && skip.contains(p.category)) ||
+          (p.primaryType != null && skip.contains(p.primaryType)) ||
+          p.types.any(skip.contains)) {
+        continue;
+      }
       if (excludeLat > -900 &&
           (p.lat - excludeLat).abs() < 1e-4 &&
           (p.lng - excludeLng).abs() < 1e-4) {
         continue;
       }
-      final String key = _dedupKey(p);
+      final String name = _normalizedName(p.name);
+      String? key;
+      for (final MapEntry<String, Place> entry in seen.entries) {
+        if (!entry.key.startsWith('$name|')) continue;
+        if (GeoUtils.distanceMeters(entry.value.coords, p.coords) <= 500) {
+          key = entry.key;
+          break;
+        }
+      }
+      key ??= '$name|${p.lat.toStringAsFixed(3)}|${p.lng.toStringAsFixed(3)}';
       final Place? existing = seen[key];
       if (existing == null ||
           (p.distanceMeters ?? 1e9) < (existing.distanceMeters ?? 1e9)) {
@@ -322,10 +352,11 @@ class AutopilotEngine {
     return seen.values.toList();
   }
 
-  static String _dedupKey(Place p) {
-    final String name = p.name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-    return '$name|${p.lat.toStringAsFixed(4)}|${p.lng.toStringAsFixed(4)}';
-  }
+  static String _normalizedName(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\u0900-\u097F]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   /// ----------------------------------------------
   /// Ranking: "what you can do NOW".
@@ -349,6 +380,13 @@ class AutopilotEngine {
     int limit = 24,
   }) {
     final int? maxTravel = brief.maxTravelMinutes;
+    // Words the traveller typed are a stronger signal than old/default chips.
+    // "explore Kanpur" must put attractions above a nearby restaurant even
+    // if Eat was also left selected from an earlier choice.
+    final Set<AutopilotInterest> textPriorities =
+        (brief.freeText ?? '').trim().isEmpty
+            ? const <AutopilotInterest>{}
+            : parseBrief(brief.freeText!).interests;
     final List<AutopilotSuggestion> ok = <AutopilotSuggestion>[];
     final List<(AutopilotSuggestion, String)> rejected =
         <(AutopilotSuggestion, String)>[];
@@ -366,8 +404,13 @@ class AutopilotEngine {
       // Interest weight (selected interests first, then session learning).
       int interestHits = 0;
       for (final AutopilotInterest i in brief.interests) {
-        if ((interestCategories[i] ?? const <String>[]).contains(cat)) {
-          interestHits += 2;
+        final List<String> categories =
+            interestCategories[i] ?? const <String>[];
+        final bool matches = categories.contains(cat) ||
+            p.types.any(categories.contains) ||
+            (p.primaryType != null && categories.contains(p.primaryType));
+        if (matches) {
+          interestHits += textPriorities.contains(i) ? 5 : 2;
         }
       }
       interestHits += math.min(6, learnedInterest[cat] ?? 0);
@@ -400,8 +443,20 @@ class AutopilotEngine {
         0 => 0,
         1 => 8,
         2 => 18,
-        _ => 24,
+        >= 5 => 42,
+        _ => 28,
       };
+      // Provider popularity is optional, but when available it helps put a
+      // city's established sights ahead of obscure generic POIs. Never invent
+      // a rating: absent values add nothing.
+      if (p.rating != null) {
+        score += p.rating!.clamp(0, 5).toDouble() * 2;
+      }
+      if (p.userRatingCount != null && p.userRatingCount! > 0) {
+        score += math
+            .min(10.0, math.log(p.userRatingCount! + 1) / math.ln10 * 3)
+            .toDouble();
+      }
       if (brief.group == AutopilotGroup.family &&
           (cat == 'park' || cat == 'attraction' || cat == 'museum')) {
         score += 6;

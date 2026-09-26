@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 /// dataset categories used by the existing nearby-places system.
 enum AutopilotInterest {
   eat('Eat', '🍽️'),
+  stay('Hotels & stays', '🏨'),
   explore('Explore', '🏛️'),
   shopping('Shopping', '🛍️'),
   relax('Relax', '🌳'),
