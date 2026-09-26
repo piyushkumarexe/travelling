@@ -71,7 +71,7 @@ class JourneyOperationsService {
       } on FirebaseException catch (profileError) {
         if (profileError.code != 'permission-denied') rethrow;
         // The currently deployed rules can predate both server locations.
-        // Keep all twelve tools fully usable on this phone instead of showing
+        // Keep every journey tool fully usable on this phone instead of showing
         // a developer-only "deploy rules" dead screen.
         _localFallbackUsers.add(uid);
         final List<JourneyOperation> local = await _readLocal(uid);

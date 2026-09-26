@@ -2,13 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yatrawise/features/operations/journey_operations_models.dart';
 
 void main() {
-  test('exposes twelve distinct working journey tools', () {
-    expect(journeyToolDefinitions, hasLength(12));
+  test('exposes thirty-seven distinct working journey tools', () {
+    expect(journeyToolDefinitions, hasLength(37));
     expect(
       journeyToolDefinitions
           .map((JourneyToolDefinition definition) => definition.kind)
           .toSet(),
-      hasLength(12),
+      hasLength(37),
     );
     for (final JourneyToolDefinition definition in journeyToolDefinitions) {
       expect(definition.title, isNotEmpty);

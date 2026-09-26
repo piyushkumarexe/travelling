@@ -399,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   '/automation'),
           const Divider(height: 1, indent: 62),
           _toolRow(Icons.dashboard_customize_outlined,
-                  'Journey Operations · 12 synced tools',
+                  'Journey Operations · 37 synced tools',
                   'Health, luggage, tasks, contacts and trip organisation.',
                   '/journey-operations'),
           const Divider(height: 1, indent: 62),

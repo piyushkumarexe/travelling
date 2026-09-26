@@ -18,11 +18,14 @@ class JourneyOperationsScreen extends StatefulWidget {
 class _JourneyOperationsScreenState extends State<JourneyOperationsScreen> {
   StreamSubscription<List<JourneyOperation>>? _subscription;
   List<JourneyOperation> _items = const <JourneyOperation>[];
+  Map<JourneyToolKind, List<JourneyOperation>> _itemsByKind =
+      const <JourneyToolKind, List<JourneyOperation>>{};
   JourneyToolKind? _selected;
   bool _loading = true;
   bool _showOpenOnly = false;
   String? _error;
   String _query = '';
+  String _toolQuery = '';
 
   AppContainer get _container => AppScope.of(context);
   String get _uid => _container.currentUid();
@@ -34,8 +37,11 @@ class _JourneyOperationsScreenState extends State<JourneyOperationsScreen> {
     _subscription = _container.journeyOperations.watch(_uid).listen(
       (List<JourneyOperation> items) {
         if (!mounted) return;
+        final Map<JourneyToolKind, List<JourneyOperation>> indexed =
+            _indexByKind(items);
         setState(() {
           _items = items;
+          _itemsByKind = indexed;
           _loading = false;
           _error = null;
         });
@@ -58,16 +64,36 @@ class _JourneyOperationsScreenState extends State<JourneyOperationsScreen> {
     super.dispose();
   }
 
-  List<JourneyOperation> _forKind(JourneyToolKind kind) => _items
-      .where((JourneyOperation item) => item.kind == kind)
-      .toList(growable: false);
+  static Map<JourneyToolKind, List<JourneyOperation>> _indexByKind(
+    List<JourneyOperation> items,
+  ) {
+    final Map<JourneyToolKind, List<JourneyOperation>> indexed =
+        <JourneyToolKind, List<JourneyOperation>>{};
+    for (final JourneyOperation item in items) {
+      (indexed[item.kind] ??= <JourneyOperation>[]).add(item);
+    }
+    return indexed;
+  }
+
+  List<JourneyOperation> _forKind(JourneyToolKind kind) =>
+      _itemsByKind[kind] ?? const <JourneyOperation>[];
+
+  List<JourneyToolDefinition> get _visibleToolDefinitions {
+    final String query = _toolQuery.trim().toLowerCase();
+    if (query.isEmpty) return journeyToolDefinitions;
+    return journeyToolDefinitions
+        .where((JourneyToolDefinition definition) =>
+            '${definition.title} ${definition.description}'
+                .toLowerCase()
+                .contains(query))
+        .toList(growable: false);
+  }
 
   List<JourneyOperation> get _visibleItems {
     final JourneyToolKind? selected = _selected;
     if (selected == null) return const <JourneyOperation>[];
     final String query = _query.trim().toLowerCase();
-    return _items.where((JourneyOperation item) {
-      if (item.kind != selected) return false;
+    return _forKind(selected).where((JourneyOperation item) {
       if (_showOpenOnly && item.completed) return false;
       if (query.isEmpty) return true;
       return '${item.title} ${item.detail} ${item.extra}'
@@ -286,82 +312,112 @@ class _JourneyOperationsScreenState extends State<JourneyOperationsScreen> {
     );
   }
 
-  Widget _buildDashboard() => ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-        children: <Widget>[
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text('12 synced travel tools',
-                    style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 8),
-                const Text(
-                  'Organise health, luggage, people, accessibility and trip details. '
-                  'Every saved item is private to your signed-in account.',
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: <Widget>[
-                    const Icon(Icons.cloud_done_outlined, size: 18),
-                    const SizedBox(width: 8),
-                    Text('${_items.length} synced items'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final int columns = constraints.maxWidth >= 700 ? 3 : 2;
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: journeyToolDefinitions.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: columns == 3 ? 1.35 : 0.95,
-                ),
-                itemBuilder: (BuildContext context, int index) {
-                  final JourneyToolDefinition item =
-                      journeyToolDefinitions[index];
-                  final List<JourneyOperation> records = _forKind(item.kind);
-                  final int completed = records
-                      .where((JourneyOperation record) => record.completed)
-                      .length;
-                  return AppCard(
-                    padding: const EdgeInsets.all(14),
-                    onTap: () => setState(() => _selected = item.kind),
+  Widget _buildDashboard() => LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final int columns = constraints.maxWidth >= 700 ? 3 : 2;
+          final List<JourneyToolDefinition> definitions =
+              _visibleToolDefinitions;
+          return CustomScrollView(
+            slivers: <Widget>[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+                sliver: SliverToBoxAdapter(
+                  child: AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Icon(item.icon,
-                            color: Theme.of(context).colorScheme.primary),
-                        const Spacer(),
-                        Text(item.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall),
-                        const SizedBox(height: 5),
-                        Text(item.description,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall),
-                        const Spacer(),
-                        Text(item.canComplete && records.isNotEmpty
-                            ? '$completed/${records.length} complete'
-                            : '${records.length} saved'),
+                        Text('${journeyToolDefinitions.length} synced travel tools',
+                            style: Theme.of(context).textTheme.headlineSmall),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Organise documents, transport, health, groups, stays and practical trip details. '
+                          'Every saved item is private to your signed-in account.',
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: <Widget>[
+                            const Icon(Icons.cloud_done_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Text('${_items.length} synced items'),
+                          ],
+                        ),
                       ],
                     ),
-                  );
-                },
-              );
-            },
-          ),
-        ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                sliver: SliverToBoxAdapter(
+                  child: TextField(
+                    onChanged: (String value) =>
+                        setState(() => _toolQuery = value),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Find a travel tool',
+                    ),
+                  ),
+                ),
+              ),
+              if (definitions.isEmpty)
+                const SliverPadding(
+                  padding: EdgeInsets.all(24),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(child: Text('No travel tool matches that search.')),
+                  ),
+                ),
+              // A real sliver grid lazily builds visible cards. The previous
+              // shrink-wrapped nested GridView eagerly laid out every tool,
+              // which became costly as the operations suite grew.
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: columns == 3 ? 1.35 : 0.95,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (BuildContext context, int index) {
+                      final JourneyToolDefinition item = definitions[index];
+                      final List<JourneyOperation> records = _forKind(item.kind);
+                      final int completed = records
+                          .where((JourneyOperation record) => record.completed)
+                          .length;
+                      return AppCard(
+                        padding: const EdgeInsets.all(14),
+                        onTap: () => setState(() => _selected = item.kind),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(item.icon,
+                                color: Theme.of(context).colorScheme.primary),
+                            const Spacer(),
+                            Text(item.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall),
+                            const SizedBox(height: 5),
+                            Text(item.description,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall),
+                            const Spacer(),
+                            Text(item.canComplete && records.isNotEmpty
+                                ? '$completed/${records.length} complete'
+                                : '${records.length} saved'),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: definitions.length,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       );
 
   Widget _buildTool(JourneyToolDefinition definition) {
