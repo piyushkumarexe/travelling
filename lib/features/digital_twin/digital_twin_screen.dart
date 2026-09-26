@@ -340,7 +340,11 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.threed_rotation),
                 label: const Text('Open 2D / 3D map'),
-                onPressed: () => context.push(
+                // /map is a stateful shell branch. `push` can stack a second
+                // shell above the simulator while leaving that branch without
+                // an active page on some Android builds (white body + bottom
+                // bar). `go` performs the intended branch switch atomically.
+                onPressed: () => context.go(
                   '/map?lat=${widget.destination.lat}&lng=${widget.destination.lng}&name=${Uri.encodeComponent(widget.destination.name)}',
                 ),
               ),

@@ -162,27 +162,53 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Position>? _posSub;
 
+  bool _dependenciesBound = false;
+  bool? _tabActive;
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    _loadVehicleMode();
-    _zonesSub = _c.zonesRepository.watchAll().listen(
-          (List<SafetyZone> z) {
-        if (mounted) {
-          setState(() => _zones = z);
-          _rebuildZones();
-        }
-      },
-      onError: (Object _) {},
-        );
-    _startIncidentsWatch();
-    _startPositionWatch();
-    _resolveInitial();
-    // Runtime diagnostic (sanitized): shows whether a key was compiled in and
-    // its length/prefix, so the on-device value can be verified in logcat.
-    debugPrint('[map] ${AppConfig.debugMapConfig()}');
-    unawaited(_verifyMapKey());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // AppScope is an inherited widget and must not be read from initState.
+    // A fresh Map branch (notably Digital Twin → 2D/3D map) used to access it
+    // too early, leaving the shell visible with a completely white body.
+    if (!_dependenciesBound) {
+      _dependenciesBound = true;
+      unawaited(_loadVehicleMode());
+      _zonesSub = _c.zonesRepository.watchAll().listen(
+            (List<SafetyZone> z) {
+          if (mounted) {
+            setState(() => _zones = z);
+            _rebuildZones();
+          }
+        },
+        onError: (Object _) {},
+      );
+      _startIncidentsWatch();
+      _startPositionWatch();
+      unawaited(_resolveInitial());
+      debugPrint('[map] ${AppConfig.debugMapConfig()}');
+      unawaited(_verifyMapKey());
+    }
+
+    // Stateful tab navigation retains the map for instant return. Pause its
+    // GPS delivery while another tab is visible so that speed/distance UI
+    // does not rebuild invisibly and waste battery.
+    final bool active = TickerMode.of(context);
+    if (_tabActive != active) {
+      _tabActive = active;
+      if (active) {
+        _posSub?.resume();
+      } else {
+        _posSub?.pause();
+      }
+    }
   }
 
   /// Verifies the compiled MapTiler key with ONE geocoding request so a

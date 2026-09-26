@@ -44,9 +44,13 @@ class ActiveTripState extends ChangeNotifier {
 
   /// Clears the active navigation (arrival or explicit end).
   void end() {
-    if (!_active) return;
+    if (!_active && _lat == null && _lng == null) return;
     _active = false;
+    _lat = null;
+    _lng = null;
+    _name = '';
     _startedAt = null;
+    _mode = 'car';
     notifyListeners();
   }
 

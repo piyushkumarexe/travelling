@@ -99,10 +99,16 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   StreamSubscription<List<SafetyZone>>? _zonesSub;
   StreamSubscription<List<Incident>>? _incidentsSub;
 
+  bool _dependenciesBound = false;
+
   @override
-  void initState() {
-    super.initState();
-    _setup();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_dependenciesBound) return;
+    _dependenciesBound = true;
+    // _setup reads AppScope; binding here avoids inherited-widget access from
+    // initState and makes navigation startup deterministic on a fresh route.
+    unawaited(_setup());
   }
 
   Future<void> _setup() async {
@@ -348,6 +354,32 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
     }
   }
 
+  Future<void> _confirmEndTrip() async {
+    final bool? end = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        icon: const Icon(Icons.stop_circle_outlined, size: 38),
+        title: const Text('End navigation?'),
+        content: const Text(
+          'This removes the active route and stops live location sharing for '
+          'this trip.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.stop),
+            label: const Text('End navigation'),
+          ),
+        ],
+      ),
+    );
+    if (end == true && mounted) _endTrip();
+  }
+
   /// Explicit end: clears the resume pill, stops sharing, returns home.
   void _endTrip() {
     _c.activeTrip.end();
@@ -494,7 +526,17 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Live trip')),
+      appBar: AppBar(
+        title: const Text('Live trip'),
+        actions: <Widget>[
+          if (_ready && _setupError == null)
+            IconButton(
+              tooltip: 'End navigation',
+              onPressed: _confirmEndTrip,
+              icon: const Icon(Icons.stop_circle_outlined),
+            ),
+        ],
+      ),
       body: !_ready
           ? const LoadingView(message: 'Starting live trip…')
           : _setupError != null
@@ -1014,7 +1056,7 @@ class _LiveTripScreenState extends State<LiveTripScreen> {
                 foregroundColor: AppTheme.danger,
                 side: const BorderSide(color: AppTheme.danger),
               ),
-              onPressed: _endTrip,
+              onPressed: _confirmEndTrip,
               icon: const Icon(Icons.flag, size: 16),
               label: const Text('End trip'),
             ),

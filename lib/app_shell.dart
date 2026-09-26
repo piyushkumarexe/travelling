@@ -315,8 +315,41 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  Future<void> _stopActiveNavigation(AppContainer c) async {
+    final bool? stop = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        icon: const Icon(Icons.stop_circle_outlined, size: 38),
+        title: const Text('Stop navigation?'),
+        content: const Text(
+          'The active route and Resume banner will be removed. Any live '
+          'location sharing started for this trip will also stop.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep navigating'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.stop),
+            label: const Text('Stop'),
+          ),
+        ],
+      ),
+    );
+    if (stop != true || !mounted) return;
+    c.activeTrip.end();
+    if (c.liveLocationShare.active) {
+      unawaited(c.liveLocationShare.stop(status: 'cancelled'));
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Navigation removed.')),
+    );
+  }
+
   /// Resume pill shown on every screen except the live-trip screen itself.
-  /// Tapping it re-opens navigation with the saved destination.
+  /// Tapping it re-opens navigation; its stop button removes the route.
   Widget _activeTripPill(AppContainer c, String location) {
     if (!c.activeTrip.hasDestination || location.startsWith('/trip/live')) {
       return const SizedBox.shrink();
@@ -347,45 +380,60 @@ class _AppShellState extends State<AppShell> {
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(24),
             clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(24),
-              onTap: () {
-                HapticFeedback.selectionClick();
-                context.push(c.activeTrip.route);
-              },
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const Icon(Icons.navigation,
-                        color: Color(0xFF4ADE80), size: 18),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'Navigating to $name',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Flexible(
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.push(c.activeTrip.route);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Icon(Icons.navigation,
+                              color: Color(0xFF4ADE80), size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Navigating to $name',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Resume',
+                            style: TextStyle(
+                              color: Color(0xFF4ADE80),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Resume',
-                      style: TextStyle(
-                        color: Color(0xFF4ADE80),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                Semantics(
+                  button: true,
+                  label: 'Stop active navigation',
+                  child: IconButton(
+                    tooltip: 'Stop navigation',
+                    onPressed: () => _stopActiveNavigation(c),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 19),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
