@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart' show User;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +12,8 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/sos_fab.dart';
 import 'core/widgets/sos_sheet.dart';
 
-/// Main navigation shell: bottom bar + global SOS action.
+/// Main navigation shell: bottom bar + global SOS action + profile avatar at
+/// the top-right.
 ///
 /// Also owns the geofence lifecycle: monitoring starts when signed in and
 /// stops on sign-out. Geofence alerts raise a modal in-app warning with
@@ -35,7 +37,7 @@ class _AppShellState extends State<AppShell> {
     '/explore',
     '/map',
     '/safety',
-    '/profile',
+    '/vehicle',
   ];
   StreamSubscription<GeofenceAlert>? _geofenceAlerts;
   bool _authed = false;
@@ -45,9 +47,11 @@ class _AppShellState extends State<AppShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final AppContainer c = AppScope.of(context);
-    _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
-    _syncGeofence(c);
+    try {
+      final AppContainer c = AppScope.of(context);
+      _geofenceAlerts ??= c.geofenceService.alerts.listen(_onGeofenceAlert);
+      _syncGeofence(c);
+    } catch (_) {}
   }
 
   void _syncGeofence(AppContainer c) {
@@ -129,40 +133,75 @@ class _AppShellState extends State<AppShell> {
 
   /// Handles the system back button when the shell route itself is on top
   /// (dialogs, sheets and pushed pages above it pop on their own first).
+  /// Everything is guarded: an exception inside a PopScope callback on some
+  /// OEM Android builds leaves the app unresponsive to ALL input (the
+  /// reported "open → use a feature → back → nothing responds" freeze).
   void _handleSystemBack() {
-    final GoRouter router = GoRouter.of(context);
-    // Safety net: if anything is still above us, pop it.
-    if (router.canPop()) {
-      router.pop();
-      return;
+    try {
+      final GoRouter router = GoRouter.of(context);
+      // Safety net: if anything is still above us, pop it.
+      if (router.canPop()) {
+        router.pop();
+        return;
+      }
+      final String location = GoRouterState.of(context).matchedLocation;
+      // One step back: any tab other than Home goes to Home first.
+      if (location != '/home') {
+        context.go('/home');
+        return;
+      }
+      // On Home: require a double-press within 2 seconds to exit.
+      final DateTime now = DateTime.now();
+      if (_lastBackPress == null ||
+          now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+        _lastBackPress = now;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Press back again to exit'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+      SystemNavigator.pop();
+    } catch (e) {
+      // Never leave the app stuck: fall back to Home, and if even that
+      // fails, let the system finish the back gesture.
+      _lastBackPress = null;
+      try {
+        context.go('/home');
+      } catch (_) {
+        SystemNavigator.pop();
+      }
     }
-    final String location = GoRouterState.of(context).matchedLocation;
-    // One step back: any tab other than Home goes to Home first.
-    if (location != '/home') {
-      context.go('/home');
-      return;
-    }
-    // On Home: require a double-press within 2 seconds to exit.
-    final DateTime now = DateTime.now();
-    if (_lastBackPress == null ||
-        now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
-      _lastBackPress = now;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Press back again to exit'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    SystemNavigator.pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final String location = GoRouterState.of(context).matchedLocation;
-    final int index = _indexOf(location);
-    final bool onTab = _tabs.contains(location);
+    try {
+      final String location = GoRouterState.of(context).matchedLocation;
+      final int index = _indexOf(location);
+      final bool onTab = _tabs.contains(location);
+      // The map owns the lower-right area for its primary Navigate action.
+      // Keep SOS reachable through the adjacent Safety tab instead of
+      // covering that action with a second floating control.
+      final bool showGlobalSos = location != '/map';
+      AppContainer c;
+      try {
+        c = AppScope.of(context);
+      } catch (_) {
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, Object? result) {
+            if (didPop) return;
+            _handleSystemBack();
+          },
+          child: Scaffold(
+            body: widget.child,
+            floatingActionButton: const SosFab(),
+          ),
+        );
+      }
 
     return PopScope(
       canPop: false,
@@ -171,41 +210,302 @@ class _AppShellState extends State<AppShell> {
         _handleSystemBack();
       },
       child: Scaffold(
-        body: widget.child,
-        floatingActionButton: const SosFab(),
+        body: Stack(
+          children: <Widget>[
+            widget.child,
+            // Live "Navigating … · Resume" pill: navigation keeps running in
+            // the background service when the user switches to another tab,
+            // and this is the one-tap way back into it.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 56,
+              child: SafeArea(
+                child: ListenableBuilder(
+                  listenable: c.activeTrip,
+                  builder: (BuildContext _, Widget? __) =>
+                      _activeTripPill(c, location),
+                ),
+              ),
+            ),
+            // Profile avatar pinned to the top-right on every tab.
+            Positioned(
+              top: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: _profileAvatar(c),
+                ),
+              ),
+            ),
+          ],
+        ),
+        floatingActionButton: showGlobalSos ? const SosFab() : null,
         bottomNavigationBar: onTab
-            ? NavigationBar(
-                selectedIndex: index,
-                onDestinationSelected: (int i) => context.go(_tabs[i]),
-                destinations: const <NavigationDestination>[
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home),
-                    label: 'Home',
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.explore_outlined),
-                    selectedIcon: Icon(Icons.explore),
-                    label: 'Explore',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.map_outlined),
-                    selectedIcon: Icon(Icons.map),
-                    label: 'Map',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.shield_outlined),
-                    selectedIcon: Icon(Icons.shield),
-                    label: 'Safety',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.person_outline),
-                    selectedIcon: Icon(Icons.person),
-                    label: 'Profile',
-                  ),
-                ],
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.07),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: NavigationBar(
+                  selectedIndex: index,
+                  onDestinationSelected: (int i) {
+                    HapticFeedback.selectionClick();
+                    if (i != index) context.go(_tabs[i]);
+                  },
+                  destinations: const <NavigationDestination>[
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore),
+                      label: 'Explore',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.shield_outlined),
+                      selectedIcon: Icon(Icons.shield),
+                      label: 'Safety',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.directions_car_outlined),
+                      selectedIcon: Icon(Icons.directions_car),
+                      label: 'Vehicle',
+                    ),
+                  ],
+                ),
               )
             : null,
+      ),
+    );
+    } catch (e) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            widget.child,
+            const Positioned(
+              bottom: 0,
+              right: 0,
+              child: SosFab(),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _stopActiveNavigation(AppContainer c) async {
+    final bool? stop = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        icon: const Icon(Icons.stop_circle_outlined, size: 38),
+        title: const Text('Stop navigation?'),
+        content: const Text(
+          'The active route and Resume banner will be removed. Any live '
+          'location sharing started for this trip will also stop.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep navigating'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.stop),
+            label: const Text('Stop'),
+          ),
+        ],
+      ),
+    );
+    if (stop != true || !mounted) return;
+    c.activeTrip.end();
+    if (c.liveLocationShare.active) {
+      unawaited(c.liveLocationShare.stop(status: 'cancelled'));
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Navigation removed.')),
+    );
+  }
+
+  /// Resume pill shown on every screen except the live-trip screen itself.
+  /// Tapping it re-opens navigation; its stop button removes the route.
+  Widget _activeTripPill(AppContainer c, String location) {
+    if (!c.activeTrip.hasDestination || location.startsWith('/trip/live')) {
+      return const SizedBox.shrink();
+    }
+    final String name = c.activeTrip.name.isEmpty
+        ? 'your destination'
+        : c.activeTrip.name;
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 8, right: 4),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: <Color>[Color(0xFF171827), Color(0xFF3730A3)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white24),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: AppTheme.brandStart.withValues(alpha: 0.28),
+                blurRadius: 16,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(24),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Flexible(
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      context.push(c.activeTrip.route);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Icon(Icons.navigation,
+                              color: Color(0xFF4ADE80), size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Navigating to $name',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Resume',
+                            style: TextStyle(
+                              color: Color(0xFF4ADE80),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Semantics(
+                  button: true,
+                  label: 'Stop active navigation',
+                  child: IconButton(
+                    tooltip: 'Stop navigation',
+                    onPressed: () => _stopActiveNavigation(c),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 19),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _profileAvatar(AppContainer c) {
+    final User? user = c.authRepository.currentUser;
+    final String? photo = user?.photoURL;
+    final String initial =
+        (user?.displayName?.isNotEmpty ?? false) ? user!.displayName![0].toUpperCase() : '?';
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          context.push('/profile');
+        },
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                scheme.surface,
+                scheme.primary.withValues(alpha: 0.10),
+              ],
+            ),
+            border: Border.all(
+                color: scheme.primary.withValues(alpha: 0.24), width: 1.2),
+            boxShadow: AppTheme.softShadow(context),
+          ),
+          child: ClipOval(
+            child: (photo != null && photo.isNotEmpty)
+                ? Image.network(
+                    photo,
+                    width: 42,
+                    height: 42,
+                    cacheWidth: 128,
+                    cacheHeight: 128,
+                    fit: BoxFit.cover,
+                    errorBuilder: (BuildContext context, Object e,
+                            StackTrace? s) =>
+                        Center(
+                      child: Text(
+                        initial,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }

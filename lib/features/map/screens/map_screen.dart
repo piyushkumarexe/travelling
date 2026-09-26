@@ -1,21 +1,34 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/app_config.dart';
+import '../../../core/network/free_geo_client.dart';
 import '../../../core/state/app_container.dart';
+import '../../../core/utils/external_map_urls.dart';
+import '../../../core/utils/format.dart';
 import '../../../core/utils/geo.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/badges.dart';
+import '../../../core/widgets/live_share_banner.dart';
+import '../../../core/widgets/live_share_prompt.dart';
 import '../../../core/widgets/state_views.dart';
+import '../../../data/models/incident.dart';
 import '../../../data/models/places.dart';
+import '../../../data/models/profile.dart';
 import '../../../data/models/safety_zone.dart';
+import '../widgets/nav_map_3d.dart';
 
-/// REAL interactive Google Maps screen (Google Maps SDK for Flutter):
-/// GPS location, zoom/pan/rotate, place search, tourist attractions,
-/// nearby places, safety zones, emergency services, destination markers,
-/// route info and actual Google Maps navigation on the device.
+/// Interactive map (MapTiler raster tiles — no Google Maps SDK key needed):
+/// GPS location, zoom/pan, place search, tourist attractions, nearby places,
+/// safety zones, emergency services, destination markers, route info and
+/// real turn-by-turn navigation on the device.
 class MapScreen extends StatefulWidget {
   const MapScreen({
     super.key,
@@ -37,19 +50,79 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   AppContainer get _c => AppScope.of(context);
 
-  GoogleMapController? _controller;
+  final MapController _controller = MapController();
   bool _ready = false;
-  CameraPosition _initial = const CameraPosition(
-    target: LatLng(20.5937, 78.9629),
-    zoom: 4,
-  );
+  String? _setupError;
+  LatLng _initialCenter = const LatLng(20.5937, 78.9629);
+  double _initialZoom = 4;
+
+  /// Current tile style: 'streets-v2' (default, most reliable on the free
+  /// tier) with satellite/hybrid available via the layer toggle.
+  String _mapStyle = 'streets-v2';
+
+  /// Non-null message when the map needs to show an honest diagnostic banner
+  /// (tiles failed on both sources, or the compiled MapTiler key was
+  /// rejected at runtime). The map itself keeps rendering, never blank.
+  String? _tileNotice;
+
+  /// True when MapTiler rejected the compiled key at runtime — the map then
+  /// switches to keyless OpenStreetMap tiles and explains why.
+  bool _maptilerRejected = false;
+
+  /// Travel mode for routing + the on-map icon: walk | bike | car | auto.
+  String _travelMode = 'car';
+
+  static const List<(String, IconData, String)> _modes =
+      <(String, IconData, String)>[
+    ('walk', Icons.directions_walk, 'Walk'),
+    ('bike', Icons.directions_bike, 'Bike'),
+    ('car', Icons.directions_car, 'Car'),
+    ('auto', Icons.electric_rickshaw, 'Auto'),
+  ];
+
+  IconData _modeIcon(String mode) => switch (mode) {
+        'walk' => Icons.directions_walk,
+        'bike' => Icons.directions_bike,
+        'car' => Icons.directions_car,
+        'auto' => Icons.electric_rickshaw,
+        _ => Icons.directions_car,
+      };
+
+  String _modeLabel(String mode) => switch (mode) {
+        'walk' => 'Walking',
+        'bike' => 'Biking',
+        'car' => 'Car',
+        'auto' => 'Auto',
+        _ => 'Car',
+      };
+
+  Color _modeColor(String mode) => switch (mode) {
+        'walk' => const Color(0xFF16A34A),
+        'bike' => const Color(0xFF7C3AED),
+        'car' => const Color(0xFF2563EB),
+        'auto' => const Color(0xFFD97706),
+        _ => const Color(0xFF2563EB),
+      };
 
   Position? _position;
   bool _permissionDenied = false;
 
-  Set<Marker> _markers = <Marker>{};
-  Set<Circle> _circles = <Circle>{};
-  Set<Polyline> _polylines = <Polyline>{};
+  /// Optional start point; null means "my location" (default).
+  LatLng? _origin;
+  String? _originName;
+  bool _settingOrigin = false;
+
+  /// Routes per mode for the "fastest way" comparison.
+  Map<String, RouteInfo> _routesByMode = <String, RouteInfo>{};
+  bool _comparingModes = false;
+
+  /// When true the camera follows the live GPS position (real-time tracking).
+  bool _follow = false;
+  bool _autoCentered = false;
+
+  List<Marker> _markers = <Marker>[];
+  List<CircleMarker> _circles = <CircleMarker>[];
+  List<Polyline> _polylines = <Polyline>[];
 
   Place? _selected;
   RouteInfo? _route;
@@ -58,119 +131,374 @@ class _MapScreenState extends State<MapScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
+  int _searchGeneration = 0;
   List<Place> _results = const <Place>[];
   bool _resultsVisible = false;
+
+  /// Full 3D view (MapLibre: tilted camera, building extrusions, the street
+  /// network and street names). Opt-in — the flat flutter_map stays the
+  /// default because it works keyless and costs far less battery.
+  bool _map3d = false;
+
+  /// Set when 3D could not start (no MapTiler key / style load failure) so
+  /// the map can say why it fell back instead of silently doing nothing.
+  String? _map3dNotice;
   bool _searchLoading = false;
   String? _searchError;
 
+  /// Set when the traveller's exact name could not be found and the rows below
+  /// are the nearest places of that KIND — the sheet says so out loud instead
+  /// of letting a substitution look like a match.
+  String? _searchNote;
+
   List<SafetyZone> _zones = const <SafetyZone>[];
   bool _showZones = true;
+
+  List<Incident> _incidents = const <Incident>[];
+  bool _showIncidents = true;
   String? _activeChip;
 
   StreamSubscription<List<SafetyZone>>? _zonesSub;
+  StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Position>? _posSub;
+
+  bool _dependenciesBound = false;
+  bool? _tabActive;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    _zonesSub = _c.zonesRepository.watchAll().listen(
-          (List<SafetyZone> z) {
-        if (mounted) {
-          setState(() => _zones = z);
-          _rebuildZones();
-        }
-      },
-      onError: (Object _) {},
-        );
-    _resolveInitial();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // AppScope is an inherited widget and must not be read from initState.
+    // A fresh Map branch (notably Digital Twin → 2D/3D map) used to access it
+    // too early, leaving the shell visible with a completely white body.
+    if (!_dependenciesBound) {
+      _dependenciesBound = true;
+      unawaited(_loadVehicleMode());
+      _zonesSub = _c.zonesRepository.watchAll().listen(
+            (List<SafetyZone> z) {
+          if (mounted) {
+            setState(() => _zones = z);
+            _rebuildZones();
+          }
+        },
+        onError: (Object _) {},
+      );
+      _startIncidentsWatch();
+      _startPositionWatch();
+      unawaited(_resolveInitial());
+      debugPrint('[map] ${AppConfig.debugMapConfig()}');
+      unawaited(_verifyMapKey());
+    }
+
+    // Stateful tab navigation retains the map for instant return. Pause its
+    // GPS delivery while another tab is visible so that speed/distance UI
+    // does not rebuild invisibly and waste battery.
+    final bool active = TickerMode.of(context);
+    if (_tabActive != active) {
+      _tabActive = active;
+      if (active) {
+        _posSub?.resume();
+      } else {
+        _posSub?.pause();
+      }
+    }
+  }
+
+  /// Verifies the compiled MapTiler key with ONE geocoding request so a
+  /// rejected key is surfaced honestly (and the map falls back to keyless
+  /// OpenStreetMap tiles) instead of rendering MapTiler's "Invalid key"
+  /// error tiles. Network failures are ignored — they are not a key problem.
+  Future<void> _verifyMapKey() async {
+    if (!AppConfig.mapTilerConfigured) return;
+    bool ok;
+    try {
+      ok = await _c.placesRepository.mapTilerKeyValid();
+    } catch (_) {
+      return; // offline / transient — keep MapTiler as configured.
+    }
+    if (!mounted || ok) return;
+    setState(() {
+      _maptilerRejected = true;
+      _tileNotice = 'MapTiler rejected the configured key (invalid key). '
+          'The map is showing OpenStreetMap tiles instead. Update the '
+          'MapTiler key and rebuild the app to restore MapTiler tiles.';
+    });
+  }
+
+  /// Category markers for incidents (privacy-preserving: no reporter
+  /// identity is shown). Regular travelers see their own reports; admins see
+  /// all reports. Rules reject unauthenticated list reads, which is handled
+  /// here without surfacing raw errors.
+  void _startIncidentsWatch() {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) return;
+    final Stream<List<Incident>> stream = _c.authState.isAdmin
+        ? _c.incidentsRepository.watchAll()
+        : _c.incidentsRepository.watchMine(uid);
+    _incidentsSub = stream.listen((List<Incident> items) {
+      if (mounted) setState(() => _incidents = items);
+    }, onError: (Object _) {});
   }
 
   Future<void> _resolveInitial() async {
     final double? lat = widget.initialLat;
     final double? lng = widget.initialLng;
     if (lat != null && lng != null) {
+      // Reject invalid destination coordinates before rendering — never draw
+      // a map centered on NaN/out-of-range values (which looks blank).
+      if (!lat.isFinite ||
+          !lng.isFinite ||
+          lat < -90 ||
+          lat > 90 ||
+          lng < -180 ||
+          lng > 180) {
+        setState(() {
+          _ready = true;
+          _setupError = 'This destination has invalid coordinates, so it '
+              'cannot be shown on the map.';
+        });
+        return;
+      }
+      // Opened from "Get Directions" / "View on map": focus on the place,
+      // drop the destination marker and auto-compute the real OSRM route
+      // from the current location (with proper permission handling). The
+      // screen never renders an empty/white map — the marker, route and
+      // distance/ETA appear even while GPS is still warming up.
+      final Place dest = Place(
+        placeId: 'dest-${lat.toStringAsFixed(6)}-${lng.toStringAsFixed(6)}',
+        name: widget.initialName ?? 'Destination',
+        lat: lat,
+        lng: lng,
+      );
       setState(() {
-        _initial = CameraPosition(target: LatLng(lat, lng), zoom: 15);
+        _initialCenter = LatLng(lat, lng);
+        _initialZoom = 15;
         _ready = true;
+        _autoCentered = true;
+        _selected = dest;
+        _distanceToSelected = _distanceTo(lat, lng);
+        _markers = <Marker>[
+          Marker(
+            point: LatLng(lat, lng),
+            width: 40,
+            height: 40,
+            child: const Icon(Icons.location_pin,
+                color: Color(0xFFDC2626), size: 40),
+          ),
+        ];
       });
+      unawaited(_autoRouteFor());
       return;
     }
+    // Render the map immediately (country view) instead of blocking on a cold
+    // GPS fix. The position watch auto-centers as soon as a real fix lands.
+    setState(() => _ready = true);
+    try {
+      final LocationPermission perm = await _c.locationService.checkPermission();
+      if (!mounted) return;
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        setState(() => _permissionDenied = true);
+      }
+    } catch (_) {}
     try {
       final Position? pos = await _c.locationService.currentPosition();
-      if (!mounted) return;
-      final LocationPermission perm = await _c.locationService.checkPermission();
-      if (pos == null &&
-          (perm == LocationPermission.denied ||
-              perm == LocationPermission.deniedForever)) {
-        setState(() {
-          _permissionDenied = true;
-          _ready = true;
-        });
-      } else if (pos != null) {
-        setState(() {
-          _position = pos;
-          _initial = CameraPosition(
-            target: LatLng(pos.latitude, pos.longitude),
-            zoom: 14,
-          );
-          _ready = true;
-        });
-      } else {
-        setState(() => _ready = true);
+      if (!mounted || pos == null) return;
+      setState(() {
+        _position = pos;
+        _initialCenter = LatLng(pos.latitude, pos.longitude);
+        _initialZoom = 14;
+        _autoCentered = true;
+        _permissionDenied = false;
+      });
+      try {
+        _controller.move(LatLng(pos.latitude, pos.longitude), 14);
+      } catch (_) {
+        // Map not attached yet — the position watch will center it instead.
+      }
+    } catch (_) {}
+  }
+
+  /// After opening the map with a destination, resolve the current location
+  /// (prompting for permission) and compute the route — without ever leaving
+  /// the screen blank or stuck. On denial the permission banner is shown and
+  /// the destination marker stays visible so the user can set a start point.
+  Future<void> _autoRouteFor() async {
+    if (_position == null) {
+      try {
+        final LocationPermission perm =
+            await _c.locationService.ensurePermission();
+        if (!mounted) return;
+        if (perm == LocationPermission.denied ||
+            perm == LocationPermission.deniedForever) {
+          setState(() => _permissionDenied = true);
+          return;
+        }
+        final Position? fixed = await _c.locationService.currentPosition();
+        if (mounted && fixed != null) setState(() => _position = fixed);
+      } catch (_) {
+        // Location unavailable — the destination marker still shows and the
+        // user can set a start point manually.
+      }
+    }
+    if (_position == null) return;
+    await _getRoute();
+  }
+
+  /// Default the travel mode to the vehicle saved in the profile (Vehicle tab)
+  /// so the map icon matches how the traveler is actually moving.
+  Future<void> _loadVehicleMode() async {
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final Profile? p = await _c.profileRepository.get(uid);
+      if (!mounted || p == null) return;
+      final String v = p.vehicle;
+      if (v == 'bike' || v == 'car' || v == 'auto') {
+        setState(() => _travelMode = v);
       }
     } catch (_) {
-      if (mounted) setState(() => _ready = true);
+      // Profile may be unavailable — keep the default car mode.
     }
-    // Live position for distance + recentering.
+  }
+
+  /// Last time the position actually reached the screen. GPS jitters by a few
+  /// metres while standing still; rebuilding the whole map (tiles, markers,
+  /// polylines, attribution) on every one of those fixes was pure jank and
+  /// pure battery. The value is always stored — only the REPAINT is rationed.
+  DateTime? _lastPosPaint;
+
+  /// Always start live position tracking (even when the map opens focused on
+  /// a specific place, so the blue dot, distance and follow-mode work).
+  void _startPositionWatch() {
+    if (_posSub != null) return;
     _posSub = _c.locationService.watchPosition(distanceFilter: 20).listen(
           (Position p) {
         if (mounted) {
-          setState(() => _position = p);
-          _updateDistance();
+          final Position? prev = _position;
+          _position = p;
+          final double moved = prev == null
+              ? double.infinity
+              : GeoUtils.distanceMetersLL(
+                  prev.latitude, prev.longitude, p.latitude, p.longitude);
+          final DateTime? last = _lastPosPaint;
+          final bool stale = last == null ||
+              DateTime.now().difference(last) >= const Duration(seconds: 2);
+          if (moved >= 5 || stale) {
+            _lastPosPaint = DateTime.now();
+            // ONE rebuild for both the marker and the "distance to
+            // selected" line — they used to each call setState per fix.
+            setState(() {
+              _position = p;
+              final Place? sel = _selected;
+              if (sel != null) {
+                _distanceToSelected = _distanceTo(sel.lat, sel.lng);
+              }
+            });
+          }
+          try {
+            if (!_autoCentered) {
+              _autoCentered = true;
+              _controller.move(LatLng(p.latitude, p.longitude), 14);
+            } else if (_follow) {
+              _controller.move(
+                LatLng(p.latitude, p.longitude),
+                _controller.camera.zoom,
+              );
+            }
+          } catch (_) {
+            // Map controller not attached yet (first frames) — ignore.
+          }
         }
       },
       onError: (Object _) {},
-        );
+    );
   }
 
   void _onSearchChanged() {
     final String q = _searchController.text.trim();
     _searchDebounce?.cancel();
     if (q.isEmpty) {
+      _searchGeneration++;
       if (mounted) {
         setState(() {
           _resultsVisible = false;
           _results = const <Place>[];
+          _searchLoading = false;
+          _searchError = null;
+          _searchNote = null;
         });
       }
       return;
     }
-    _searchDebounce = Timer(const Duration(milliseconds: 550), _runSearch);
+    _searchDebounce = Timer(const Duration(milliseconds: 450), _runSearch);
   }
 
   Future<void> _runSearch() async {
     final String q = _searchController.text.trim();
-    if (q.isEmpty || _searchLoading) return;
+    if (q.isEmpty) return;
+    final int generation = ++_searchGeneration;
     setState(() {
       _searchLoading = true;
       _searchError = null;
+      _searchNote = null;
+      _results = const <Place>[];
+      _resultsVisible = true; // show the sheet with a spinner while searching
     });
     try {
-      final LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
+      // Proximity = the DEVICE's real GPS fix when available (camera center
+      // only as fallback) — so "nearest" means nearest to the traveler, not
+      // nearest to wherever the map was panned.
+      final Position? me = _position ?? await _safeFix();
+      final gm.LatLng? target = me != null
+          ? gm.LatLng(me.latitude, me.longitude)
+          : _cameraTarget();
+      // Category keywords hit the radius-bound Overpass path: start at 25 km
+      // and auto-widen (25 -> 50 -> 100 -> 250 km) so they never dead-end.
+      // Pure text search is NOT radius-filtered by the providers — widening
+      // would only re-send the same request, so it runs once.
+      final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
+      List<Place> places = await _c.placesRepository.search(
         q,
-        location: target,
-        radiusMeters: 10000,
+        location: loc,
+        radiusMeters: 25000,
+        includeCategoryFallback: true,
       );
-      if (!mounted) return;
+      if (_isCategoryQuery(q)) {
+        for (final double r in const <double>[50000, 100000, 250000]) {
+          if (places.isNotEmpty) break;
+          places = await _c.placesRepository.search(
+            q,
+            location: loc,
+            radiusMeters: r,
+            includeCategoryFallback: true,
+          );
+        }
+      }
+      // Read the note AFTER the last request: it describes exactly what the
+      // rows on screen are (a real name match, or the nearest places of that
+      // kind because the named one does not exist here).
+      final String? note = _c.placesRepository.lastSearchNote;
+      if (!mounted ||
+          generation != _searchGeneration ||
+          _searchController.text.trim() != q) {
+        return;
+      }
       setState(() {
         _results = places;
+        _searchNote = note;
         _resultsVisible = true;
         _searchLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchError = e.toString();
         _searchLoading = false;
@@ -180,9 +508,14 @@ class _MapScreenState extends State<MapScreen> {
 
   void _searchCategory(String label, String query, {List<String>? types}) {
     if (_activeChip == label) {
+      _searchGeneration++;
       setState(() => _activeChip = null);
       _searchController.clear();
-      setState(() => _resultsVisible = false);
+      setState(() {
+        _resultsVisible = false;
+        _results = const <Place>[];
+        _searchLoading = false;
+      });
       return;
     }
     setState(() {
@@ -190,27 +523,54 @@ class _MapScreenState extends State<MapScreen> {
       _searchError = null;
     });
     _searchController.text = query;
+    _searchDebounce?.cancel();
     _runSearchWithTypes(query, types);
   }
 
   Future<void> _runSearchWithTypes(String q, List<String>? types) async {
-    setState(() => _searchLoading = true);
+    final int generation = ++_searchGeneration;
+    setState(() {
+      _searchLoading = true;
+      _resultsVisible = true;
+      _searchNote = null;
+      _searchError = null;
+      _results = const <Place>[];
+    });
     try {
-      final LatLng? target = _cameraTarget();
-      final List<Place> places = await _c.placesRepository.search(
+      // Proximity = real GPS fix when available (camera only as fallback).
+      final Position? me = _position ?? await _safeFix();
+      final gm.LatLng? target = me != null
+          ? gm.LatLng(me.latitude, me.longitude)
+          : _cameraTarget();
+      // Category searches are radius-bound: auto-widen 25 -> 250 km.
+      final gm.LatLng loc = target ?? const gm.LatLng(20.5937, 78.9629);
+      List<Place> places = await _c.placesRepository.search(
         q,
-        location: target,
-        radiusMeters: 8000,
+        location: loc,
+        radiusMeters: 25000,
         types: types,
       );
-      if (!mounted) return;
+      for (final double r in const <double>[50000, 100000, 250000]) {
+        if (places.isNotEmpty) break;
+        places = await _c.placesRepository.search(
+          q,
+          location: loc,
+          radiusMeters: r,
+          types: types,
+        );
+      }
+      if (!mounted ||
+          generation != _searchGeneration ||
+          _searchController.text.trim() != q) {
+        return;
+      }
       setState(() {
         _results = places;
         _resultsVisible = true;
         _searchLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchError = e.toString();
         _searchLoading = false;
@@ -218,114 +578,370 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  LatLng? _cameraTarget() {
+  /// True when the free-text query maps to a category keyword ("hotels",
+  /// "hospitals", ...) — those use the radius-bound Overpass path where the
+  /// widening rings actually change the request.
+  bool _isCategoryQuery(String q) {
+    final String lower = q.toLowerCase();
+    const List<String> keywords = <String>[
+      'hotel', 'restaurant', 'food', 'cafe', 'park', 'museum',
+      'attraction', 'hospital', 'police', 'pharmacy', 'atm', 'fuel',
+      'petrol', 'bank', 'shopping', 'mall',
+    ];
+    return keywords.any(lower.contains);
+  }
+
+  gm.LatLng? _searchOriginLatLng() {
+    final Position? me = _position;
+    if (me != null) return gm.LatLng(me.latitude, me.longitude);
+    return _cameraTarget();
+  }
+
+  /// Best-effort one-shot GPS fix for search proximity (never throws).
+  Future<Position?> _safeFix() async {
+    try {
+      return await _c.locationService.currentPosition();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  gm.LatLng? _cameraTarget() {
     final Position? p = _position;
-    if (p != null) return LatLng(p.latitude, p.longitude);
-    return null;
+    if (p != null) return gm.LatLng(p.latitude, p.longitude);
+    // Fall back to the map's center so search always works near what the
+    // user is looking at, even without a GPS fix (Google-style behaviour).
+    try {
+      final LatLng c = _controller.camera.center;
+      return gm.LatLng(c.latitude, c.longitude);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _rebuildZones() {
     if (!_showZones) {
-      _circles = <Circle>{};
+      _circles = <CircleMarker>[];
       return;
     }
-    final Set<Circle> circles = <Circle>{};
+    final List<CircleMarker> circles = <CircleMarker>[];
     for (final SafetyZone z in _zones) {
       if (!z.active) continue;
+      // Skip malformed zones so a bad radius/coords can never crash the map.
+      if (!z.radiusMeters.isFinite ||
+          z.radiusMeters <= 0 ||
+          !z.lat.isFinite ||
+          !z.lng.isFinite) {
+        continue;
+      }
       final Color color = RiskBadge.colorFor(context, z.riskLevel);
-      circles.add(Circle(
-        circleId: CircleId('zone-${z.id}'),
-        center: LatLng(z.lat, z.lng),
+      circles.add(CircleMarker(
+        point: LatLng(z.lat, z.lng),
         radius: z.radiusMeters,
-        fillColor: color.withValues(alpha: 0.18),
-        strokeColor: color.withValues(alpha: 0.7),
-        strokeWidth: 2,
+        useRadiusInMeter: true,
+        color: color.withValues(alpha: 0.18),
+        borderColor: color.withValues(alpha: 0.7),
+        borderStrokeWidth: 2,
       ));
     }
     _circles = circles;
   }
 
+  /// '#RRGGBB' from a Flutter colour — the 3D map needs colours as strings.
+  static String _hexOf(Color c) =>
+      '#${(c.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+  /// Category icon + severity colour for an incident marker.
+  IconData _incidentIcon(Incident i) => switch (i.category) {
+        'theft' => Icons.directions_run,
+        'fraud' => Icons.currency_rupee,
+        'assault' => Icons.gavel,
+        'harassment' => Icons.report,
+        'accident' => Icons.car_crash,
+        'unsafe_area' => Icons.dangerous,
+        'poor_infrastructure' => Icons.construction,
+        'natural_hazard' => Icons.flood,
+        _ => Icons.place,
+      };
+
+  Color _incidentColor(Incident i) => switch (i.severity) {
+        'low' => const Color(0xFF16A34A),
+        'medium' => const Color(0xFFF59E0B),
+        'high' => const Color(0xFFEA580C),
+        'critical' => const Color(0xFFDC2626),
+        _ => const Color(0xFFF59E0B),
+      };
+
+  List<Marker> _incidentMarkers() {
+    final List<Marker> markers = <Marker>[];
+    for (final Incident i in _incidents) {
+      final Color color = _incidentColor(i);
+      markers.add(Marker(
+        point: LatLng(i.lat, i.lng),
+        width: 32,
+        height: 32,
+        child: GestureDetector(
+          onTap: () => _showIncidentInfo(i),
+          child: Container(
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3), blurRadius: 4),
+              ],
+            ),
+            child: const Icon(Icons.warning_amber,
+                size: 16, color: Colors.white),
+          ),
+        ),
+      ));
+    }
+    return markers;
+  }
+
+  /// Privacy-preserving incident details: category, severity, status, time
+  /// and distance — never the reporter's identity.
+  void _showIncidentInfo(Incident i) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext ctx) {
+        final ColorScheme scheme = Theme.of(ctx).colorScheme;
+        final double? dist = _distanceTo(i.lat, i.lng);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  CircleAvatar(
+                    backgroundColor: _incidentColor(i).withValues(alpha: 0.14),
+                    child: Icon(_incidentIcon(i),
+                        color: _incidentColor(i), size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      i.categoryLabel,
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${i.severityLabel} severity · ${i.statusLabel}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${Fmt.relative(i.createdAt)}'
+                '${dist != null ? ' · ${GeoUtils.formatDistance(dist)} away' : ''}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              if (i.description.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 10),
+                Text(i.description,
+                    style: Theme.of(ctx).textTheme.bodyMedium),
+              ],
+              if (i.summary != null && i.summary!.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(i.summary!,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant)),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _select(Place p) async {
+    if (_settingOrigin) {
+      // This selection sets the START point (Google-style from/to).
+      setState(() {
+        _origin = LatLng(p.lat, p.lng);
+        _originName = p.name;
+        _settingOrigin = false;
+        _resultsVisible = false;
+        _results = const <Place>[];
+        _searchController.clear();
+        _activeChip = null;
+      });
+      if (_selected != null) {
+        _route = null;
+        _routesByMode = <String, RouteInfo>{};
+        _polylines = <Polyline>[];
+        unawaited(_getRoute());
+      }
+      return;
+    }
     setState(() {
       _selected = p;
       _route = null;
-      _polylines = <Polyline>{};
-      _distanceToSelected = _distance(p.coords);
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      _distanceToSelected = _distanceTo(p.lat, p.lng);
       _resultsVisible = false;
-      _markers = <Marker>{
+      _markers = <Marker>[
         Marker(
-          markerId: const MarkerId('selected'),
-          position: p.coords,
-          infoWindow: InfoWindow(
-            title: p.name,
-            snippet: p.address ?? '',
-          ),
+          point: LatLng(p.lat, p.lng),
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.location_pin,
+              color: Color(0xFFDC2626), size: 40),
         ),
-      };
+      ];
     });
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(p.coords, 15),
-    );
+    _controller.move(LatLng(p.lat, p.lng), 15);
   }
 
-  double? _distance(LatLng target) {
+  double? _distanceTo(double lat, double lng) {
     final Position? p = _position;
     if (p == null) return null;
-    return GeoUtils.distanceMeters(
-      LatLng(p.latitude, p.longitude),
-      target,
+    return GeoUtils.distanceMetersLL(
+      p.latitude,
+      p.longitude,
+      lat,
+      lng,
     );
-  }
-
-  void _updateDistance() {
-    final Place? s = _selected;
-    if (s == null) return;
-    setState(() => _distanceToSelected = _distance(s.coords));
   }
 
   void _clearSelection() {
     setState(() {
       _selected = null;
       _route = null;
-      _markers = <Marker>{};
-      _polylines = <Polyline>{};
+      _routesByMode = <String, RouteInfo>{};
+      _markers = <Marker>[];
+      _polylines = <Polyline>[];
       _distanceToSelected = null;
+    });
+  }
+
+  LatLng? _effectiveOrigin() {
+    if (_origin != null) return _origin;
+    final Position? p = _position;
+    if (p != null) return LatLng(p.latitude, p.longitude);
+    // No GPS fix yet — use the visible map center so a route always works
+    // (Google-style: what you see is where you start from).
+    try {
+      return _controller.camera.center;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _toggleSetOrigin() {
+    setState(() {
+      _settingOrigin = !_settingOrigin;
+      _resultsVisible = false;
+      _results = const <Place>[];
+      _searchController.clear();
+      _activeChip = null;
+    });
+  }
+
+  /// One-tap "set start" from a search result (Google-style from/to).
+  void _setOriginFrom(Place p) {
+    setState(() {
+      _origin = LatLng(p.lat, p.lng);
+      _originName = p.name;
+      _settingOrigin = false;
+      _resultsVisible = false;
+      _results = const <Place>[];
+      _searchController.clear();
+      _activeChip = null;
+    });
+    if (_selected != null) {
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      unawaited(_getRoute());
+    }
+  }
+
+  void _clearOrigin() {
+    setState(() {
+      _origin = null;
+      _originName = null;
+    });
+    if (_selected != null) {
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      if (_position != null) _getRoute();
+    }
+  }
+
+  void _swapOriginDestination() {
+    final Place? dest = _selected;
+    if (dest == null) return;
+    setState(() {
+      final LatLng? oldOrigin = _effectiveOrigin();
+      final String? oldOriginName = _originName;
+      _origin = LatLng(dest.lat, dest.lng);
+      _originName = dest.name;
+      _selected = null;
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      if (oldOrigin != null) {
+        _selected = Place(
+          placeId: 'swap-${DateTime.now().millisecondsSinceEpoch}',
+          name: oldOriginName ?? 'Dropped pin',
+          lat: oldOrigin.latitude,
+          lng: oldOrigin.longitude,
+        );
+        _distanceToSelected = _distanceTo(
+            oldOrigin.latitude, oldOrigin.longitude);
+      }
     });
   }
 
   Future<void> _getRoute() async {
     final Place? p = _selected;
     if (p == null) return;
-    final Position? pos = _position;
-    if (pos == null) {
+    final LatLng? from = _effectiveOrigin();
+    if (from == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content:
-                Text('Waiting for your GPS fix — try again in a second.')),
+                Text('Set your start point or enable GPS — then try again.')),
       );
       return;
     }
     setState(() => _routeLoading = true);
     try {
       final RouteInfo r = await _c.placesRepository.route(
-        LatLng(pos.latitude, pos.longitude),
-        p.coords,
+        gm.LatLng(from.latitude, from.longitude),
+        gm.LatLng(p.lat, p.lng),
+        mode: _travelMode,
       );
       if (!mounted) return;
       setState(() {
         _route = r;
         _routeLoading = false;
         _polylines = r.polyline.length >= 2
-            ? <Polyline>{
+            ? <Polyline>[
                 Polyline(
-                  polylineId: const PolylineId('route'),
-                  points: r.polyline,
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 5,
+                  points: r.polyline
+                      .map((gm.LatLng lp) => LatLng(lp.latitude, lp.longitude))
+                      .toList(),
+                  color: _modeColor(_travelMode),
+                  strokeWidth: 5,
                 ),
-              }
-            : <Polyline>{};
+              ]
+            : <Polyline>[];
       });
+      unawaited(_compareAllModes(from, p));
     } catch (e) {
       if (!mounted) return;
       setState(() => _routeLoading = false);
@@ -335,18 +951,217 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Opens the selected point in Google Earth's own supported experience.
+  /// This is intentionally a provider hand-off: it gives travellers access
+  /// to Google's available photorealistic 3D coverage without putting a
+  /// billable Google SDK in Tourism or illegally caching Google imagery.
+  Future<void> _openExact3dView() async {
+    final Place? p = _selected;
+    if (p == null) return;
+
+    bool opened = false;
+    try {
+      opened = await launchUrl(
+        ExternalMapUrls.googleEarth3d(latitude: p.lat, longitude: p.lng),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // Fall through to Maps when Earth is unavailable on this device.
+    }
+    if (opened || !mounted) return;
+
+    // Earth may not be installed and some Android browsers do not claim its
+    // app link. Google Maps is a useful, universally available fallback.
+    bool fallbackOpened = false;
+    try {
+      fallbackOpened = await launchUrl(
+        ExternalMapUrls.googleMapsPlace(latitude: p.lat, longitude: p.lng),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // The user gets one clear message below rather than a platform error.
+    }
+    if (!fallbackOpened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open Google Earth or Google Maps.'),
+        ),
+      );
+    }
+  }
+
+  /// Fetches routes for every mode in parallel and shows the fastest way,
+  /// so the traveler sees ETA options like a real navigation app.
+  Future<void> _compareAllModes(LatLng from, Place p) async {
+    setState(() => _comparingModes = true);
+    final Map<String, RouteInfo> results = <String, RouteInfo>{};
+    await Future.wait(<String>['walk', 'bike', 'car', 'auto'].map(
+      (String mode) async {
+        try {
+          final RouteInfo r = await _c.placesRepository.route(
+            gm.LatLng(from.latitude, from.longitude),
+            gm.LatLng(p.lat, p.lng),
+            mode: mode,
+          );
+          results[mode] = r;
+        } catch (_) {}
+      },
+    ));
+    if (!mounted) return;
+    setState(() {
+      _routesByMode = results;
+      _comparingModes = false;
+    });
+  }
+
   Future<void> _openNavigation() async {
     final Place? p = _selected;
     if (p == null) return;
-    await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
+    final String? choice = await showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        icon: const Icon(Icons.navigation, size: 40),
+        title: const Text('Start navigation'),
+        content: Text(
+          'How do you want to navigate to ${p.name}?',
+          style: Theme.of(ctx).textTheme.bodyMedium,
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('google'),
+            child: const Text('Open in Google Maps'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.map, size: 18),
+            label: const Text('Navigate in this app'),
+            onPressed: () => Navigator.of(ctx).pop('app'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'google') {
+      await _c.placesRepository.openInGoogleMaps(p.lat, p.lng, p.name);
+      return;
+    }
+    // In-app navigation: offer live location sharing with the SOS contact
+    // first (English prompt, fully working), then open the live trip screen.
+    final LiveShareStartResult share =
+        await showLiveSharePrompt(context, destinationName: p.name);
+    if (!mounted) return;
+    showLiveShareFeedback(context, share,
+        smsEnabled: _c.liveLocationShare.smsEnabled);
+    unawaited(context.push(
+      '/trip/live?lat=${p.lat}&lng=${p.lng}&name=${Uri.encodeComponent(p.name)}',
+    ));
   }
 
-  Future<void> _recenter() async {
+  void _recenter() {
     final Position? p = _position;
     if (p == null) return;
-    await _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(p.latitude, p.longitude), 15),
+    if (_map3d) {
+      if (!_follow) setState(() => _follow = true);
+      return; // NavMap3D reacts to follow/position and moves its own camera.
+    }
+    try {
+      _controller.move(LatLng(p.latitude, p.longitude), 15);
+    } catch (_) {
+      // The 2D controller may be between mounts while switching map modes.
+    }
+  }
+
+  Future<void> _myLocation() async {
+    if (_position == null) {
+      await _enableLocation();
+    } else {
+      _recenter();
+    }
+  }
+
+  void _toggleStyle() {
+    setState(() {
+      _mapStyle = switch (_mapStyle) {
+        'satellite' => 'hybrid',
+        'hybrid' => 'streets-v2',
+        _ => 'satellite',
+      };
+    });
+  }
+
+  String get _styleLabel => switch (_mapStyle) {
+        'satellite' => 'Satellite',
+        'hybrid' => 'Hybrid (satellite + labels)',
+        _ => 'Streets',
+      };
+
+  /// MapTiler's TileJSON reports maxzoom 22 for `satellite`, `hybrid` and
+  /// `streets-v2`. Native zoom is set to the source's real maximum so tiles
+  /// are never upscaled/stretched; streets-v2 is capped at 19 to avoid
+  /// fetching an excessive number of tiny street tiles.
+  int get _maxNativeZoom => _mapStyle == 'streets-v2' ? 19 : 22;
+
+  double get _maxZoom => _mapStyle == 'streets-v2' ? 19 : 22;
+
+  IconData get _styleIcon => switch (_mapStyle) {
+        'satellite' => Icons.satellite_alt,
+        'hybrid' => Icons.layers,
+        _ => Icons.map,
+      };
+
+  /// Tap or long-press anywhere to drop a pin, then get the distance, a route
+  /// and real turn-by-turn navigation from your location to that point.
+  void _dropPin(TapPosition _, LatLng point) => _dropPinAt(point);
+
+  /// Shared by flutter_map and MapLibre so location selection behaves the
+  /// same in both 2D and 3D modes.
+  void _dropPinAt(LatLng point) {
+    if (_settingOrigin) {
+      setState(() {
+        _origin = point;
+        _originName = 'Dropped pin';
+        _settingOrigin = false;
+        _resultsVisible = false;
+      });
+      if (_selected != null) {
+        _route = null;
+        _routesByMode = <String, RouteInfo>{};
+        _polylines = <Polyline>[];
+        _getRoute();
+      }
+      return;
+    }
+    final Place pin = Place(
+      placeId: 'pin-${DateTime.now().millisecondsSinceEpoch}',
+      name: 'Dropped pin',
+      lat: point.latitude,
+      lng: point.longitude,
+      address: '${point.latitude.toStringAsFixed(5)}, '
+          '${point.longitude.toStringAsFixed(5)}',
     );
+    setState(() {
+      _selected = pin;
+      _route = null;
+      _routesByMode = <String, RouteInfo>{};
+      _polylines = <Polyline>[];
+      _distanceToSelected = _distanceTo(point.latitude, point.longitude);
+      _resultsVisible = false;
+      _markers = <Marker>[
+        Marker(
+          point: point,
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.location_pin,
+              color: Color(0xFFDC2626), size: 40),
+        ),
+      ];
+    });
+    _controller.move(point, _controller.camera.zoom < 15 ? 15 : _controller.camera.zoom);
+  }
+
+  void _toggleFollow() {
+    final bool on = !_follow;
+    setState(() => _follow = on);
+    if (on) _recenter();
   }
 
   Future<void> _enableLocation() async {
@@ -364,8 +1179,12 @@ class _MapScreenState extends State<MapScreen> {
         _permissionDenied = false;
       });
       if (pos != null) {
-        unawaited(_recenter());
+        _recenter();
       }
+      // Restart the live position watch now that permission is granted.
+      unawaited(_posSub?.cancel());
+      _posSub = null;
+      _startPositionWatch();
     }
   }
 
@@ -374,6 +1193,7 @@ class _MapScreenState extends State<MapScreen> {
     _searchDebounce?.cancel();
     _searchController.dispose();
     _zonesSub?.cancel();
+    _incidentsSub?.cancel();
     _posSub?.cancel();
     super.dispose();
   }
@@ -382,40 +1202,241 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     if (!_ready) {
       return const Scaffold(
-        body: LoadingView(message: 'Preparing the map…'),
+        body: LoadingView(message: 'Loading map…'),
       );
     }
+    if (_setupError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Map')),
+        body: ErrorState(
+          message: _setupError!,
+          onRetry: () {
+            setState(() => _setupError = null);
+            unawaited(_resolveInitial());
+          },
+        ),
+      );
+    }
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // MapTiler is used only when a key was compiled in AND it validated at
+    // runtime. Otherwise the map renders keyless OpenStreetMap tiles so it
+    // never shows MapTiler's "Invalid key" error tiles and never goes blank.
+    final bool useMaptiler = AppConfig.mapTilerConfigured && !_maptilerRejected;
+    // 3D needs vector tiles, which only exist when a MapTiler key was
+    // compiled in AND validated at runtime.
+    final bool can3d = AppConfig.mapTilerConfigured && !_maptilerRejected;
+    final bool show3d = _map3d && can3d;
+    final List<LatLng> route3d = (_route?.polyline ?? const <gm.LatLng>[])
+        .map((gm.LatLng g) => LatLng(g.latitude, g.longitude))
+        .toList();
+    final LatLng? dest3d = _selected == null
+        ? null
+        : LatLng(_selected!.lat, _selected!.lng);
+    // Zones and the places the traveller just searched for stay visible in
+    // 3D — a 3D view that hides them is a downgrade, not an upgrade.
+    final List<Map3DZone> zones3d = <Map3DZone>[
+      if (_showZones)
+        for (final SafetyZone z in _zones)
+          if (z.active &&
+              z.radiusMeters.isFinite &&
+              z.radiusMeters > 0 &&
+              z.lat.isFinite &&
+              z.lng.isFinite)
+            Map3DZone(
+              name: z.name,
+              lat: z.lat,
+              lng: z.lng,
+              radiusMeters: z.radiusMeters,
+              colorHex: _hexOf(RiskBadge.colorFor(context, z.riskLevel)),
+            ),
+    ];
+    final List<Map3DPin> pins3d = <Map3DPin>[
+      for (final Place r in _results.take(20))
+        Map3DPin(name: r.name, lat: r.lat, lng: r.lng),
+      if (_selected != null)
+        Map3DPin(
+          name: _selected!.name,
+          lat: _selected!.lat,
+          lng: _selected!.lng,
+          colorHex: '#DC2626',
+        ),
+    ];
     return Scaffold(
+      // The keyboard must NOT resize the map body: when it did, the
+      // bottom-anchored floating control column (zoom / follow / my-location)
+      // was pushed up on top of the search results and covered the "Go"
+      // buttons and the "Clear" label. The search field sits at the TOP of
+      // the screen, so it never needs the keyboard inset.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: <Widget>[
-          GoogleMap(
-            initialCameraPosition: _initial,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: true,
-            compassEnabled: true,
-            rotateGesturesEnabled: true,
-            tiltGesturesEnabled: true,
-            onMapCreated: (GoogleMapController controller) {
-              _controller = controller;
-            },
-            markers: _markers,
-            circles: _circles,
-            polylines: _polylines,
-            onTap: (LatLng _) => _clearSelection(),
+          // RepaintBoundary: the map (tiles + 3D scene) must not be repainted
+          // when an unrelated overlay — the results sheet, the speed chip —
+          // animates above it.
+          if (show3d)
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: NavMap3D(
+                  key: ValueKey<String>(
+                      'map3d-${_mapStyle == 'streets-v2' ? 'streets' : 'hybrid'}'),
+                  position: _position,
+                  routeLine: route3d,
+                  destination: dest3d,
+                  zones: zones3d,
+                  pins: pins3d,
+                  follow: _follow,
+                  satellite: _mapStyle != 'streets-v2',
+                  onTap: _dropPinAt,
+                  onLongPress: _dropPinAt,
+                  onUnavailable: () {
+                    if (!mounted || !_map3d) return;
+                    setState(() {
+                      _map3d = false;
+                      _map3dNotice = 'The 3D view needs the MapTiler style '
+                          'and vector tiles — showing the flat map instead.';
+                    });
+                  },
+                ),
+              ),
+            )
+          else
+            FlutterMap(
+            mapController: _controller,
+            options: MapOptions(
+              initialCenter: _initialCenter,
+              initialZoom: _initialZoom,
+              maxZoom: _maxZoom,
+              onTap: _dropPin,
+              onLongPress: _dropPin,
+            ),
+            children: <Widget>[
+              TileLayer(
+                key: ValueKey<String>('$_mapStyle-$useMaptiler'),
+                urlTemplate: useMaptiler
+                    ? AppConfig.mapTilerTileUrl(_mapStyle)
+                    : AppConfig.fallbackTileUrl,
+                fallbackUrl: useMaptiler ? AppConfig.fallbackTileUrl : null,
+                userAgentPackageName: 'app.roamio.tourism',
+                // Retina fetches FOUR times the tiles. Vector-ish street
+                // styles need it for crisp labels; satellite/hybrid imagery
+                // gains almost nothing visible and costs a lot of data and
+                // decode time on a mid-range phone.
+                retinaMode: _mapStyle == 'streets-v2' &&
+                    RetinaMode.isHighDensity(context),
+                maxNativeZoom: _maxNativeZoom,
+                errorTileCallback: (tile, error, stackTrace) {
+                  if (_tileNotice == null && mounted) {
+                    setState(() {
+                      _tileNotice = 'Map tiles could not load. Check your '
+                          'internet connection — route lines and markers '
+                          'still show.';
+                    });
+                  }
+                },
+              ),
+              MarkerLayer(
+                markers: <Marker>[
+                  ..._markers,
+                  if (_showIncidents) ..._incidentMarkers(),
+                  if (_origin != null) _originMarker(),
+                  if (_position != null) _userLocationMarker(),
+                ],
+              ),
+              CircleLayer(circles: _circles),
+              PolylineLayer(polylines: _polylines),
+              // Legally-required provider attribution — with flutter_map's
+              // proper configuration. SimpleAttributionWidget hardcodes the
+              // 'flutter_map | © ' prefix and offers no way to remove it;
+              // RichAttributionWidget(showFlutterMapAttribution: false) is
+              // the supported way to show ONLY the provider attribution
+              // (MapTiler / OpenStreetMap stay visible and tappable).
+              RichAttributionWidget(
+                showFlutterMapAttribution: false,
+                attributions: <SourceAttribution>[
+                  if (useMaptiler)
+                    TextSourceAttribution('© MapTiler',
+                        onTap: () => launchUrl(
+                            Uri.parse('https://www.maptiler.com/copyright/'),
+                            mode: LaunchMode.externalApplication)),
+                  TextSourceAttribution('© OpenStreetMap contributors',
+                      onTap: () => launchUrl(
+                          Uri.parse('https://www.openstreetmap.org/copyright'),
+                          mode: LaunchMode.externalApplication)),
+                ],
+                popupBackgroundColor: scheme.surface,
+              ),
+            ],
           ),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: _topBar(),
+            // The search card, the travel-mode selector, the category chips
+            // AND the results sheet live in ONE column: stacking them instead
+            // of pinning the sheet to a hand-guessed `top: 148` is what keeps
+            // the results list from covering the mode selector (reported from
+            // the live app: the walk/bike/car row was cut in half by the
+            // "Search results" card).
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _topBar(),
+                if (_resultsVisible)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 76, 0),
+                    child: _resultsSheet(),
+                  ),
+                if (_tileNotice != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _tileNoticeBanner(_tileNotice!),
+                  ),
+                if (_map3dNotice != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    child: _tileNoticeBanner(_map3dNotice!),
+                  ),
+              ],
+            ),
           ),
-          if (_resultsVisible)
+          // Live location sharing status (only visible while active) with a
+          // Stop button — a share must never be invisible to the traveler.
+          const LiveShareBanner(margin: EdgeInsets.fromLTRB(12, 210, 12, 0)),
+          if (_speedKmh >= 1)
             Positioned(
-              top: 148,
               left: 12,
-              right: 12,
-              child: _resultsSheet(),
+              bottom: _selected != null ? 300 : 96,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: scheme.outlineVariant),
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 8),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.speed,
+                        size: 20, color: _modeColor(_travelMode)),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_speedKmh.round()} km/h',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: _modeColor(_travelMode),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           if (_permissionDenied)
             Positioned(
@@ -434,13 +1455,123 @@ class _MapScreenState extends State<MapScreen> {
           Positioned(
             right: 16,
             bottom: _selected != null ? 260 : 96,
-            child: FloatingActionButton.small(
-              tooltip: 'My location',
-              onPressed: _recenter,
-              child: const Icon(Icons.my_location),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FloatingActionButton.small(
+                  heroTag: 'map-3d-toggle',
+                  tooltip: show3d
+                      ? 'Back to the flat map'
+                      : (can3d
+                          ? '3D view — buildings, streets and street names'
+                          : 'The 3D view needs a MapTiler key'),
+                  onPressed: can3d
+                      ? () => setState(() {
+                            final bool entering3d = !_map3d;
+                            _map3d = entering3d;
+                            // Satellite imagery supplies the real roof/ground
+                            // appearance beneath vector building geometry.
+                            // Generic street-style blocks looked like a model
+                            // city and hid the recognizable neighbourhood.
+                            if (entering3d && _mapStyle == 'streets-v2') {
+                              _mapStyle = 'hybrid';
+                            }
+                            _map3dNotice = null;
+                          })
+                      : null,
+                  backgroundColor: show3d ? scheme.primary : null,
+                  foregroundColor: show3d ? scheme.onPrimary : null,
+                  child: Icon(show3d ? Icons.map_outlined : Icons.view_in_ar),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-layer-toggle',
+                  tooltip: useMaptiler
+                      ? '$_styleLabel — tap to switch style'
+                      : 'Satellite/hybrid styles need a MapTiler key',
+                  onPressed: useMaptiler ? _toggleStyle : null,
+                  child: Icon(_styleIcon),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-follow',
+                  tooltip: _position == null
+                      ? 'Enable and find my location'
+                      : (_follow
+                          ? 'Stop following my location'
+                          : 'Find and follow my location'),
+                  backgroundColor: _follow ? scheme.primary : null,
+                  foregroundColor: _follow ? scheme.onPrimary : null,
+                  onPressed: _position == null ? _myLocation : _toggleFollow,
+                  child: Icon(
+                    _follow ? Icons.my_location : Icons.location_searching,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-zoom-in',
+                  tooltip: 'Zoom in',
+                  onPressed: () => _controller.move(
+                    _controller.camera.center,
+                    _controller.camera.zoom + 1,
+                  ),
+                  child: const Icon(Icons.add),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'map-zoom-out',
+                  tooltip: 'Zoom out',
+                  onPressed: () => _controller.move(
+                    _controller.camera.center,
+                    _controller.camera.zoom - 1,
+                  ),
+                  child: const Icon(Icons.remove),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Marker _originMarker() {
+    final LatLng o = _origin!;
+    return Marker(
+      point: o,
+      width: 40,
+      height: 40,
+      child: const Icon(Icons.trip_origin,
+          color: Color(0xFF16A34A), size: 32),
+    );
+  }
+
+  /// Live speedometer (km/h from the GPS stream).
+  double get _speedKmh {
+    final Position? p = _position;
+    if (p == null || p.speed <= 0) return 0;
+    return p.speed * 3.6;
+  }
+
+  Marker _userLocationMarker() {
+    final Position p = _position!;
+    final Color mode = _modeColor(_travelMode);
+    // A mode icon (walk / bike / car / auto) instead of a plain dot, so the
+    // traveler always sees *how* they're moving on the map.
+    return Marker(
+      point: LatLng(p.latitude, p.longitude),
+      width: 34,
+      height: 34,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: mode, width: 2.5),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(color: Colors.black26, blurRadius: 4),
+          ],
+        ),
+        child: Icon(_modeIcon(_travelMode), color: mode, size: 18),
       ),
     );
   }
@@ -472,7 +1603,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
-                        hintText: 'Search places, attractions…',
+                        hintText: 'Where do you want to go?',
                         prefixIcon: const Icon(Icons.search, size: 20),
                         suffixIcon: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -499,20 +1630,37 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ),
                 ),
+                // Space for the profile avatar pinned top-right by the shell.
+                const SizedBox(width: 52),
               ],
             ),
+            const SizedBox(height: 8),
+            _travelModeSelector(),
             const SizedBox(height: 8),
             SizedBox(
               height: 36,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: <Widget>[
+                  _chip(
+                    _origin == null ? 'Set start' : 'Start: ${_originName ?? 'Pin'}',
+                    _toggleSetOrigin,
+                    active: _settingOrigin || _origin != null,
+                  ),
+                  if (_origin != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    _chip('✕ start', _clearOrigin),
+                  ],
+                  const SizedBox(width: 8),
                   _chip('Attractions', () => _searchCategory(
-                      'Attractions', 'tourist attractions')),
+                      'Attractions', 'tourist attractions',
+                      types: const <String>['tourist_attraction'])),
                   const SizedBox(width: 8),
-                  _chip('Food', () => _searchCategory('Food', 'restaurants')),
+                  _chip('Food', () => _searchCategory('Food', 'restaurants',
+                      types: const <String>['restaurant'])),
                   const SizedBox(width: 8),
-                  _chip('Parks', () => _searchCategory('Parks', 'parks')),
+                  _chip('Parks', () => _searchCategory('Parks', 'parks',
+                      types: const <String>['park'])),
                   const SizedBox(width: 8),
                   _chip('Hospitals', () => _searchCategory(
                       'Hospitals', 'hospitals', types: const <String>['hospital'])),
@@ -533,7 +1681,191 @@ class _MapScreenState extends State<MapScreen> {
                     }),
                     active: _showZones,
                   ),
+                  const SizedBox(width: 8),
+                  _chip(
+                    'Incidents',
+                    () => setState(() => _showIncidents = !_showIncidents),
+                    active: _showIncidents,
+                  ),
+                  const SizedBox(width: 8),
                 ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _settingOrigin
+                      ? 'Now choose your START point — search, tap or hold'
+                      : 'Search, tap or hold the map to set your destination',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontSize: 11),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Travel-mode selector: picking Walk / Bike / Car / Auto changes the
+  /// on-map icon, the route profile and the route colour.
+  Widget _travelModeSelector() {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: <BoxShadow>[
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6),
+        ],
+      ),
+      child: Row(
+        children: <Widget>[
+          for (final (String id, IconData icon, String label) in _modes)
+            Expanded(
+              child: _modeChip(id, icon, label),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeChip(String id, IconData icon, String label) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool active = _travelMode == id;
+    final Color color = _modeColor(id);
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () {
+        setState(() => _travelMode = id);
+        // Recompute the shown route for the new mode when a destination exists.
+        if (_selected != null && _route != null) {
+          _route = null;
+          _polylines = <Polyline>[];
+          _getRoute();
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? color.withValues(alpha: 0.14) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 20, color: active ? color : scheme.onSurfaceVariant),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                color: active ? color : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _arrivalTime(double seconds) {
+    final DateTime t = DateTime.now().add(Duration(seconds: seconds.round()));
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}';
+  }
+
+  void _applyModeRoute(String mode) {
+    final RouteInfo? r = _routesByMode[mode];
+    if (r == null) return;
+    setState(() {
+      _travelMode = mode;
+      _route = r;
+      _polylines = r.polyline.length >= 2
+          ? <Polyline>[
+              Polyline(
+                points: r.polyline
+                    .map((gm.LatLng lp) => LatLng(lp.latitude, lp.longitude))
+                    .toList(),
+                color: _modeColor(mode),
+                strokeWidth: 5,
+              ),
+            ]
+          : <Polyline>[];
+    });
+  }
+
+  Widget _fastestRow() {
+    String fastest = 'car';
+    double fastestDur = double.infinity;
+    _routesByMode.forEach((String m, RouteInfo r) {
+      if (r.durationSeconds < fastestDur) {
+        fastestDur = r.durationSeconds;
+        fastest = m;
+      }
+    });
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final (String id, IconData icon, String label) in _modes)
+          if (_routesByMode[id] != null)
+            _modeTimeChip(id, icon, label,
+                _routesByMode[id]!.durationSeconds, id == fastest),
+      ],
+    );
+  }
+
+  Widget _modeTimeChip(
+    String mode,
+    IconData icon,
+    String label,
+    double seconds,
+    bool fastest,
+  ) {
+    final Color color = _modeColor(mode);
+    final bool selected = _travelMode == mode;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => _applyModeRoute(mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.16) : null,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+              color: selected ? color : Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '${GeoUtils.formatDuration(seconds)}'
+              '${fastest ? ' · fastest' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: fastest ? FontWeight.w800 : FontWeight.w600,
+                color: color,
               ),
             ),
           ],
@@ -612,7 +1944,39 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
-          if (_searchError != null)
+          if (_searchNote != null && !_searchLoading && _results.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(Icons.info_outline, size: 15, color: scheme.tertiary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _searchNote!,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_searchLoading)
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Searching…'),
+                ],
+              ),
+            )
+          else if (_searchError != null)
             Padding(
               padding: const EdgeInsets.all(14),
               child: Text(_searchError!,
@@ -640,18 +2004,38 @@ class _MapScreenState extends State<MapScreen> {
                           scheme.primaryContainer.withValues(alpha: 0.6),
                       child: Icon(Icons.place, color: scheme.primary),
                     ),
-                    title: Text(p.name,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(
+                      p.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     subtitle: Text(
-                      [
-                        if (p.address != null) p.address!,
-                        if (_distance(p.coords) != null)
-                          GeoUtils.formatDistance(_distance(p.coords)!),
-                      ].join(' · '),
-                      maxLines: 1,
+                      PlaceRanking.subtitleFor(
+                          p, _searchOriginLatLng()),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     onTap: () => _select(p),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        IconButton(
+                          tooltip: 'Set as start',
+                          onPressed: () => _setOriginFrom(p),
+                          icon: const Icon(Icons.trip_origin, size: 20),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(48, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () => _select(p),
+                          child: const Text('Go'),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
@@ -694,11 +2078,37 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _tileNoticeBanner(String message) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.map_outlined, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _selectedSheet() {
     final Place p = _selected!;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final RouteInfo? r = _route;
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+      ),
       padding: EdgeInsets.fromLTRB(
           16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
       decoration: BoxDecoration(
@@ -706,11 +2116,12 @@ class _MapScreenState extends State<MapScreen> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
             children: <Widget>[
               Expanded(
                 child: Text(
@@ -749,22 +2160,115 @@ class _MapScreenState extends State<MapScreen> {
                     Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         )),
+          const SizedBox(height: 12),
+          // Google-style origin → destination summary.
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Column(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.trip_origin,
+                        size: 16, color: Color(0xFF16A34A)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _origin != null
+                            ? (_originName ?? 'Start point')
+                            : (_position == null
+                                ? 'Map center (set your start)'
+                                : 'My location'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _toggleSetOrigin,
+                      child: Text(_origin == null ? 'Set' : 'Change'),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(left: 7),
+                  child: SizedBox(
+                    height: 12,
+                    child: VerticalDivider(color: Colors.grey),
+                  ),
+                ),
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.place, size: 18, color: Color(0xFFDC2626)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.swap_vert, size: 20),
+                      tooltip: 'Swap start and destination',
+                      onPressed: _swapOriginDestination,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           if (r != null) ...<Widget>[
             const SizedBox(height: 10),
             Row(
               children: <Widget>[
-                Icon(Icons.route, size: 18, color: scheme.primary),
+                Icon(Icons.route, size: 18, color: _modeColor(_travelMode)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
+                    '${_modeLabel(_travelMode)} · '
                     '${GeoUtils.formatDistance(r.distanceMeters)} · '
-                    '${GeoUtils.formatDuration(r.durationSeconds)}'
+                    '${GeoUtils.formatDuration(r.durationSeconds)} · '
+                    'arrive ~${_arrivalTime(r.durationSeconds)}'
                     '${r.isApproximate ? ' (estimate)' : ''}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
+            if (_comparingModes)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Comparing all modes…'),
+                  ],
+                ),
+              )
+            else if (_routesByMode.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _fastestRow(),
+              ),
           ],
           const SizedBox(height: 12),
           Row(
@@ -788,7 +2292,26 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
-        ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: () => context.push('/digital-twin', extra: p),
+              icon: const Icon(Icons.model_training_outlined, size: 19),
+              label: const Text('Simulate My Visit'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openExact3dView,
+              icon: const Icon(Icons.public, size: 19),
+              label: const Text('Photorealistic 3D in Google Earth — free'),
+            ),
+            ),
+          ],
+        ),
       ),
     );
   }
