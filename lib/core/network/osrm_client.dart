@@ -40,6 +40,27 @@ class OsrmClient {
   static bool validLatitude(double v) => v.isFinite && v >= -90 && v <= 90;
   static bool validLongitude(double v) => v.isFinite && v >= -180 && v <= 180;
 
+  /// The public OSRM demo commonly serves a driving speed profile even when
+  /// the URL contains `foot` or `bike`. Its geometry is still useful, but a
+  /// 159 m walk must not be presented as a 27-second walk. Keep any slower
+  /// provider duration, otherwise apply transparent conservative modal speeds.
+  static double durationForMode({
+    required String mode,
+    required double distanceMeters,
+    required double providerDurationSeconds,
+  }) {
+    final double? metersPerSecond = switch (mode) {
+      'walk' => 1.3, // 4.68 km/h
+      'bike' => 4.2, // 15.12 km/h
+      _ => null,
+    };
+    if (metersPerSecond == null || distanceMeters <= 0) {
+      return providerDurationSeconds;
+    }
+    final double modalEstimate = distanceMeters / metersPerSecond;
+    return math.max(providerDurationSeconds, modalEstimate);
+  }
+
   /// Computes a real road route between [origin] and [destination].
   ///
   /// Throws [OsrmException] on failure — it never fabricates coordinates.
@@ -120,11 +141,18 @@ class OsrmClient {
       );
     }
 
+    final double normalizedDuration = durationForMode(
+      mode: mode,
+      distanceMeters: distance,
+      providerDurationSeconds: duration,
+    );
+    final bool modalEtaEstimated =
+        (mode == 'walk' || mode == 'bike') && normalizedDuration > duration;
     return RouteInfo(
       distanceMeters: distance,
-      durationSeconds: duration,
+      durationSeconds: normalizedDuration,
       polyline: points,
-      provider: 'osrm',
+      provider: modalEtaEstimated ? 'osrm-$mode-eta-estimate' : 'osrm',
     );
   }
 

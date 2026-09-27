@@ -206,7 +206,8 @@ class RouteInfo {
   /// google (Directions API) | osrm (OSRM router) | fallback (straight line)
   final String provider;
 
-  bool get isApproximate => provider == 'fallback';
+  bool get isApproximate =>
+      provider == 'fallback' || provider.contains('estimate');
 
   factory RouteInfo.fromJson(Map<String, dynamic> m) {
     final List<dynamic> raw = (m['polyline'] is List) ? m['polyline'] as List : <dynamic>[];

@@ -170,10 +170,11 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
 
   TwinRouteMetric? _metric(RouteInfo? route, TwinTravelMode mode) {
     if (route == null) return null;
+    final int roundedMinutes = (route.durationSeconds / 60).round();
     return TwinRouteMetric(
       mode: mode,
       distanceMeters: route.distanceMeters,
-      durationMinutes: (route.durationSeconds / 60).ceil(),
+      durationMinutes: roundedMinutes < 1 ? 1 : roundedMinutes,
       approximate: route.isApproximate,
     );
   }
@@ -345,7 +346,7 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
                 // an active page on some Android builds (white body + bottom
                 // bar). `go` performs the intended branch switch atomically.
                 onPressed: () => context.go(
-                  '/map?lat=${widget.destination.lat}&lng=${widget.destination.lng}&name=${Uri.encodeComponent(widget.destination.name)}',
+                  '/map?lat=${widget.destination.lat}&lng=${widget.destination.lng}&name=${Uri.encodeComponent(widget.destination.name)}&view=3d&panel=compact',
                 ),
               ),
             ),
@@ -369,6 +370,15 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
 
   Widget _hero(TwinSimulationResult simulation) {
     final Color color = simulation.feasible ? AppTheme.success : AppTheme.warning;
+    final RouteInfo? routedTravel =
+        simulation.recommended?.mode == TwinTravelMode.car
+            ? _carRoute
+            : _walkRoute;
+    final String travelLabel = routedTravel == null
+        ? 'Route time unavailable'
+        : '${GeoUtils.formatDuration(routedTravel.durationSeconds)} · '
+            '${routedTravel.distanceMeters.round()} m '
+            '${simulation.recommended?.mode == TwinTravelMode.car ? 'road route' : 'walk'}';
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,12 +394,18 @@ class _DigitalTwinScreenState extends State<DigitalTwinScreen> {
             spacing: 8,
             runSpacing: 8,
             children: <Widget>[
-              _metricChip(Icons.schedule, GeoUtils.formatDuration(simulation.totalMinutes * 60.0)),
+              // Keep routed travel separate from the complete visit plan.
+              // The old unlabeled “1 hr 46 min” included 90 min at the place
+              // and a queue allowance, so it looked like 159 m took hours.
               _metricChip(
-                Icons.directions_walk,
                 simulation.recommended?.mode == TwinTravelMode.car
-                    ? 'On-site walking unknown'
-                    : '${simulation.walkingMeters.round()} m routed walking',
+                    ? Icons.directions_car
+                    : Icons.directions_walk,
+                travelLabel,
+              ),
+              _metricChip(
+                Icons.schedule,
+                '${GeoUtils.formatDuration(simulation.totalMinutes * 60.0)} total plan',
               ),
               _metricChip(Icons.currency_rupee,
                   '${simulation.estimatedCostRupees.round()} estimated'),

@@ -35,6 +35,8 @@ class MapScreen extends StatefulWidget {
     this.initialLat,
     this.initialLng,
     this.initialName,
+    this.startIn3d = false,
+    this.compactDestinationPanel = false,
   });
 
   /// When set (e.g. coming from a place detail screen), the map focuses
@@ -42,6 +44,14 @@ class MapScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
   final String? initialName;
+
+  /// Used by Digital Twin's “Open 2D / 3D map” hand-off. The map opens as an
+  /// actual full 3D scene when vector tiles are configured, with honest 2D
+  /// fallback otherwise.
+  final bool startIn3d;
+
+  /// Keep the destination actions available without covering most of the map.
+  final bool compactDestinationPanel;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -139,6 +149,7 @@ class _MapScreenState extends State<MapScreen> {
   /// network and street names). Opt-in — the flat flutter_map stays the
   /// default because it works keyless and costs far less battery.
   bool _map3d = false;
+  bool _destinationPanelExpanded = true;
 
   /// Set when 3D could not start (no MapTiler key / style load failure) so
   /// the map can say why it fell back instead of silently doing nothing.
@@ -168,6 +179,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _map3d = widget.startIn3d && AppConfig.mapTilerConfigured;
+    _destinationPanelExpanded = !widget.compactDestinationPanel;
+    if (_map3d) {
+      _mapStyle = 'hybrid';
+    } else if (widget.startIn3d) {
+      _map3dNotice = '3D vector tiles are unavailable in this build — '
+          'showing the complete 2D map instead.';
+    }
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -994,8 +1013,15 @@ class _MapScreenState extends State<MapScreen> {
   /// so the traveler sees ETA options like a real navigation app.
   Future<void> _compareAllModes(LatLng from, Place p) async {
     setState(() => _comparingModes = true);
-    final Map<String, RouteInfo> results = <String, RouteInfo>{};
-    await Future.wait(<String>['walk', 'bike', 'car', 'auto'].map(
+    // _getRoute already fetched the selected mode. Reuse it rather than
+    // immediately issuing the same public-router request a second time.
+    final Map<String, RouteInfo> results = <String, RouteInfo>{
+      if (_route != null) _travelMode: _route!,
+    };
+    final Iterable<String> missingModes =
+        <String>['walk', 'bike', 'car', 'auto']
+            .where((String mode) => mode != _travelMode);
+    await Future.wait(missingModes.map(
       (String mode) async {
         try {
           final RouteInfo r = await _c.placesRepository.route(
@@ -1406,7 +1432,7 @@ class _MapScreenState extends State<MapScreen> {
           if (_speedKmh >= 1)
             Positioned(
               left: 12,
-              bottom: _selected != null ? 300 : 96,
+              bottom: _selected != null && _destinationPanelExpanded ? 300 : 104,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1450,11 +1476,13 @@ class _MapScreenState extends State<MapScreen> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: _selectedSheet(),
+              child: _destinationPanelExpanded
+                  ? _selectedSheet()
+                  : _compactSelectedBar(),
             ),
           Positioned(
             right: 16,
-            bottom: _selected != null ? 260 : 96,
+            bottom: _selected != null && _destinationPanelExpanded ? 260 : 96,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -2101,6 +2129,69 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _compactSelectedBar() {
+    final Place p = _selected!;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Material(
+        color: scheme.surface,
+        elevation: 8,
+        shadowColor: Colors.black26,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.place, color: Color(0xFFDC2626)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      p.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      _route == null
+                          ? (_distanceToSelected == null
+                              ? 'Destination selected'
+                              : GeoUtils.formatDistance(_distanceToSelected!))
+                          : '${GeoUtils.formatDistance(_route!.distanceMeters)} · '
+                              '${GeoUtils.formatDuration(_route!.durationSeconds)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Show destination details',
+                onPressed: () =>
+                    setState(() => _destinationPanelExpanded = true),
+                icon: const Icon(Icons.expand_less),
+              ),
+              IconButton.filled(
+                tooltip: 'Navigate',
+                onPressed: _openNavigation,
+                icon: const Icon(Icons.navigation),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _selectedSheet() {
     final Place p = _selected!;
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -2149,6 +2240,13 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               IconButton(
+                tooltip: 'Collapse destination details',
+                icon: const Icon(Icons.expand_more),
+                onPressed: () =>
+                    setState(() => _destinationPanelExpanded = false),
+              ),
+              IconButton(
+                tooltip: 'Clear destination',
                 icon: const Icon(Icons.close),
                 onPressed: _clearSelection,
               ),

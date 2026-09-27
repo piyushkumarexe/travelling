@@ -197,10 +197,12 @@ class AppRouter {
                       final Map<String, String> qp = state.uri.queryParameters;
                       return MapScreen(
                         key: ValueKey<String>(
-                            'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}'),
+                            'map-${qp['lat'] ?? ''}-${qp['lng'] ?? ''}-${qp['name'] ?? ''}-${qp['view'] ?? ''}-${qp['panel'] ?? ''}'),
                         initialLat: double.tryParse(qp['lat'] ?? ''),
                         initialLng: double.tryParse(qp['lng'] ?? ''),
                         initialName: qp['name'],
+                        startIn3d: qp['view'] == '3d',
+                        compactDestinationPanel: qp['panel'] == 'compact',
                       );
                     },
               ),
