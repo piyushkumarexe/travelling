@@ -54,7 +54,7 @@ class _ConnectionGuardianScreenState extends State<ConnectionGuardianScreen> {
       _mobility = p.getBool('${_prefix}mobility') ?? false;
       _loaded = true;
     });
-    _calculate(save: false);
+    await _calculate(save: false);
   }
 
   ConnectionMode? _mode(String? value) {
