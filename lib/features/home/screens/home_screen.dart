@@ -423,6 +423,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _toolRow(Icons.psychology_alt_outlined, 'Travel Intelligence',
                   'Robustness score, what-if simulator, recovery and constraints.',
                   '/intelligence'),
+          const Divider(height: 1, indent: 62),
+          _toolRow(Icons.hub_outlined, 'Connection Guardian',
+                  'Protect flight, train and bus transfers with explainable buffers.',
+                  '/connection-guardian'),
         ],
       ),
     );

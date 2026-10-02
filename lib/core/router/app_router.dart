@@ -13,6 +13,7 @@ import '../../features/booking/booking_models.dart';
 import '../../features/booking/screens/booking_hub_screen.dart';
 import '../../features/booking/screens/ride_booking_screen.dart';
 import '../../features/booking/screens/travel_booking_screen.dart';
+import '../../features/connection_guardian/connection_guardian_screen.dart';
 import '../../features/digital_id/screens/digital_id_screen.dart';
 import '../../features/digital_id/screens/verify_id_screen.dart';
 import '../../features/digital_twin/digital_twin_screen.dart';
@@ -103,6 +104,11 @@ class AppRouter {
         path: '/booking',
         builder: (BuildContext context, GoRouterState state) =>
             const BookingHubScreen(),
+      ),
+      GoRoute(
+        path: '/connection-guardian',
+        builder: (BuildContext context, GoRouterState state) =>
+            const ConnectionGuardianScreen(),
       ),
       GoRoute(
         path: '/toolkit',
