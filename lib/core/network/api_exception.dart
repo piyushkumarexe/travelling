@@ -9,11 +9,17 @@ enum ApiErrorKind {
   validation,
   upstream,
   server,
+  parser,
+  location,
   unknown,
+
+  /// Providers responded, but every result was an irrelevant far-away name
+  /// match while the traveller searched with a known location.
+  noRelevantNearby,
 }
 
 class ApiException implements Exception {
-  ApiException(this.kind, this.message,
+  const ApiException(this.kind, this.message,
       {this.statusCode, this.retryable = true, this.details});
 
   final ApiErrorKind kind;

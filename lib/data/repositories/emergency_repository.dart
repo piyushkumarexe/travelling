@@ -11,11 +11,15 @@ class EmergencyRepository {
     required double lat,
     required double lng,
     double? accuracyMeters,
+    String kind = 'sos',
+    String? reason,
   }) {
     return _db.collection('emergencyEvents').add(<String, dynamic>{
       'uid': uid,
       'name': name,
       'status': 'active',
+      'kind': kind,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
       'location': <String, dynamic>{
         'lat': lat,
         'lng': lng,
@@ -23,6 +27,26 @@ class EmergencyRepository {
       },
       'createdAt': Timestamp.now(),
     }).then((ref) => ref.id);
+  }
+
+  /// Refreshes the live coordinates of an active event (live location
+  /// sharing). Firestore rules allow the owner to update only these
+  /// whitelisted live fields while the event stays 'active'.
+  Future<void> updateLiveLocation(
+    String id, {
+    required double lat,
+    required double lng,
+    double? accuracyMeters,
+  }) {
+    return _db.collection('emergencyEvents').doc(id).update(<String, dynamic>{
+      'location': <String, dynamic>{
+        'lat': lat,
+        'lng': lng,
+        'accuracy': accuracyMeters,
+      },
+      'lastLocationAt': Timestamp.now(),
+      'updatedAt': Timestamp.now(),
+    });
   }
 
   Stream<List<EmergencyEvent>> watchMine(String uid) => _db
