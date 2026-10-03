@@ -50,7 +50,8 @@ class AppContainer {
   late final ZonesRepository zonesRepository = ZonesRepository();
   late final IncidentsRepository incidentsRepository = IncidentsRepository();
   late final EmergencyRepository emergencyRepository = EmergencyRepository();
-  late final DigitalIdRepository digitalIdRepository = DigitalIdRepository();
+  late final DigitalIdRepository digitalIdRepository =
+      DigitalIdRepository(apiClient);
   late final ItinerariesRepository itinerariesRepository = ItinerariesRepository();
   late final EcoRepository ecoRepository = EcoRepository();
   late final NotificationsRepository notificationsRepository =

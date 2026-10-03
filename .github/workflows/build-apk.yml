@@ -118,13 +118,11 @@ jobs:
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
         run: |
-          DEFINES=""
-          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
-            DEFINES="--dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
-          fi
+          # Third-party secrets are never passed to the Flutter build. The APK
+          # talks to authenticated Cloud Functions, which hold them server-side.
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
-          set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
+          set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} 2>&1 | tee gradle.log
 
       - name: Surface build errors as annotations
         if: failure()

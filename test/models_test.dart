@@ -23,6 +23,16 @@ void main() {
       expect(DigitalId.isValidTokenShape('a' * 63), isFalse);
       expect(DigitalId.isValidTokenShape(''), isFalse);
     });
+
+    test('parses an ISO timestamp returned by secure verification', () {
+      final DigitalId id = DigitalId.fromMap('', <String, dynamic>{
+        'ownerName': 'Asha',
+        'status': 'active',
+        'createdAt': '2026-10-03T10:00:00.000Z',
+      });
+      expect(id.createdAt.toUtc().year, 2026);
+      expect(id.createdAt.toUtc().month, 10);
+    });
   });
 
   group('Place classification', () {

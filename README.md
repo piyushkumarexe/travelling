@@ -7,9 +7,10 @@ zones with Android notifications, a one-tap SOS flow, a Digital Emergency
 ID with real QR verification, and an Eco Score for sustainable travel.
 
 Everything is real and wired end-to-end — there are no demo buttons, no
-fake data and no "coming soon" screens. All third-party secrets
+fake data and no "coming soon" screens. All third-party **secrets**
 (NVIDIA, OpenWeather, Google Maps server key) live only in the Firebase
-Cloud Functions backend; the Android app ships with zero API keys.
+Cloud Functions backend. The APK contains no server secrets; it includes
+only the Android-restricted Google Maps SDK client key required by Maps.
 
 ---
 
@@ -25,7 +26,7 @@ Cloud Functions backend; the Android app ships with zero API keys.
 | Safety hub | Nearest active zone, zone list with details, geofence monitor (real background location while app runs), in-app warning + Android notification + notification history when entering a high-risk zone, nearby emergency services you can actually call (`tel:`) or get directions to. |
 | SOS | Confirm dialog → real GPS fix → `emergencyEvents` document → active status UI with coordinates/accuracy → nearby emergency services with call buttons → cancel/resolve. Never claims authorities were contacted. |
 | Incident reporting | Description + photo + video + location → Firebase Storage (type/size validated) → NVIDIA triage (category, severity, summary, recommended action) → Firestore + history + admin review. |
-| Digital Emergency ID | Real profile record with a QR code containing **only** a 64-char verification token. Active/revoked, copy token, and a real verification screen (camera scan via `mobile_scanner` or manual paste) that checks Firestore live. |
+| Digital Emergency ID | Real profile record with a QR code containing **only** a 64-char verification token. Active/revoked, copy token, and a camera/manual verification screen that uses a rate-limited backend lookup; other users cannot enumerate ID records or emergency contacts. |
 | Eco score | GPS-tracked walk/cycle sessions (real distance accumulation) or manual logs; points/levels/badges persisted in Firestore. |
 | Weather | Current conditions + 5-day forecast from OpenWeather (backend proxy) with practical safety notes and full loading/error/retry states. |
 | Notifications | Per-user notification history (safety, geofence, incident, emergency, weather) with read/unread and deep-links. |
@@ -75,8 +76,8 @@ users/{uid}                          # { role: 'user'|'admin', displayName, emai
 profiles/{uid}                       # name, photoUrl, language, contacts, prefs
 safetyZones/{id}                     # name, lat, lng, radiusMeters, riskLevel, active, ...
 incidents/{id}                       # uid, reporterName, description, category, severity,
-                                     # status, lat, lng, summary, recommendedAction, media
-emergencyEvents/{id}                 # uid, name, lat, lng, accuracyMeters, status, timestamps
+                                     # status, location{lat,lng}, summary, recommendedAction, media
+emergencyEvents/{id}                 # uid, name, location{lat,lng,accuracy}, status, timestamps
 digitalIds/{id}                      # uid, ownerName, token (64-hex), photoUrl, contacts, status
 users/{uid}/itineraries/{id}         # destination, days, interests, budget, travelStyle, plan
 users/{uid}/notifications/{id}       # title, body, type, read, payload, createdAt
@@ -228,9 +229,11 @@ show a real error state when denied — nothing is simulated.
 - **Firestore security rules** (`firestore.rules`):
   - users can only create/update their own documents in
     `users/{uid}`, `profiles/{uid}`, `emergencyEvents` (own),
-    `incidents` (own, fixed status on create), `digitalIds` (own; token
-    must match `^[0-9a-f]{64}$`), itineraries & notifications & eco in
-    per-user subcollections;
+    `incidents` (own, fixed status on create), itineraries & notifications &
+    eco in per-user subcollections;
+  - Digital IDs are readable only by their owner/admin. QR verification goes
+    through an authenticated, rate-limited Cloud Function which returns only
+    the information needed for the verified emergency card;
   - `safetyZones` are read-only for everyone, writable by admins;
   - `rateLimits` is denied to all clients (backend-only);
   - admin checks go through the `users/{uid}.role == 'admin'` document,
@@ -255,9 +258,10 @@ show a real error state when denied — nothing is simulated.
 | `/chat` | NVIDIA chat (location + profile context injected server-side) |
 | `/itinerary` | NVIDIA JSON itinerary for destination/days/interests/budget/style |
 | `/incidentAnalyze` | NVIDIA triage → category, severity, summary, recommended action |
+| `/digitalIdVerify` | Rate-limited QR-token verification; protects Digital ID records from enumeration |
 | `/weatherCurrent` | OpenWeather current conditions |
 | `/weatherForecast` | OpenWeather 5-day forecast (aggregated) |
-| `/placesSearch` | Google Places (text query ± location bias, or nearby by types) |
+| `/placesSearch` | Google Places legacy text/nearby search (server-proxied; migrate to Places API (New) before launching a new Google Maps Platform project) |
 | `/placesDetails` | Google Places details by place id |
 | `/placesPhoto` | (GET) Places photo proxy |
 | `/emergencyNearby` | Nearby hospital/police/fire/doctor |

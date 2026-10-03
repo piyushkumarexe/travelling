@@ -1,14 +1,10 @@
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
-import '../../core/network/nvidia_direct_client.dart';
 import '../models/itinerary.dart';
 
-/// NVIDIA AI calls — preferably through the YatraWise backend (server-side
-/// key, rate limits). When the backend is unreachable (Cloud Functions not
-/// deployed yet) and a build-time NVIDIA key is present, calls
-/// transparently fall back to a direct NVIDIA request so the AI features
-/// keep working.
-
+/// NVIDIA AI calls are routed exclusively through the YatraWise backend.
+/// This keeps the NVIDIA secret out of the APK and lets Cloud Functions
+/// enforce Firebase authentication, input validation and rate limits.
 class AiChatMessage {
   AiChatMessage({required this.role, required this.content});
   final String role; // user | assistant
@@ -21,21 +17,9 @@ class AiChatMessage {
 }
 
 class AiRepository {
-  AiRepository(this._api, {NvidiaDirectClient? direct})
-      : _direct = direct ?? NvidiaDirectClient();
+  AiRepository(this._api);
 
   final ApiClient _api;
-  final NvidiaDirectClient _direct;
-
-  /// Backend failures that mean "backend missing/unreachable" and are worth
-  /// a direct retry. Auth/validation/rate-limit errors come from a live
-  /// backend and are reported as-is.
-  bool _shouldFallback(ApiException e) =>
-      _direct.enabled &&
-      (e.kind == ApiErrorKind.network ||
-          e.kind == ApiErrorKind.timeout ||
-          e.kind == ApiErrorKind.server ||
-          e.kind == ApiErrorKind.unknown);
 
   /// Chat with the tourism assistant. `locationLabel` (e.g. "Rishikesh,
   /// Uttarakhand, India") is merged into the server-side system prompt.
@@ -51,23 +35,8 @@ class AiRepository {
       if (profileContext != null && profileContext.isNotEmpty)
         'profileContext': profileContext,
     };
-    try {
-      final Map<String, dynamic> data = await _api.post('/chat', body);
-      return _replyFrom(data);
-    } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
-      final Map<String, dynamic> data = await _direct.postChat(
-        messages: messages
-            .map((AiChatMessage m) => <String, String>{
-                  'role': m.role,
-                  'content': m.content,
-                })
-            .toList(),
-        locationLabel: locationLabel,
-        profileContext: profileContext,
-      );
-      return _replyFrom(data);
-    }
+    final Map<String, dynamic> data = await _api.post('/chat', body);
+    return _replyFrom(data);
   }
 
   String _replyFrom(Map<String, dynamic> data) {
@@ -94,20 +63,8 @@ class AiRepository {
       'budget': budget,
       'travelStyle': travelStyle,
     };
-    try {
-      final Map<String, dynamic> data = await _api.post('/itinerary', body);
-      return _planFrom(data);
-    } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
-      final Map<String, dynamic> data = await _direct.postItinerary(
-        destination: destination.trim(),
-        days: days,
-        interests: interests,
-        budget: budget,
-        travelStyle: travelStyle,
-      );
-      return _planFrom(data);
-    }
+    final Map<String, dynamic> data = await _api.post('/itinerary', body);
+    return _planFrom(data);
   }
 
   List<ItineraryDay> _planFrom(Map<String, dynamic> data) {
@@ -138,20 +95,9 @@ class AiRepository {
       'hasPhoto': hasPhoto,
       'hasVideo': hasVideo,
     };
-    try {
-      final Map<String, dynamic> data =
-          await _api.post('/incidentAnalyze', body);
-      return _triageFrom(data);
-    } on ApiException catch (e) {
-      if (!_shouldFallback(e)) rethrow;
-      final Map<String, dynamic> data = await _direct.postIncidentAnalyze(
-        description: description.trim(),
-        locationLabel: locationLabel,
-        hasPhoto: hasPhoto,
-        hasVideo: hasVideo,
-      );
-      return _triageFrom(data);
-    }
+    final Map<String, dynamic> data =
+        await _api.post('/incidentAnalyze', body);
+    return _triageFrom(data);
   }
 
   Map<String, String> _triageFrom(Map<String, dynamic> data) =>

@@ -1,9 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/network/api_client.dart';
 import '../models/digital_id.dart';
 
 class DigitalIdRepository {
+  DigitalIdRepository(this._api);
+
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final ApiClient _api;
 
   Future<String> create({
     required String uid,
@@ -33,19 +37,20 @@ class DigitalIdRepository {
           .map((d) => DigitalId.fromMap(d.id, d.data()))
           .toList());
 
-  /// Verifies a token (the only value contained in the QR code) against the
-  /// live digitalIds collection. Returns null when the token is unknown.
+  /// Looks up a scanned QR token through the authenticated, rate-limited
+  /// backend. Firestore rules deliberately do not let clients list or read
+  /// other users' emergency contact records.
   Future<DigitalId?> verify(String rawToken) async {
     final String token = rawToken.trim().toLowerCase();
     if (!DigitalId.isValidTokenShape(token)) return null;
-    final QuerySnapshot<Map<String, dynamic>> snap = await _db
-        .collection('digitalIds')
-        .where('token', isEqualTo: token)
-        .limit(1)
-        .get();
-    if (snap.docs.isEmpty) return null;
-    final QueryDocumentSnapshot<Map<String, dynamic>> d = snap.docs.first;
-    return DigitalId.fromMap(d.id, d.data());
+    final Map<String, dynamic> response =
+        await _api.post('/digitalIdVerify', <String, dynamic>{'token': token});
+    final dynamic raw = response['digitalId'];
+    if (raw is! Map) return null;
+    return DigitalId.fromMap(
+      '',
+      raw.map((Object? key, Object? value) => MapEntry(key.toString(), value)),
+    );
   }
 
   Future<void> setActive(String id, bool active) => _db

@@ -62,10 +62,16 @@ class ApiClient {
 
   /// GET a binary response (used for Places photos proxied by the backend).
   Future<Uint8List> getBytes(String path) async {
+    final String? token = await _idToken();
     try {
       final Response<dynamic> resp = await _dio.get<dynamic>(
         path,
-        options: Options(responseType: ResponseType.bytes),
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: <String, Object?>{
+            if (token != null) 'Authorization': 'Bearer $token',
+          },
+        ),
       );
       final dynamic data = resp.data;
       if (data is Uint8List) return data;

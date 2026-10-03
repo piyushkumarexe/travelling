@@ -77,6 +77,7 @@ const LIMITS = {
   emergencyNearby: 10,
   route: 20,
   geocodeReverse: 20,
+  digitalIdVerify: 15,
 };
 
 /** Per-uid, per-endpoint, per-minute rate limit (Firestore-backed). */
@@ -499,6 +500,56 @@ exports.incidentAnalyze = onRequest(
   }),
 );
 
+/* ------------------------- /digitalIdVerify ---------------------------- */
+
+// Digital IDs contain emergency contact information. Verification therefore
+// runs through Admin SDK rather than giving app clients read/list access to
+// every ID document. The QR still carries only the opaque 64-hex token.
+exports.digitalIdVerify = onRequest(
+  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
+  makeHandler(async (req, res) => {
+    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
+    const uid = await getUid(req);
+    if (!uid) throw new HttpError(401, 'Sign in is required to verify an emergency ID.', 'auth');
+    await rateLimit(uid, 'digitalIdVerify');
+    const body = await readJsonBody(req);
+    const token = requireText(body.token, 'token', 64, 64).toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      throw new HttpError(400, 'Invalid verification token.', 'validation');
+    }
+
+    const snap = await admin
+      .firestore()
+      .collection('digitalIds')
+      .where('token', '==', token)
+      .limit(1)
+      .get();
+    if (snap.empty) {
+      res.status(200).json({ digitalId: null });
+      return;
+    }
+
+    const data = snap.docs[0].data();
+    const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
+      ? data.createdAt.toDate().toISOString()
+      : null;
+    // Deliberately return only the card data the verifier needs. UID, raw
+    // token and Firestore document ID never leave the trusted backend.
+    res.status(200).json({
+      digitalId: {
+        ownerName: typeof data.ownerName === 'string' ? data.ownerName : '',
+        status: data.status === 'active' ? 'active' : 'revoked',
+        photoUrl: typeof data.photoUrl === 'string' ? data.photoUrl : null,
+        emergencyContactName:
+          typeof data.emergencyContactName === 'string' ? data.emergencyContactName : null,
+        emergencyContactPhone:
+          typeof data.emergencyContactPhone === 'string' ? data.emergencyContactPhone : null,
+        createdAt,
+      },
+    });
+  }),
+);
+
 /* ------------------------------- OpenWeather ---------------------------- */
 
 function ownKey() {
@@ -592,7 +643,9 @@ exports.weatherForecast = onRequest(
 
 function functionBaseUrl(req) {
   const host = req && req.headers && req.headers.host;
-  if (host) return `https://${host}/functions/v2`;
+  // A v2 HTTP function is served directly at /<functionName>; appending the
+  // old /functions/v2 path produces broken place-photo links.
+  if (host) return `https://${host}`;
   const project =
     process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '';
   if (project) return `https://${REGION}-${project}.cloudfunctions.net`;
@@ -606,12 +659,15 @@ function functionBaseUrl(req) {
 function mapPlace(r, base) {
   if (!r || typeof r !== 'object') return null;
   const loc = r.geometry && r.geometry.location ? r.geometry.location : null;
-  if (!loc) return null;
+  if (!loc || !Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return null;
   const photos = Array.isArray(r.photos)
-    ? r.photos.slice(0, 3).map((p) =>
-        `${base}/placesPhoto?photoreference=${encodeURIComponent(p.photo_reference || '')}&maxwidth=1200`)
+    ? r.photos
+        .filter((p) => p && typeof p.photo_reference === 'string' && p.photo_reference)
+        .slice(0, 3)
+        .map((p) =>
+          `${base}/placesPhoto?photoreference=${encodeURIComponent(p.photo_reference)}&maxwidth=1200`)
     : [];
-  const openHours = r.open_hours || r.opening_hours || null;
+  const openHours = r.opening_hours || r.open_hours || null;
   return {
     placeId: r.place_id || '',
     name: r.name || 'Unknown place',
@@ -635,7 +691,37 @@ function mapPlace(r, base) {
   };
 }
 
-async function googlePlacesSearch(body) {
+function placeResults(data) {
+  // Nearby/Text Search return `results`; retaining `candidates` also makes
+  // this safe for responses cached from the older Find Place implementation.
+  if (Array.isArray(data.results)) return data.results;
+  if (Array.isArray(data.candidates)) return data.candidates;
+  return [];
+}
+
+function assertPlacesSuccess(data) {
+  if (data.status === 'OK' || data.status === 'ZERO_RESULTS') return;
+  throw new HttpError(
+    502,
+    `Places search failed: ${data.status}${data.error_message ? ' — ' + data.error_message : ''}`
+      .slice(0, 200),
+    'upstream',
+  );
+}
+
+function resultPlaces(rawPlaces, base) {
+  const deduped = new Map();
+  for (const place of rawPlaces) {
+    const id = place && typeof place.place_id === 'string' ? place.place_id : '';
+    if (id && !deduped.has(id)) deduped.set(id, place);
+  }
+  return Array.from(deduped.values())
+    .slice(0, 20)
+    .map((place) => mapPlace(place, base))
+    .filter(Boolean);
+}
+
+async function googlePlacesSearch(body, base) {
   const key = googleKey();
   const query =
     body.query && String(body.query).trim()
@@ -645,46 +731,46 @@ async function googlePlacesSearch(body) {
     body.location &&
     Number.isFinite(body.location.lat) &&
     Number.isFinite(body.location.lng);
-  const hasTypes = Array.isArray(body.types) && body.types.length > 0;
-  let url;
-  let params;
-  if (hasLoc && hasTypes) {
-    const radius =
-      body.radiusMeters && Number.isFinite(body.radiusMeters)
-        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-        : 5000;
-    params = [
-      `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}`,
-      `radius=${radius}`,
-      `type=${encodeURIComponent(body.types.slice(0, 5).join('|'))}`,
-    ];
-    url = `${PLACES_URL}/nearbysearchjson?${params.join('&')}`;
-  } else {
-    params = [
-      `input=${encodeURIComponent(query)}`,
-      'inputtype=textquery',
-    ];
-    if (hasLoc) {
-      const radius =
-        body.radiusMeters && Number.isFinite(body.radiusMeters)
-          ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-          : 5000;
-      params.push(
-        `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
-      );
-    }
-    url = `${PLACES_URL}/findplacefromtext/json?${params.join('&')}`;
+  const types = Array.isArray(body.types)
+    ? body.types
+        .filter((type) => typeof type === 'string' && /^[a-z_]{1,60}$/.test(type))
+        .slice(0, 5)
+    : [];
+  const radius =
+    body.radiusMeters && Number.isFinite(body.radiusMeters)
+      ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
+      : 5000;
+
+  if (hasLoc && types.length > 0) {
+    // The legacy Nearby Search API accepts only one `type` per request.
+    // Fetch each requested type, then de-duplicate the combined results.
+    const groups = await Promise.all(types.map(async (type) => {
+      const url =
+        `${PLACES_URL}/nearbysearch/json?location=${body.location.lat.toFixed(6)},` +
+        `${body.location.lng.toFixed(6)}&radius=${radius}&type=${encodeURIComponent(type)}` +
+        `&key=${encodeURIComponent(key)}`;
+      const data = await fetchJson(url);
+      assertPlacesSuccess(data);
+      return placeResults(data);
+    }));
+    return resultPlaces(groups.flat(), base);
   }
-  url += `&key=${encodeURIComponent(key)}`;
-  const d = await fetchJson(url);
-  if (d.status === 'ZERO_RESULTS') return [];
-  if (d.status !== 'OK' && d.status !== 'ZERO_RESULTS') {
-    throw new HttpError(502, `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200), 'upstream');
+
+  if (!query) {
+    throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
   }
-  return (Array.isArray(d.results) ? d.results : [])
-    .slice(0, 20)
-    .map((r) => mapPlace(r, functionBaseUrl({})))
-    .filter(Boolean);
+  // Text Search supports a normal user query and returns multiple results;
+  // Find Place requires fields and returns only candidates, so it was a poor
+  // fit for the Explore result grid.
+  const params = [`query=${encodeURIComponent(query)}`];
+  if (hasLoc) {
+    params.push(`location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}`);
+    params.push(`radius=${radius}`);
+  }
+  params.push(`key=${encodeURIComponent(key)}`);
+  const data = await fetchJson(`${PLACES_URL}/textsearch/json?${params.join('&')}`);
+  assertPlacesSuccess(data);
+  return resultPlaces(placeResults(data), base);
 }
 
 exports.placesSearch = onRequest(
@@ -694,10 +780,7 @@ exports.placesSearch = onRequest(
     const uid = await getUid(req);
     await rateLimit(uid, 'placesSearch');
     const body = await readJsonBody(req);
-    if (!body.query && !(body.location && Array.isArray(body.types))) {
-      throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
-    }
-    const places = await googlePlacesSearch(body);
+    const places = await googlePlacesSearch(body, functionBaseUrl(req));
     res.status(200).json({ places });
   }),
 );
@@ -713,7 +796,7 @@ exports.placesDetails = onRequest(
     const key = googleKey();
     const d = await fetchJson(
       `${PLACES_URL}/details/json?place_id=${encodeURIComponent(placeId)}` +
-        `&fields=name,formatted_address,geometry,rating,user_ratings_total,types,photos,formatted_phone_number,international_phone_number,website,price_level,open_hours,status&key=${encodeURIComponent(key)}`,
+        `&fields=name,formatted_address,geometry,rating,user_ratings_total,types,photos,formatted_phone_number,international_phone_number,website,price_level,opening_hours,business_status&key=${encodeURIComponent(key)}`,
     );
     if (d.status !== 'OK' || !d.result) {
       throw new HttpError(404, `Place not found (${d.status || 'unknown'}).`, 'upstream');
@@ -775,11 +858,10 @@ exports.emergencyNearby = onRequest(
         ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 20000)
         : 5000;
     const places = await googlePlacesSearch({
-      query: 'emergency services',
       location: { lat: body.location.lat, lng: body.location.lng },
       radiusMeters: radius,
       types: ['hospital', 'police_station', 'fire_station', 'doctor'],
-    });
+    }, functionBaseUrl(req));
     res.status(200).json({ places });
   }),
 );

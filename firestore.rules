@@ -21,16 +21,33 @@ service cloud.firestore {
         && lng is number && lng >= -180 && lng <= 180;
     }
 
+    // Incident and SOS records store coordinates in a `location` map.
+    // Keep this validator aligned with the Dart repositories.
+    function validLocation(location) {
+      return location is map
+        && validCoords(location.lat, location.lng);
+    }
+
     // ---- Account (role gate; clients can only create role 'user') ----
     match /users/{uid} {
       allow get: if isSelf(uid) || isAdmin();
       allow list: if isAdmin();
       allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
         && request.resource.data.role == 'user'
-        && request.resource.data.keys().hasAll(['role'])
-        && request.resource.data.keys().hasAtMost(['role', 'displayName', 'email', 'createdAt']);
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 320
+        && (request.resource.data.photoUrl == null
+          || request.resource.data.photoUrl is string)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.keys().hasOnly([
+          'uid', 'role', 'displayName', 'email', 'photoUrl', 'createdAt'
+        ]);
       allow update: if (isSelf(uid)
-        && resource.data.role == request.resource.data.role)
+        && resource.data.role == request.resource.data.role
+        && resource.data.uid == request.resource.data.uid)
         || isAdmin();
       allow delete: if isAdmin();
     }
@@ -62,7 +79,7 @@ service cloud.firestore {
           'theft', 'fraud', 'assault', 'harassment', 'accident',
           'unsafe_area', 'poor_infrastructure', 'natural_hazard', 'other'
         ]
-        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && validLocation(request.resource.data.location)
         && request.resource.data.description is string
         && request.resource.data.description.size() >= 10
         && request.resource.data.description.size() <= 2000
@@ -83,22 +100,27 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'active'
-        && validCoords(request.resource.data.lat, request.resource.data.lng)
+        && validLocation(request.resource.data.location)
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 120;
 
-      // Owners may cancel their own active SOS; admins may resolve/cancel.
+      // Owners may cancel/resolve their own active SOS, without altering
+      // the original location or identity. Admins manage the full workflow.
       allow update: if (isSelf(resource.data.uid)
         && resource.data.status == 'active'
         && request.resource.data.status in ['cancelled', 'resolved']
-        && request.resource.data.uid == resource.data.uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'resolvedAt']))
         || isAdmin();
       allow delete: if isAdmin();
     }
 
-    // ---- Digital emergency IDs: token is the only externally visible part ----
+    // ---- Digital emergency IDs: private to their owner/admin ----
+    // QR verification is handled by the rate-limited Cloud Function; clients
+    // must never be able to enumerate another user's contact information.
     match /digitalIds/{id} {
-      allow get, list: if signedIn();
+      allow get, list: if isSelf(resource.data.uid) || isAdmin();
 
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
@@ -108,10 +130,13 @@ service cloud.firestore {
         && request.resource.data.ownerName is string
         && request.resource.data.ownerName.size() <= 80;
 
-      // Owners may revoke/reactivate; admins may manage everything.
+      // Owners can only change the active/revoked state. Immutable identity,
+      // contact and token fields stop a client from silently replacing an ID.
       allow update: if (isSelf(resource.data.uid)
+        && request.resource.data.uid == resource.data.uid
         && request.resource.data.status in ['active', 'revoked']
-        && request.resource.data.uid == resource.data.uid)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt']))
         || isAdmin();
       allow delete: if isSelf(resource.data.uid) || isAdmin();
     }

@@ -61,8 +61,8 @@ class SetupGuideScreen extends StatelessWidget {
       (
         '3. Deploy the YatraWise backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
-        'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
-        '(see functions/.env.example).',
+        'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_MAPS_API_KEY set '
+        '(see .env.example in the repository root).',
       ),
       (
         '4. Deploy rules',

@@ -47,8 +47,14 @@ class DigitalId {
         photoUrl: m['photoUrl'] as String?,
         emergencyContactName: m['emergencyContactName'] as String?,
         emergencyContactPhone: m['emergencyContactPhone'] as String?,
-        createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt: _dateFrom(m['createdAt']),
       );
+
+  static DateTime _dateFrom(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value)?.toLocal() ?? DateTime.now();
+    return DateTime.now();
+  }
 
   /// Cryptographically random 256-bit identifier.
   static String generateToken() {
