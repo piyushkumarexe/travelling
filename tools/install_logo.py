@@ -36,7 +36,7 @@ DENSITIES = [
     ('mipmap-xxxhdpi', 192, 432),
 ]
 ASSET_SIZE = 1024
-BRAND_CREAM = '#FEFAF1'   # the logo's own background colour
+BRAND_BACKGROUND = '#000000'   # matches the supplied blue logo's outer canvas
 PREP_SIZE = 512   # working size for the icon sweep (quality vs. pure-python speed)
 
 
@@ -315,7 +315,7 @@ def main():
     ap.add_argument('--asset-size', type=int, default=ASSET_SIZE,
                     help='edge length of assets/images/tourism-logo.png')
     ap.add_argument('--asset', default=ASSET, help='override the asset path')
-    ap.add_argument('--flatten', default=BRAND_CREAM,
+    ap.add_argument('--flatten', default=BRAND_BACKGROUND,
                     help='opaque background for the legacy launcher icons')
     args = ap.parse_args()
     if not args.source or not os.path.exists(args.source):
