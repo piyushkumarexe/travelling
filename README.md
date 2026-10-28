@@ -767,8 +767,8 @@ flutter pub get
 3. Enable the required authentication methods.
 4. Create Firestore and Firebase Storage.
 5. Configure `lib/firebase_options.dart` with the correct project values.
-6. Register the signing certificate SHA-1/SHA-256 values required by Google Sign-In.
-7. Configure the Google web client ID where required.
+6. Register the **existing** signing certificate SHA-1/SHA-256 values required by Google Sign-In; do not rotate the key to address error 10. See `android/GOOGLE_SIGN_IN.md`.
+7. Configure the existing Google web client ID where required.
 8. Deploy Firestore and Storage rules.
 
 Useful scripts:
