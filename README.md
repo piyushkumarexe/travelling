@@ -746,8 +746,8 @@ The following official or primary sources are useful for the project’s design 
 
 ### Prerequisites
 
-- Flutter stable compatible with the repository SDK constraint.
-- Dart SDK `>=3.5.0 <5.0.0`.
+- Flutter stable 3.47 or newer with Dart 3.13 or newer, matching the committed `pubspec.lock`.
+- The project Dart SDK constraint remains `>=3.5.0 <5.0.0`; the resolved locked packages require Dart 3.13+.
 - Android Studio and Android SDK.
 - JDK 21 for the CI-compatible Android build environment.
 - Firebase CLI for backend and rules deployment.

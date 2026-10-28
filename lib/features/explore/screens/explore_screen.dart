@@ -1193,4 +1193,3 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 }
-
