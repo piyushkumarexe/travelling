@@ -70,9 +70,13 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Profile?>? _profileSub;
 
+  bool _started = false;
+
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
     _init();
   }
 
