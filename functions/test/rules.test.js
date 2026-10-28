@@ -99,7 +99,7 @@ test('incidents and SOS use nested coordinates and owner-only history', async ()
     photoUrl: null, videoUrl: null, createdAt: now(), updatedAt: now(),
   };
   await assertSucceeds(setDoc(doc(alice, 'incidents/incident-1'), incident));
-  await assertFails(setDoc(doc(alice, 'incidents/incident-2'), {...incident, lat: 26.4, lng: 80.3, location: undefined}));
+  await assertFails(setDoc(doc(alice, 'incidents/incident-2'), {...incident, lat: 26.4, lng: 80.3, location: null}));
   await assertSucceeds(getDocs(query(collection(alice, 'incidents'), where('uid', '==', 'alice'))));
   await assertFails(getDoc(doc(bob, 'incidents/incident-1')));
   await assertFails(getDocs(query(collection(bob, 'incidents'), where('uid', '==', 'alice'))));
