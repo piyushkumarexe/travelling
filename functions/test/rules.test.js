@@ -23,6 +23,9 @@ const {
   serverTimestamp,
   Timestamp,
 } = require('firebase/firestore');
+// Register the modular Storage component used by context.storage(), including
+// the test environment's clearStorage() cleanup hook.
+require('firebase/storage');
 
 const projectId = 'demo-tourism';
 let testEnv;
