@@ -202,8 +202,13 @@ class AppScope extends InheritedWidget {
   final AppContainer container;
 
   static AppContainer of(BuildContext context) {
+    // The container is created once in main() and never replaced during the
+    // app's lifetime. Use the non-subscribing lookup so repositories/services
+    // can also be read safely from initState(). A subscribing inherited
+    // lookup throws before initState completes and previously crashed Home,
+    // Safety, Vehicle, Weather, Profile and other screens on startup.
     final AppScope? scope =
-        context.dependOnInheritedWidgetOfExactType<AppScope>();
+        context.getInheritedWidgetOfExactType<AppScope>();
     if (scope == null) {
       throw StateError('AppScope not found above this widget.');
     }
