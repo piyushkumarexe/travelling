@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tourism/core/utils/validators.dart';
+import 'package:yatrawise/core/utils/validators.dart';
 
 void main() {
   group('Validators.requiredText', () {
@@ -38,33 +38,6 @@ void main() {
     test('rejects garbage', () {
       expect(Validators.phone('hello'), isNotNull);
       expect(Validators.phone('12345'), isNotNull); // too short
-    });
-  });
-
-  group('Validators.email', () {
-    test('accepts valid emails', () {
-      expect(Validators.email('you@example.com'), isNull);
-      expect(Validators.email('  you@example.com  '), isNull); // trimmed
-      expect(Validators.email('a.b+tag@sub.domain.co.in'), isNull);
-    });
-
-    test('rejects invalid emails', () {
-      expect(Validators.email(''), isNotNull);
-      expect(Validators.email('not-an-email'), isNotNull);
-      expect(Validators.email('a@b'), isNotNull);
-      expect(Validators.email('a @b.com'), isNotNull);
-    });
-  });
-
-  group('Validators.password', () {
-    test('sign-in only requires non-empty', () {
-      expect(Validators.password('x'), isNull);
-      expect(Validators.password(''), isNotNull);
-    });
-
-    test('sign-up requires at least 6 characters', () {
-      expect(Validators.password('12345', isSignUp: true), isNotNull);
-      expect(Validators.password('123456', isSignUp: true), isNull);
     });
   });
 

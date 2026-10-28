@@ -1,10 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
-
-import '../../core/app_config.dart';
-import '../../core/network/api_client.dart';
 
 /// Real Google Sign-In + Firebase Authentication.
 
@@ -16,20 +12,9 @@ class AuthException implements Exception {
 }
 
 class AuthRepository {
-  AuthRepository({ApiClient? apiClient}) : _apiClient = apiClient;
-
-  final ApiClient? _apiClient;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-
-  // `serverClientId` (the Google Sign-In *web* client ID) is required on
-  // Android when there is no google-services.json, otherwise the ID token is
-  // null and Firebase rejects the credential.
-  final GoogleSignIn _google = GoogleSignIn(
-    serverClientId: AppConfig.googleWebClientId.isEmpty
-        ? null
-        : AppConfig.googleWebClientId,
-  );
+  final GoogleSignIn _google = GoogleSignIn();
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
@@ -58,41 +43,9 @@ class AuthRepository {
       rethrow;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_friendlyAuthError(e));
-    } catch (e) {
-      throw AuthException(_googleSignInError(e));
+    } catch (_) {
+      throw AuthException('Google sign-in failed. Please try again.');
     }
-  }
-
-  /// Turns the platform exception Google Sign-In throws into an actionable
-  /// message. The most common causes are a missing/mismatched SHA-1 on the
-  /// Android OAuth client (error 10) or an unpublished OAuth consent screen.
-  String _googleSignInError(Object e) {
-    String detail = '';
-    if (e is PlatformException) {
-      detail = (e.message ?? e.code).trim();
-    } else {
-      detail = e.toString();
-    }
-    final RegExp apiErr = RegExp(r'ApiException:\s*(\d+)');
-    final RegExpMatch? match = apiErr.firstMatch(detail);
-    if (match != null) {
-      switch (match.group(1)) {
-        case '10':
-          return 'Google Sign-In error 10: verify that the Android OAuth '
-              'client has this installed build\'s package and SHA-1, and '
-              'that the app uses an existing Web application client ID from '
-              'the same project. Do not use an Android client ID as the Web '
-              'client or replace the signing key.';
-        case '12501':
-          return 'Google Sign-In was cancelled or blocked (error 12501). '
-              'Check that the OAuth consent screen is published and the '
-              'correct SHA-1 is registered.';
-        case '12500':
-          return 'Google Sign-In failed (error 12500). Check the Web client '
-              'ID and that the OAuth consent screen is published.';
-      }
-    }
-    return 'Google sign-in failed. Check the app configuration and try again.';
   }
 
   String _friendlyAuthError(FirebaseAuthException e) {
@@ -101,26 +54,11 @@ class AuthRepository {
       case 'invalid-firebase-credential':
         return 'Google credential was not accepted. Try signing in again.';
       case 'account-exists-with-different-credential':
-        return 'An account already exists with this email. Sign in with the '
-            'method you used before.';
+        return 'This Google account is already linked to another YatraWise account.';
       case 'too-many-requests':
         return 'Too many attempts. Wait a minute and try again.';
       case 'network-request-failed':
         return 'Network error during sign-in. Check your connection.';
-      case 'invalid-email':
-        return 'That email address looks invalid.';
-      case 'user-not-found':
-      case 'user-disabled':
-        return 'No account found for this email. Create one first.';
-      case 'wrong-password':
-      case 'invalid-password':
-        return 'Incorrect password. Try again or reset it.';
-      case 'email-already-in-use':
-        return 'This email is already registered. Sign in instead.';
-      case 'weak-password':
-        return 'Password is too weak. Use at least 6 characters.';
-      case 'operation-not-allowed':
-        return 'Email/password sign-in is not enabled for this project yet.';
       default:
         return 'Sign-in failed (${e.code}). Please try again.';
     }
@@ -132,75 +70,10 @@ class AuthRepository {
     } catch (_) {
       // ignore
     }
-    // Google cleanup is best-effort, but Firebase sign-out must not be
-    // silently reported as successful when the local session remains.
-    await _auth.signOut();
-  }
-
-  /// Permanently deletes cloud data, Storage objects and the Auth account.
-  /// No local success is reported before the backend confirms deletion.
-  Future<void> deleteAccount() async {
-    if (_auth.currentUser == null) {
-      throw AuthException('Sign in again before deleting your account.');
-    }
-    final ApiClient? api = _apiClient;
-    if (api == null) {
-      throw AuthException('Account deletion is not configured.');
-    }
-    await api.post(
-      '/deleteAccount',
-      <String, dynamic>{},
-      receiveTimeout: const Duration(seconds: 130),
-    );
     try {
-      await signOut();
+      await _auth.signOut();
     } catch (_) {
-      // The backend has confirmed deletion; local session cleanup must not
-      // turn that confirmed outcome into a false "not deleted" message.
-    }
-  }
-
-  /// Email + password sign-in.
-  Future<User?> signInWithEmailAndPassword(
-      String email, String password) async {
-    try {
-      final UserCredential result = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-      return result.user;
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyAuthError(e));
-    } catch (_) {
-      throw AuthException('Sign-in failed. Please try again.');
-    }
-  }
-
-  /// Email + password sign-up (creates the account and signs the user in).
-  Future<User?> registerWithEmailAndPassword(
-      String email, String password) async {
-    try {
-      final UserCredential result =
-          await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-      return result.user;
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyAuthError(e));
-    } catch (_) {
-      throw AuthException('Could not create your account. Please try again.');
-    }
-  }
-
-  /// Sends a password-reset email.
-  Future<void> sendPasswordReset(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email.trim());
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyAuthError(e));
-    } catch (_) {
-      throw AuthException('Could not send the reset email. Please try again.');
+      // ignore
     }
   }
 
@@ -210,21 +83,17 @@ class AuthRepository {
     final DocumentReference<Map<String, dynamic>> userRef =
         _db.collection('users').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> userSnap = await userRef.get();
-    if (!userSnap.exists) {
-      // Only write the fields the Firestore `users/{uid}` create rule allows
-      // (role, displayName, email, createdAt). Extra fields such as `uid` or
-      // `photoUrl` make the write fail permission-denied, which used to leave
-      // users WITHOUT a profile document.
-      await userRef.set(<String, dynamic>{
-        'displayName': user.displayName ?? '',
-        'email': user.email ?? '',
-        'role': 'user',
-        'createdAt': Timestamp.now(),
-      });
-    }
+    if (userSnap.exists) return;
 
-    // Always make sure the profile document exists too (independent of the
-    // users doc, so a missing profile is repaired on next sign-in).
+    await userRef.set(<String, dynamic>{
+      'uid': user.uid,
+      'displayName': user.displayName ?? '',
+      'email': user.email ?? '',
+      'photoUrl': user.photoURL,
+      'role': 'user',
+      'createdAt': Timestamp.now(),
+    });
+
     final DocumentReference<Map<String, dynamic>> profileRef =
         _db.collection('profiles').doc(user.uid);
     final DocumentSnapshot<Map<String, dynamic>> profileSnap =

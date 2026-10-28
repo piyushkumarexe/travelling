@@ -11,7 +11,6 @@ import '../../../core/utils/format.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/private_storage_image.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/digital_id.dart';
 import '../../../data/models/profile.dart';
@@ -41,7 +40,6 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
   Profile? _profile;
   StreamSubscription<List<DigitalId>>? _sub;
   StreamSubscription<Profile?>? _profileSub;
-  final Set<String> _repairingPublicIds = <String>{};
 
   @override
   void initState() {
@@ -61,13 +59,12 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
           _ids.addAll(ids);
           _loading = false;
         });
-        _repairLegacyPublicRecords(ids);
       }
     }, onError: (Object e) {
       if (mounted) {
         setState(() {
+          _error = e.toString();
           _loading = false;
-          _error = 'Cloud Digital IDs are unavailable. Check your connection and retry.';
         });
       }
     });
@@ -78,21 +75,6 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
       setState(() => _profile = p);
       _prefill();
     }, onError: (Object _) {});
-  }
-
-  void _repairLegacyPublicRecords(List<DigitalId> ids) {
-    for (final DigitalId id in ids) {
-      if (!DigitalId.isValidTokenShape(id.token) ||
-          !_repairingPublicIds.add(id.id)) {
-        continue;
-      }
-      unawaited(_c.digitalIdRepository.ensurePublic(id).catchError((Object _) {
-        if (mounted) {
-          setState(() => _error =
-              'A legacy verification record could not be updated. Retry while online.');
-        }
-      }).whenComplete(() => _repairingPublicIds.remove(id.id)));
-    }
   }
 
   void _prefill() {
@@ -136,20 +118,15 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         uid: uid,
         ownerName: name,
         photoUrl: p?.photoUrl,
-        photoPath: p?.photoPath,
         emergencyContactName: _contactNameController.text.trim(),
         emergencyContactPhone: contactPhone,
       );
-      if (mounted) setState(() => _creating = false);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
+          _error = e.toString();
           _creating = false;
-          _error = 'Digital ID was not created. Nothing was saved; check your connection and retry.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not create a verifiable Digital ID.')),
-        );
       }
     }
   }
@@ -157,11 +134,10 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
   Future<void> _setActive(DigitalId id, bool active) async {
     try {
       await _c.digitalIdRepository.setActive(id.id, active);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Update failed. Verification status was not changed.')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Update failed: $e')));
       }
     }
   }
@@ -244,7 +220,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     'The QR code contains only a random verification token — '
                     'no name, phone or other personal data. First responders '
                     'scan it (or type the token) and the app verifies it '
-                    'against Tourism\'s secure records.',
+                    'against YatraWise\'s secure records.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -263,12 +239,15 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: scheme.surface,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[
+                active ? const Color(0xFF0B3954) : const Color(0xFF37474F),
+                active ? const Color(0xFF0E7C7B) : const Color(0xFF546E7A),
+              ],
+            ),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: active
-                    ? AppTheme.success.withValues(alpha: 0.4)
-                    : scheme.outlineVariant),
           ),
           child: Column(
             children: <Widget>[
@@ -276,9 +255,9 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      'TOURISM EMERGENCY ID',
+                      'YATRAWISE EMERGENCY ID',
                       style: TextStyle(
-                        color: scheme.onSurfaceVariant,
+                        color: Colors.white.withValues(alpha: 0.8),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
@@ -290,13 +269,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: (active ? AppTheme.success : AppTheme.danger)
-                          .withValues(alpha: 0.15),
+                          .withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       active ? 'ACTIVE' : 'REVOKED',
-                      style: TextStyle(
-                          color: active ? AppTheme.success : AppTheme.danger,
+                      style: const TextStyle(
+                          color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w800),
                     ),
@@ -308,22 +287,21 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   CircleAvatar(
                     radius: 32,
-                    backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                    child: (id.photoPath?.isNotEmpty ?? false) ||
-                            (id.photoUrl?.isNotEmpty ?? false)
+                    backgroundColor: Colors.white24,
+                    child: id.photoUrl != null && id.photoUrl!.isNotEmpty
                         ? ClipOval(
-                            child: PrivateStorageImage(
-                              storagePath: id.photoPath,
-                              legacyUrl: id.photoUrl,
+                            child: Image.network(
+                              id.photoUrl!,
                               width: 64,
                               height: 64,
-                              maxBytes: 5 * 1024 * 1024,
-                              placeholder:
-                                  Icon(Icons.person, color: scheme.primary),
+                              fit: BoxFit.cover,
+                              errorBuilder: (BuildContext context,
+                                  Object e, StackTrace? s) =>
+                                  const Icon(Icons.person),
                             ),
                           )
-                        : Icon(Icons.person,
-                            size: 34, color: scheme.primary),
+                        : const Icon(Icons.person,
+                            size: 34, color: Colors.white70),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -332,8 +310,8 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                       children: <Widget>[
                         Text(
                           id.ownerName,
-                          style: TextStyle(
-                              color: scheme.onSurface,
+                          style: const TextStyle(
+                              color: Colors.white,
                               fontSize: 20,
                               fontWeight: FontWeight.w800),
                         ),
@@ -343,7 +321,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             'Contact: ${id.emergencyContactName}',
                             style: TextStyle(
-                                color: scheme.onSurfaceVariant,
+                                color: Colors.white.withValues(alpha: 0.85),
                                 fontSize: 13),
                           ),
                         ],
@@ -352,7 +330,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                           Text(
                             id.emergencyContactPhone!,
                             style: TextStyle(
-                                color: scheme.onSurfaceVariant,
+                                color: Colors.white.withValues(alpha: 0.85),
                                 fontSize: 13),
                           ),
                       ],
@@ -382,17 +360,15 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                // A token shorter than 16 chars (a legacy or hand-written doc)
-                // used to throw RangeError here and red-screen the whole card.
-                'Token: ${_shortToken(id.token)}',
+                'Token: ${id.token.substring(0, 8)}…${id.token.substring(id.token.length - 8)}',
                 style: TextStyle(
-                    color: scheme.onSurfaceVariant, fontSize: 12),
+                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
               ),
               const SizedBox(height: 2),
               Text(
                 'Created ${Fmt.date(id.createdAt)}',
                 style: TextStyle(
-                    color: scheme.onSurfaceVariant, fontSize: 12),
+                    color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
               ),
             ],
           ),
@@ -477,13 +453,4 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
       ),
     );
   }
-}
-
-/// "a1b2c3d4…9f8e7d6c" for a normal 64-char token, and a safe truncation for
-/// anything shorter (a legacy or partially written document used to throw
-/// RangeError here and blank the whole ID card).
-String _shortToken(String token) {
-  const int edge = 8;
-  if (token.length <= edge * 2) return token;
-  return '${token.substring(0, edge)}…${token.substring(token.length - edge)}';
 }

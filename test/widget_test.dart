@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tourism/core/theme/app_theme.dart';
-import 'package:tourism/core/widgets/app_button.dart';
-import 'package:tourism/core/widgets/state_views.dart';
+import 'package:yatrawise/core/theme/app_theme.dart';
+import 'package:yatrawise/core/widgets/app_button.dart';
+import 'package:yatrawise/core/widgets/state_views.dart';
 
 void main() {
   Widget pumpApp(Widget child) {

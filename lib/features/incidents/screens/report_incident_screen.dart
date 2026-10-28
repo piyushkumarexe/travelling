@@ -129,15 +129,15 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
       _submitPhase = 'Starting…';
     });
     try {
-      String? photoPath;
+      String? photoUrl;
       if (_photo != null) {
         if (mounted) setState(() => _submitPhase = 'Uploading photo…');
-        photoPath = await _c.storageService.uploadIncidentImage(_photo!, uid);
+        photoUrl = await _c.storageService.uploadIncidentImage(_photo!, uid);
       }
-      String? videoPath;
+      String? videoUrl;
       if (_video != null) {
         if (mounted) setState(() => _submitPhase = 'Uploading video…');
-        videoPath = await _c.storageService.uploadIncidentVideo(_video!, uid);
+        videoUrl = await _c.storageService.uploadIncidentVideo(_video!, uid);
       }
 
       if (mounted) setState(() => _submitPhase = 'Analyzing with AI…');
@@ -148,8 +148,8 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
           .analyzeIncident(
         description: desc,
         locationLabel: label,
-        hasPhoto: photoPath != null,
-        hasVideo: videoPath != null,
+        hasPhoto: photoUrl != null,
+        hasVideo: videoUrl != null,
       );
 
       if (mounted) setState(() => _submitPhase = 'Saving report…');
@@ -168,24 +168,11 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         lng: pos.longitude,
         summary: analysis['summary'],
         recommendedAction: analysis['recommendedAction'],
-        photoPath: photoPath,
-        videoPath: videoPath,
+        photoUrl: photoUrl,
+        videoUrl: videoUrl,
         createdAt: DateTime.now(),
       );
-      final String id;
-      try {
-        id = await _c.incidentsRepository.create(incident);
-      } catch (_) {
-        // Firestore unreachable / rules not deployed (Spark free tier): be
-        // honest instead of pretending the report was saved.
-        if (!mounted) return;
-        setState(() {
-          _stage = _Stage.form;
-          _error = 'Incident reporting service is currently unavailable. '
-              'Please try again later.';
-        });
-        return;
-      }
+      final String id = await _c.incidentsRepository.create(incident);
       final Incident created = Incident(
         id: id,
         uid: uid,
@@ -200,8 +187,6 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         recommendedAction: incident.recommendedAction,
         photoUrl: incident.photoUrl,
         videoUrl: incident.videoUrl,
-        photoPath: incident.photoPath,
-        videoPath: incident.videoPath,
         createdAt: incident.createdAt,
       );
 

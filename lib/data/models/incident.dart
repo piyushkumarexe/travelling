@@ -19,8 +19,6 @@ class Incident {
     this.recommendedAction,
     this.photoUrl,
     this.videoUrl,
-    this.photoPath,
-    this.videoPath,
   });
 
   final String id;
@@ -43,8 +41,6 @@ class Incident {
   final String? recommendedAction;
   final String? photoUrl;
   final String? videoUrl;
-  final String? photoPath;
-  final String? videoPath;
   final DateTime createdAt;
 
   factory Incident.fromMap(String id, Map<String, dynamic> m) {
@@ -64,8 +60,6 @@ class Incident {
       recommendedAction: m['recommendedAction'] as String?,
       photoUrl: m['photoUrl'] as String?,
       videoUrl: m['videoUrl'] as String?,
-      photoPath: m['photoPath'] as String?,
-      videoPath: m['videoPath'] as String?,
       createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -111,8 +105,6 @@ class Incident {
         'recommendedAction': recommendedAction,
         'photoUrl': photoUrl,
         'videoUrl': videoUrl,
-        'photoPath': photoPath,
-        'videoPath': videoPath,
         'createdAt': createdAt.toUtc(),
         'updatedAt': DateTime.now().toUtc(),
       };

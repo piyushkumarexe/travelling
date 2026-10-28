@@ -12,7 +12,6 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_skeleton.dart';
 import '../../../data/models/eco.dart';
-import '../../../data/repositories/eco_repository.dart';
 
 /// Eco Score: track walking / cycling / public transport. Sessions can be
 /// GPS-tracked live or logged manually; the score persists in Firestore.
@@ -29,13 +28,11 @@ class _EcoScreenState extends State<EcoScreen> {
   EcoScore? _score;
   List<EcoActivity> _activities = const <EcoActivity>[];
   bool _loading = true;
-  bool _cloudOffline = false;
   String? _error;
 
   StreamSubscription<EcoScore?>? _scoreSub;
   StreamSubscription<List<EcoActivity>>? _actSub;
   late VoidCallback _trackerListener;
-  EcoTrackerService? _ecoTracker;
   bool _saving = false;
 
   @override
@@ -44,7 +41,7 @@ class _EcoScreenState extends State<EcoScreen> {
     _trackerListener = () {
       if (mounted) setState(() {});
     };
-    _ecoTracker = _c.ecoTracker..addListener(_trackerListener);
+    _c.ecoTracker.addListener(_trackerListener);
     _listen();
   }
 
@@ -57,51 +54,22 @@ class _EcoScreenState extends State<EcoScreen> {
       if (mounted) {
         setState(() {
           _score = s;
-          _cloudOffline = false;
           _loading = false;
         });
       }
     }, onError: (Object e) {
-      _fallbackToLocal(uid);
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     });
     _actSub = _c.ecoRepository
         .watchActivities(uid)
         .listen((List<EcoActivity> items) {
-      if (mounted) {
-        setState(() {
-          _activities = items;
-          _cloudOffline = false;
-        });
-      }
-    }, onError: (Object e) {
-      _fallbackToLocal(uid);
-    });
-  }
-
-  /// Firestore rejected the request (rules not deployed / offline) — read the
-  /// on-device copy instead so the score still works, and show a soft note
-  /// instead of a raw error.
-  Future<void> _fallbackToLocal(String uid) async {
-    if (!mounted) return;
-    try {
-      final EcoScore? localScore = await _c.ecoRepository.local.readScore(uid);
-      final List<EcoActivity> localActs =
-          await _c.ecoRepository.local.readActivities(uid);
-      if (!mounted) return;
-      setState(() {
-        _score = localScore;
-        _activities = localActs;
-        _cloudOffline = true;
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _error = 'Could not load your eco score. Please try again.';
-          _loading = false;
-        });
-      }
-    }
+      if (mounted) setState(() => _activities = items);
+    }, onError: (Object _) {});
   }
 
   Future<void> _startSession() async {
@@ -135,14 +103,13 @@ class _EcoScreenState extends State<EcoScreen> {
     );
     if (mode == null) return;
     try {
-      final bool started = await _c.ecoTracker.start(mode: mode);
+      await _c.ecoTracker.start(mode: mode);
       if (!mounted) return;
-      if (!started) {
+      if (!_c.ecoTracker.isTracking) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text(
-                  'Location permission denied — enable location access in '
-                  'system settings to track eco sessions.')),
+                  'Location permission denied — enable location access in system settings to track eco sessions.')),
         );
       }
     } catch (e) {
@@ -206,40 +173,26 @@ class _EcoScreenState extends State<EcoScreen> {
     final String? uid = _c.authRepository.currentUser?.uid;
     if (uid == null) return;
     setState(() => _saving = true);
-    final EcoActivity activity = EcoActivity(
-      id: '',
-      uid: uid,
-      mode: mode,
-      distanceMeters: distanceMeters,
-      durationSeconds: durationSeconds,
-      note: note,
-      createdAt: DateTime.now(),
-    );
     try {
-      await _c.ecoRepository.addActivity(uid, activity);
+      await _c.ecoRepository.addActivity(
+        uid,
+        EcoActivity(
+          id: '',
+          uid: uid,
+          mode: mode,
+          distanceMeters: distanceMeters,
+          durationSeconds: durationSeconds,
+          note: note,
+          createdAt: DateTime.now(),
+        ),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Eco activity logged — score updated.')),
         );
       }
     } catch (e) {
-      if (EcoRepository.shouldFallback(e)) {
-        // Save on-device so measurement is never lost, and refresh the UI.
-        final EcoScore updated =
-            await _c.ecoRepository.localAddActivity(uid, activity);
-        if (mounted) {
-          setState(() {
-            _score = updated;
-            _cloudOffline = true;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Logged on this device (cloud sync unavailable right now).'),
-            ),
-          );
-        }
-      } else if (mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Could not log: $e')));
       }
@@ -261,7 +214,7 @@ class _EcoScreenState extends State<EcoScreen> {
   void dispose() {
     _scoreSub?.cancel();
     _actSub?.cancel();
-    _ecoTracker?.removeListener(_trackerListener);
+    _c.ecoTracker.removeListener(_trackerListener);
     super.dispose();
   }
 
@@ -331,30 +284,6 @@ class _EcoScreenState extends State<EcoScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         children: <Widget>[
-          if (_cloudOffline)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Row(
-                children: <Widget>[
-                  Icon(Icons.cloud_off, color: scheme.onSecondaryContainer),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Cloud sync unavailable — your eco score is saved on '
-                      'this device for now.',
-                      style:
-                          TextStyle(color: scheme.onSecondaryContainer, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           if (_error != null)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -377,31 +306,33 @@ class _EcoScreenState extends State<EcoScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppTheme.success.withValues(alpha: 0.08),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[Color(0xFF1B5E20), Color(0xFF43A047)],
+              ),
               borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-              border: Border.all(
-                  color: AppTheme.success.withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(Icons.eco, color: AppTheme.success, size: 30),
+                    const Icon(Icons.eco, color: Colors.white, size: 30),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         EcoMath.levelFor(score.score),
-                        style: TextStyle(
-                            color: scheme.onSurface,
+                        style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w800),
                       ),
                     ),
                     Text(
                       '${score.score} pts',
-                      style: TextStyle(
-                          color: scheme.onSurfaceVariant, fontSize: 14),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 14),
                     ),
                   ],
                 ),
@@ -411,17 +342,16 @@ class _EcoScreenState extends State<EcoScreen> {
                   child: LinearProgressIndicator(
                     value: EcoMath.levelProgress(score.score),
                     minHeight: 10,
-                    backgroundColor:
-                        AppTheme.success.withValues(alpha: 0.15),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppTheme.success),
+                    backgroundColor: Colors.white24,
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _nextLevelHint(score.score),
-                  style: TextStyle(
-                      color: scheme.onSurfaceVariant, fontSize: 12),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 12),
                 ),
               ],
             ),
@@ -471,7 +401,7 @@ class _EcoScreenState extends State<EcoScreen> {
                   Text(
                     'Distance: ${GeoUtils.formatDistance(session.distanceMeters)}'
                     ' · Time: ${GeoUtils.formatDuration(session.duration.inSeconds.toDouble())}'
-                    '${session.hasFixes ? (session.lastAccuracyMeters != null ? ' · GPS ±${session.lastAccuracyMeters!.round()} m' : '') : ' · waiting for GPS fixes…'}',
+                    '${session.hasFixes ? '' : ' · waiting for GPS fixes…'}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
@@ -503,7 +433,7 @@ class _EcoScreenState extends State<EcoScreen> {
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         Text(
-                          'Keep the app open while you walk or cycle; Tourism '
+                          'Keep the app open while you walk or cycle; YatraWise '
                           'measures real distance from GPS.',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),

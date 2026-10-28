@@ -11,16 +11,11 @@ class PlaceCard extends StatelessWidget {
     required this.place,
     this.distance,
     this.onTap,
-    this.trailing,
   });
 
   final Place place;
   final String? distance;
   final VoidCallback? onTap;
-
-  /// Optional trailing widget (e.g. a "Show on map" button) rendered after
-  /// the distance chip.
-  final Widget? trailing;
 
   static IconData iconFor(Place place) {
     if (place.isEmergency) {
@@ -56,20 +51,14 @@ class PlaceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color accent = colorFor(context, place);
-    // contextLine = address + city/state (when structured data exists) —
-    // strictly richer than address-only and disambiguates same-name places.
-    final String subtitle = place.contextLine;
-    final String rawType = (place.primaryType ?? '').replaceAll('_', ' ');
-    final String ratingText = place.provider == 'curated'
-        ? 'Open-data directory record • verify details'
-        : place.rating != null
-            ? '★ ${place.rating!.toStringAsFixed(1)}'
-                '${place.userRatingCount != null ? ' (${place.userRatingCount})' : ''}'
-            : const <String>{
-                'address', 'place', 'point of interest', 'poi', 'road', 'street'
-              }.contains(rawType.toLowerCase())
-                ? ''
-                : rawType;
+    final String subtitle = <String>[
+      if (place.address != null && place.address!.isNotEmpty)
+        place.address!,
+    ].join(' · ');
+    final String ratingText = place.rating != null
+        ? '★ ${place.rating!.toStringAsFixed(1)}'
+            '${place.userRatingCount != null ? ' (${place.userRatingCount})' : ''}'
+        : (place.primaryType ?? '').replaceAll('_', ' ');
 
     return AppCard(
       onTap: onTap,
@@ -107,16 +96,14 @@ class PlaceCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                if (ratingText.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    ratingText,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
+                const SizedBox(height: 4),
+                Text(
+                  ratingText,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
               ],
             ),
           ),
@@ -137,7 +124,6 @@ class PlaceCard extends StatelessWidget {
                 ),
               ),
             ),
-          if (trailing != null) trailing!,
         ],
       ),
     );

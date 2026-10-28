@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'uiverse.dart';
 
 /// Buttons with built-in loading state (no double submits, clear feedback).
-///
-/// Clean shadcn-style: solid primary, hairline outlined variant, no gradients
-/// or glow.
+
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -29,74 +26,54 @@ class PrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = onPressed != null && !loading;
-
-    final Color fg = danger
-        ? AppTheme.danger
-        : (outlined ? scheme.onSurface : scheme.primary);
-
-    Widget content(Color color) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (icon != null) ...<Widget>[
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 8),
+    final Widget child = loading
+        ? const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                Icon(icon, size: 18),
+                const SizedBox(width: 8),
+              ],
+              Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
             ],
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-          ],
-        );
-
+          );
     if (outlined) {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton(
-          onPressed: enabled ? onPressed : null,
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(52),
-            foregroundColor: fg,
-            side: BorderSide(
-              color: danger ? AppTheme.danger : scheme.outline,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+      return OutlinedButton(
+        onPressed: enabled ? onPressed : null,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(88, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Center(
-            child: loading
-                ? SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: fg,
-                    ),
-                  )
-                : content(fg),
-          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Center(child: child),
         ),
       );
     }
-
-    // Uiverse-inspired layered rim + inset face + tactile press translation.
-    // Keep PrimaryButton's public API so this polish reaches every existing
-    // feature without rewriting screens or weakening loading semantics.
     return SizedBox(
       width: double.infinity,
-      child: UiverseButton(
-        label: label,
-        icon: icon,
+      child: FilledButton(
         onPressed: enabled ? onPressed : null,
-        loading: loading,
-        danger: danger,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          backgroundColor: danger ? AppTheme.danger : scheme.primary,
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
+        child: Center(child: child),
       ),
     );
   }
@@ -116,16 +93,15 @@ class IconButtonCircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color c = color ?? Theme.of(context).colorScheme.primary;
     return Material(
-      color: c.withValues(alpha: 0.1),
+      color: (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.1),
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(icon, color: c),
+          child: Icon(icon, color: color),
         ),
       ),
     );

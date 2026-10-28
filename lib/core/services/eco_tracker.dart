@@ -15,14 +15,12 @@ class EcoSession {
   final DateTime startedAt;
   final String mode; // walk | cycle
   double distanceMeters = 0;
-  double? lastAccuracyMeters;
   Position? _last;
   bool get hasFixes => _last != null;
 
   void feed(Position p) {
-    // Ignore clearly-bad fixes so the distance stays meaningful. Many
-    // devices report accuracy 0 (unknown) for early fixes — accept those.
-    if (p.accuracy > 100) return;
+    // Ignore low-accuracy fixes so the distance stays meaningful.
+    if (p.accuracy > 50) return;
     final Position? last = _last;
     if (last != null) {
       distanceMeters += GeoUtils.distanceMeters(
@@ -31,7 +29,6 @@ class EcoSession {
       );
     }
     _last = p;
-    lastAccuracyMeters = p.accuracy <= 0 ? null : p.accuracy;
   }
 
   Duration get duration => DateTime.now().difference(startedAt);
@@ -48,20 +45,15 @@ class EcoTrackerService extends ChangeNotifier {
   EcoSession? get session => _session;
   bool get isTracking => _session != null;
 
-  /// Starts a live GPS session. Returns false (and starts nothing) when
-  /// location permission was denied.
-  Future<bool> start({required String mode}) async {
-    if (_session != null) return true;
+  Future<void> start({required String mode}) async {
+    if (_session != null) return;
     final LocationPermission p = await _locationService.ensurePermission();
     if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-      return false; // UI shows the denial state.
+      return; // UI shows the denial state.
     }
     _session = EcoSession(startedAt: DateTime.now(), mode: mode);
-    _sub = _locationService
-        .watchPosition(distanceFilter: 2, accuracy: LocationAccuracy.high)
-        .listen(_onFix);
+    _sub = _locationService.watchPosition(distanceFilter: 5).listen(_onFix);
     notifyListeners();
-    return true;
   }
 
   void _onFix(Position p) {

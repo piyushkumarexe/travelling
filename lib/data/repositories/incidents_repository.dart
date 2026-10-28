@@ -8,13 +8,8 @@ class IncidentsRepository {
   Future<String> create(Incident incident) =>
       _db.collection('incidents').add(incident.toMap()).then((ref) => ref.id);
 
-  /// The current user's own reports.
-  ///
-  /// Rules side this must line up with (firestore.rules → /incidents):
-  /// `get` = owner or admin, `list` = admin OR the per-document condition
-  /// `resource.data.uid == request.auth.uid`. A plain `where('uid', == me)`
-  /// LIST satisfies that condition; an admin-only `list` rule made this query
-  /// fail with permission-denied and the history stayed empty.
+  /// The current user's own reports (permission enforced by rules:
+  /// list = any signed-in user, get = owner or admin → user only sees own).
   Stream<List<Incident>> watchMine(String uid) => _db
       .collection('incidents')
       .where('uid', isEqualTo: uid)

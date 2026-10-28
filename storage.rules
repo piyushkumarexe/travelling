@@ -2,6 +2,7 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+
     function signedIn() {
       return request.auth != null;
     }
@@ -20,46 +21,29 @@ service firebase.storage {
     }
 
     function isVideo() {
-      return request.resource.contentType.matches('video/(mp4|quicktime|webm|3gpp)');
+      return request.resource.contentType.matches(
+        'video/(mp4|quicktime|webm|3gpp)');
     }
 
-    // New app versions keep authenticated Storage paths in Firestore and read
-    // through the SDK. Existing download tokens cannot be revoked by rules;
-    // rotate them in Firebase console during the documented migration.
+    // Incident evidence: incidents/{uid}/* — owner uploads, owner + admin read
     match /incidents/{uid}/{fileName} {
       allow read: if isSelf(uid) || isAdmin();
-      allow create, update: if isSelf(uid)
-        && ((isImage() && request.resource.size <= 10485760)
-          || (isVideo() && request.resource.size <= 52428800));
+      allow write: if isSelf(uid)
+        && (isImage() || isVideo())
+        && request.resource.size <= 52428800; // 50 MB
       allow delete: if isSelf(uid) || isAdmin();
     }
 
-    // Avatars are private account data, not readable by every signed-in user.
+    // Profile photos: avatars/{uid}/* — small, image-only
     match /avatars/{uid}/{fileName} {
-      allow read: if isSelf(uid) || isAdmin();
-      allow create, update: if isSelf(uid)
-        && isImage() && request.resource.size <= 5242880;
+      allow read: if signedIn();
+      allow write: if isSelf(uid)
+        && isImage()
+        && request.resource.size <= 5242880; // 5 MB
       allow delete: if isSelf(uid) || isAdmin();
     }
 
-    match /receipts/{uid}/{fileName} {
-      allow read: if isSelf(uid);
-      allow create, update: if isSelf(uid)
-        && isImage() && request.resource.size <= 5242880;
-      allow delete: if isSelf(uid);
-    }
-
-    function isVaultDocument() {
-      return isImage() || request.resource.contentType == 'application/pdf';
-    }
-
-    match /users/{uid}/travelDocuments/{documentId}/file {
-      allow read: if isSelf(uid);
-      allow create, update: if isSelf(uid)
-        && isVaultDocument() && request.resource.size <= 10485760;
-      allow delete: if isSelf(uid);
-    }
-
+    // Everything else is denied by default.
     match /{allPaths=**} {
       allow read, write: if false;
     }

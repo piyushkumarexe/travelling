@@ -51,11 +51,8 @@ class GeoUtils {
     final int s = seconds.round();
     final int h = s ~/ 3600;
     final int m = (s % 3600) ~/ 60;
-    if (h > 0) {
-      if (m > 0) return '$h hr $m min';
-      return '$h hr';
-    }
+    if (h > 0) return '${h}h ${m}m';
     if (m > 0) return '$m min';
-    return '$s sec';
+    return '$s s';
   }
 }

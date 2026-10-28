@@ -12,7 +12,7 @@ import '../../../core/widgets/app_skeleton.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/weather.dart';
 
-/// Live weather (OpenWeather via the Tourism backend) with practical
+/// Live weather (OpenWeather via the YatraWise backend) with practical
 /// safety notes and a 5-day forecast for the current location.
 class WeatherScreen extends StatefulWidget {
   const WeatherScreen({super.key});
@@ -122,11 +122,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
       'https://openweathermap.org/img/wn/$icon@2x.png',
       width: size,
       height: size,
-      cacheWidth: 200,
-      cacheHeight: 200,
       loadingBuilder: (BuildContext context, Widget child,
-              ImageChunkEvent? progress) =>
-          progress == null ? child : fallback,
+          ImageChunkEvent? _) =>
+          fallback,
       errorBuilder: (BuildContext context, Object e, StackTrace? s) =>
           fallback,
     );
@@ -307,9 +305,12 @@ class _WeatherScreenState extends State<WeatherScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.06),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
+        ),
         borderRadius: BorderRadius.circular(AppTheme.cardRadius),
-        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         children: <Widget>[
@@ -317,7 +318,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Icon(Icons.place, color: scheme.onSurfaceVariant, size: 16),
+                const Icon(Icons.place, color: Colors.white70, size: 16),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -326,25 +327,25 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        color: scheme.onSurfaceVariant, fontSize: 13),
+                        color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
                   ),
                 ),
               ],
             ),
           const SizedBox(height: 14),
-          _weatherIcon(w.icon, 84, scheme.primary),
+          _weatherIcon(w.icon, 84, Colors.white),
           const SizedBox(height: 10),
           Text(
             '${w.tempC.round()}°C',
-            style: TextStyle(
-                color: scheme.onSurface,
+            style: const TextStyle(
+                color: Colors.white,
                 fontSize: 52,
                 fontWeight: FontWeight.w800),
           ),
           Text(
             w.condition,
-            style: TextStyle(
-                color: scheme.onSurface,
+            style: const TextStyle(
+                color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.w600),
           ),
@@ -352,7 +353,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
           Text(
             'Feels like ${w.feelsLikeC.round()}°C · Updated ${Fmt.time(w.updatedAt)}',
             style: TextStyle(
-                color: scheme.onSurfaceVariant, fontSize: 12),
+                color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
           ),
           const SizedBox(height: 16),
           Row(
@@ -379,27 +380,26 @@ class _WeatherScreenState extends State<WeatherScreen> {
   }
 
   Widget _metric(IconData icon, String label, String value) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         children: <Widget>[
-          Icon(icon, color: scheme.onSurfaceVariant, size: 18),
+          Icon(icon, color: Colors.white70, size: 18),
           const SizedBox(height: 6),
           Text(
             label,
-            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11),
           ),
           const SizedBox(height: 2),
           Text(
             value,
             textAlign: TextAlign.center,
-            style: TextStyle(
-                color: scheme.onSurface,
+            style: const TextStyle(
+                color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w700),
           ),
@@ -411,8 +411,6 @@ class _WeatherScreenState extends State<WeatherScreen> {
   Widget _notesCard(ColorScheme scheme) {
     final WeatherCurrent w = _current!;
     final List<String> notes = weatherSafetyNotes(w);
-    final ForecastDay? today = _forecast.isEmpty ? null : _forecast.first;
-    final String advice = weatherTravelAdvice(w, today: today);
     final bool hasAlert = !(notes.isNotEmpty &&
         notes.first.contains('comfortable'));
     return AppCard(
@@ -432,7 +430,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Travel advice',
+                  'Weather safety notes',
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -440,26 +438,6 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Icon(Icons.travel_explore,
-                    size: 16, color: scheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(advice,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: 10),
           for (final String note in notes)
