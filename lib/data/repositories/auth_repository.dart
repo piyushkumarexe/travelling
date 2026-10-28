@@ -79,8 +79,9 @@ class AuthRepository {
       switch (match.group(1)) {
         case '10':
           return 'Google Sign-In is not configured correctly for this app '
-              '(error 10). Check that this app\'s SHA-1 fingerprint and '
-              'package name are registered on the Android OAuth client.';
+              '(error 10). Register this installed build\'s existing SHA-1 '
+              'and package name on the Android OAuth client. Do not replace '
+              'the signing key or generate a new fingerprint.';
         case '12501':
           return 'Google Sign-In was cancelled or blocked (error 12501). '
               'Check that the OAuth consent screen is published and the '

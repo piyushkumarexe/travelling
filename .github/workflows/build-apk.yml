@@ -100,15 +100,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import base64
+          import gzip
           import subprocess
           lock = Path('pubspec.lock')
           changed = subprocess.run(['git', 'status', '--porcelain', '--', 'pubspec.lock'], capture_output=True, text=True).stdout.strip()
           tracked = subprocess.run(['git', 'ls-files', '--error-unmatch', 'pubspec.lock'], capture_output=True).returncode == 0
           if lock.exists() and (changed or not tracked):
-              encoded = base64.b64encode(lock.read_bytes()).decode('ascii')
-              chunks = [encoded[i:i + 6000] for i in range(0, len(encoded), 6000)]
+              encoded = base64.b64encode(gzip.compress(lock.read_bytes(), mtime=0)).decode('ascii')
+              chunks = [encoded[i:i + 3000] for i in range(0, len(encoded), 3000)]
               for index, chunk in enumerate(chunks):
-                  print(f'::error title=pubspec-lock-base64 {index + 1}/{len(chunks)}::{chunk}')
+                  print(f'::error title=pubspec-lock-gzip-base64 {index + 1}/{len(chunks)}::{chunk}')
           for name in ('analyze.log', 'test.log'):
               p = Path(name)
               if not p.exists():
@@ -182,7 +183,20 @@ jobs:
           grep -q "package: name='app.roamio.tourism'" build-debug-badging.txt
           grep -q "application-label:'Tourism'" build-debug-badging.txt
           grep -q 'launchable-activity:' build-debug-badging.txt
-          "$signer" verify "$apk"
+          "$signer" verify --print-certs "$apk" > "$RUNNER_TEMP/tourism-debug-cert.txt"
+          debug_sha1="$(grep -m1 'SHA-1 digest' "$RUNNER_TEMP/tourism-debug-cert.txt" | sed 's/.*digest: *//; s/ //g')"
+          test -n "$debug_sha1"
+          mkdir -p dist
+          {
+            echo 'Tourism debug APK - existing signer fingerprint'
+            echo 'Package: app.roamio.tourism'
+            echo "SHA-1: $debug_sha1"
+            echo 'No signing key or certificate was changed by this verification.'
+            echo 'If Google Sign-In reports error 10, register this exact existing SHA-1 with the Android OAuth client for app.roamio.tourism in Firebase project tourism-39425.'
+            echo 'CI debug certificates can differ between runners. Use the fingerprint shipped with the exact APK being tested, or a consistently signed existing-key build.'
+            echo 'See android/GOOGLE_SIGN_IN.md. Never generate a replacement key just to address error 10.'
+          } > dist/GOOGLE_SIGN_IN.txt
+          echo "::notice title=Existing Tourism debug APK SHA-1::$debug_sha1"
           unzip -p "$apk" assets/flutter_assets/assets/images/tourism-logo.png > "$RUNNER_TEMP/tourism-logo.png"
           cmp assets/images/tourism-logo.png "$RUNNER_TEMP/tourism-logo.png"
           zipinfo -1 "$apk" > "$RUNNER_TEMP/tourism-apk-entries.txt"
@@ -194,7 +208,6 @@ jobs:
             echo '::error::Legacy branding or a private AI provider artifact was found in the APK.'
             exit 1
           fi
-          mkdir -p dist
           cp "$apk" dist/tourism-debug.apk
           (cd dist && sha256sum tourism-debug.apk > SHA256SUMS.txt)
       - name: Upload successful debug APK
@@ -204,6 +217,7 @@ jobs:
           path: |
             dist/tourism-debug.apk
             dist/SHA256SUMS.txt
+            dist/GOOGLE_SIGN_IN.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
