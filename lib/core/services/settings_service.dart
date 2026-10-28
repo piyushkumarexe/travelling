@@ -27,7 +27,6 @@ class SettingsService extends ChangeNotifier {
   static const String _kPowerOffPhone = 'power_off_safety.sos_phone';
   static const String _kPowerOffName = 'power_off_safety.sos_name';
   static const String _kPowerOffProject = 'power_off_safety.project_id';
-  static const String _kPowerOffUid = 'power_off_safety.uid';
   static const String _kPowerOffToken = 'power_off_safety.id_token';
   static const String _kPowerOffLastEvent = 'power_off_safety.last_event';
 
@@ -71,7 +70,8 @@ class SettingsService extends ChangeNotifier {
   /// SOS contact (device-local source of truth).
   String get sosContactName => _sosContactName;
   String get sosContactPhone => _sosContactPhone;
-  bool get hasSosContact => _sosContactPhone.trim().isNotEmpty;
+  bool get hasSosContact =>
+      _sosContactName.trim().isNotEmpty || _sosContactPhone.trim().isNotEmpty;
 
   Future<void> load() async {
     try {
@@ -117,7 +117,10 @@ class SettingsService extends ChangeNotifier {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kPowerOffSafety, value);
-      if (!value) await _clearPowerOffPayload(prefs);
+      if (!value) {
+        // Turning OFF must never leave a stale share payload behind.
+        await prefs.remove(_kPowerOffToken);
+      }
     } catch (_) {
       // Persistence is best-effort; the in-memory value still applies.
     }
@@ -192,31 +195,24 @@ class SettingsService extends ChangeNotifier {
   Future<void> setSosContact(String name, String phone) async {
     _sosContactName = name.trim();
     _sosContactPhone = phone.trim();
-    if (_sosContactPhone.isEmpty) _powerOffSafety = false;
     notifyListeners();
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kSosContactName, _sosContactName);
       await prefs.setString(_kSosContactPhone, _sosContactPhone);
-      if (_sosContactPhone.isEmpty) {
-        await prefs.setBool(_kPowerOffSafety, false);
-        await _clearPowerOffPayload(prefs);
-      }
     } catch (_) {
       // Persistence is best-effort; the in-memory value still applies.
     }
   }
 
-  /// Clears the SOS contact and disables power-off safety atomically.
+  /// Clears the SOS contact. Power-Off Safety Location must be turned off
+  /// separately (it requires a contact).
   Future<void> clearSosContact() async {
     _sosContactName = '';
     _sosContactPhone = '';
-    _powerOffSafety = false;
     notifyListeners();
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kPowerOffSafety, false);
-      await _clearPowerOffPayload(prefs);
       await prefs.remove(_kSosContactName);
       await prefs.remove(_kSosContactPhone);
     } catch (_) {
@@ -231,83 +227,19 @@ class SettingsService extends ChangeNotifier {
     required String sosPhone,
     required String sosName,
     required String projectId,
-    required String uid,
     String? idToken,
   }) async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      if (!_powerOffSafety ||
-          sosPhone.trim().isEmpty ||
-          uid.trim().isEmpty ||
-          projectId.trim().isEmpty) {
-        await _clearPowerOffPayload(prefs);
-        return;
-      }
-      await prefs.setString(_kPowerOffPhone, sosPhone.trim());
+      await prefs.setString(_kPowerOffPhone, sosPhone);
       await prefs.setString(_kPowerOffName, sosName);
       await prefs.setString(_kPowerOffProject, projectId);
-      await prefs.setString(_kPowerOffUid, uid);
       if (idToken != null && idToken.isNotEmpty) {
         await prefs.setString(_kPowerOffToken, idToken);
-      } else {
-        await prefs.remove(_kPowerOffToken);
       }
     } catch (_) {
       // Best-effort mirror.
     }
-  }
-
-  Future<void> _clearPowerOffPayload(SharedPreferences prefs) async {
-    for (final String key in <String>[
-      _kPowerOffPhone,
-      _kPowerOffName,
-      _kPowerOffProject,
-      _kPowerOffUid,
-      _kPowerOffToken,
-      _kPowerOffLastEvent,
-    ]) {
-      await prefs.remove(key);
-    }
-  }
-
-  /// Clears account/session secrets without deleting UID-scoped offline data.
-  Future<void> clearSessionData() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    _powerOffSafety = false;
-    _offlineEmergencySms = false;
-    _offlineEmergencyLastStatus = '';
-    _sosContactName = '';
-    _sosContactPhone = '';
-    await prefs.setBool(_kPowerOffSafety, false);
-    await prefs.setBool(_kOfflineEmergencySms, false);
-    await _clearPowerOffPayload(prefs);
-    for (final String key in <String>[
-      _kSosContactName,
-      _kSosContactPhone,
-      _kOfflineEmergencyLastStatus,
-      'last_known_position',
-      'booking.recent.locations.v1',
-      'last_ui_error',
-      'travel.decision.replay.v1',
-    ]) {
-      await prefs.remove(key);
-    }
-    notifyListeners();
-  }
-
-  /// Clears SharedPreferences-backed app data after confirmed deletion.
-  /// Private downloaded temporary files are cleared separately.
-  Future<void> clearAllLocalData() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    _autoReadReplies = false;
-    _powerOffSafety = false;
-    _offlineEmergencySms = false;
-    _offlineEmergencyLastStatus = '';
-    _sosContactName = '';
-    _sosContactPhone = '';
-    _behaviourPackedness = <double>[];
-    notifyListeners();
   }
 
   /// The last power-off event record written by the native receiver (raw

@@ -42,12 +42,7 @@ abstract final class SosMessages {
     final String what = destinationName == null
         ? 'am navigating in Tourism'
         : 'am navigating to $destinationName in Tourism';
-    final Duration age = DateTime.now().difference(position.timestamp);
-    final bool recent = !age.isNegative && age <= const Duration(minutes: 2);
-    final String freshness = recent
-        ? 'LIVE LOCATION'
-        : 'LAST KNOWN LOCATION (${age.inMinutes.clamp(0, 100000)} min old)';
-    return '$freshness: $who $what. '
+    return 'LIVE LOCATION: $who $what and sharing live location with you. '
         'Coordinates: $lat, $lng (±${position.accuracy.round()} m). '
         'Map: https://maps.google.com/?q=$lat,$lng';
   }

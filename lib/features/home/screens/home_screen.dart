@@ -70,13 +70,9 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<List<Incident>>? _incidentsSub;
   StreamSubscription<Profile?>? _profileSub;
 
-  bool _started = false;
-
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
+  void initState() {
+    super.initState();
     _init();
   }
 
@@ -885,8 +881,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _sosTextButton(IconData icon, String label, VoidCallback onTap) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: HomeSosActionButton(icon: icon, label: label, onPressed: onTap),
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: scheme.onSurface,
+          side: BorderSide(color: scheme.outlineVariant),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+        icon: Icon(icon, size: 16),
+        label: Flexible(
+          child: Text(label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ),
     );
   }
 
@@ -1061,46 +1074,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Home SOS action with a label compatible with Flutter's icon-button layout.
-///
-/// OutlinedButton.icon already wraps its label in Flexible. Passing another
-/// Flexible here creates competing FlexParentData and replaces Home with the
-/// generic FlutterError screen, so the production label must remain plain Text.
-class HomeSosActionButton extends StatelessWidget {
-  const HomeSosActionButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: scheme.onSurface,
-        side: BorderSide(color: scheme.outlineVariant),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-      ),
-      icon: Icon(icon, size: 16),
-      label: Text(
-        label,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
     );
   }

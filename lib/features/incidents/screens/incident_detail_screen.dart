@@ -9,7 +9,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/badges.dart';
-import '../../../core/widgets/private_storage_image.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/incident.dart';
 
@@ -30,6 +29,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
   Incident? _incident;
   bool _loading = true;
   String? _error;
+  bool _photoFailed = false;
   StreamSubscription<Incident?>? _sub;
 
   static const List<String> _statuses = <String>[
@@ -82,28 +82,14 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
     }
   }
 
-  Future<void> _openVideo(Incident incident) async {
-    try {
-      final String path = incident.videoPath?.trim() ?? '';
-      if (path.isNotEmpty) {
-        await _c.privateFiles.open(
-          storagePath: path,
-          fileName: path.split('/').last,
-        );
-        return;
-      }
-      final String legacy = incident.videoUrl?.trim() ?? '';
-      if (legacy.isEmpty) return;
-      final Uri uri = Uri.parse(legacy);
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        throw StateError('No video player is available.');
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the private video.')),
-        );
-      }
+  Future<void> _openVideo(String url) async {
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No app found to play this video on device.')),
+      );
     }
   }
 
@@ -167,10 +153,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
               ],
             ),
           ),
-          if (inc.photoPath != null ||
-              inc.photoUrl != null ||
-              inc.videoPath != null ||
-              inc.videoUrl != null) ...<Widget>[
+          if ((inc.photoUrl ?? inc.videoUrl) != null) ...<Widget>[
             const SizedBox(height: 12),
             AppCard(
               child: Column(
@@ -184,28 +167,41 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 10),
-                  if (inc.photoPath != null || inc.photoUrl != null)
+                  if (inc.photoUrl != null)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: PrivateStorageImage(
-                        storagePath: inc.photoPath,
-                        legacyUrl: inc.photoUrl,
-                        height: 200,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        placeholder: Container(
-                          height: 200,
-                          color: scheme.surfaceContainerHighest,
-                          child: const Center(child: Icon(Icons.broken_image)),
-                        ),
-                      ),
+                      child: _photoFailed
+                          ? Container(
+                              height: 160,
+                              color: scheme.surfaceContainerHighest,
+                              child: const Center(
+                                  child: Icon(Icons.broken_image)),
+                            )
+                          : Image.network(
+                              inc.photoUrl!,
+                              height: 200,
+                              width: double.infinity,
+                              cacheWidth: 1200,
+                              fit: BoxFit.cover,
+                              errorBuilder: (BuildContext context,
+                                  Object error, StackTrace? stackTrace) {
+                                if (!mounted) return const SizedBox.shrink();
+                                setState(() => _photoFailed = true);
+                                return Container(
+                                  height: 200,
+                                  color: scheme.surfaceContainerHighest,
+                                  child: const Center(
+                                      child: Icon(Icons.broken_image)),
+                                );
+                              },
+                            ),
                     ),
-                  if (inc.videoPath != null || inc.videoUrl != null) ...<Widget>[
+                  if (inc.videoUrl != null) ...<Widget>[
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
                       icon: const Icon(Icons.play_circle_outline),
                       label: const Text('Play video'),
-                      onPressed: () => _openVideo(inc),
+                      onPressed: () => _openVideo(inc.videoUrl!),
                     ),
                   ],
                 ],

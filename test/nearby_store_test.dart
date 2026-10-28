@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:tourism/core/network/api_exception.dart';
-import 'package:tourism/data/local/nearby_store.dart';
-import 'package:tourism/data/models/places.dart';
+import 'package:yatrawise/core/network/api_exception.dart';
+import 'package:yatrawise/data/local/nearby_store.dart';
+import 'package:yatrawise/data/models/places.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

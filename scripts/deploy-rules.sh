@@ -38,6 +38,5 @@ fi
 say "Deploying Firestore rules + indexes and Storage rules to '$PROJECT'"
 $FB deploy --only firestore:rules,firestore:indexes,storage --project "$PROJECT"
 
-say "Rules deployment command completed. Verify behavior with an authorized test account."
-warn "Deployment does not revoke existing Storage download tokens; see BACKEND_SETUP.md."
-warn "If access fails: compare deployed rules and document schemas with this repo; do not weaken ownership checks."
+say "Done. Open the app → Notifications — data loads now (no reinstall needed)."
+warn "If it still fails: Firebase console → Firestore → Rules should match firestore.rules in this repo."

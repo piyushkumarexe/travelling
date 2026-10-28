@@ -7,7 +7,6 @@ class Profile {
     required this.uid,
     this.name = '',
     this.photoUrl,
-    this.photoPath,
     this.language = 'en',
     this.emergencyContactName = '',
     this.emergencyContactPhone = '',
@@ -21,7 +20,6 @@ class Profile {
   final String uid;
   final String name;
   final String? photoUrl;
-  final String? photoPath;
   final String language;
   final String emergencyContactName;
   final String emergencyContactPhone;
@@ -39,7 +37,6 @@ class Profile {
       uid: uid,
       name: (d['name'] as String?) ?? '',
       photoUrl: d['photoUrl'] as String?,
-      photoPath: d['photoPath'] as String?,
       language: (d['language'] as String?) ?? 'en',
       emergencyContactName: (d['emergencyContactName'] as String?) ?? '',
       emergencyContactPhone: (d['emergencyContactPhone'] as String?) ?? '',
@@ -57,7 +54,6 @@ class Profile {
         'uid': uid,
         'name': name,
         'photoUrl': photoUrl,
-        'photoPath': photoPath,
         'language': language,
         'emergencyContactName': emergencyContactName,
         'emergencyContactPhone': emergencyContactPhone,

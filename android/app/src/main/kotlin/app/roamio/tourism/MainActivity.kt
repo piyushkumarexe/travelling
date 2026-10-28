@@ -13,10 +13,8 @@ import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
 import android.util.Log
-import java.io.File
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -38,7 +36,6 @@ class MainActivity : FlutterActivity() {
         const val CHANNEL = "app.roamio.tourism/emergency_sms"
         const val STATUS_CHANNEL = "app.roamio.tourism/emergency_sms_status"
         const val LAUNCH_CHANNEL = "app.roamio.tourism/app_launch"
-        const val PRIVATE_FILE_CHANNEL = "app.roamio.tourism/private_files"
         const val REQ_SEND_SMS = 4711
     }
 
@@ -84,46 +81,12 @@ class MainActivity : FlutterActivity() {
                                     startActivity(intent)
                                     result.success(true)
                                 } catch (e: Exception) {
-                                    result.error("launch_failed", e.javaClass.simpleName, null)
+                                    result.error("launch_failed", "\${e.javaClass.simpleName}: \${e.message}", null)
                                 }
                             }
                         }
                     }
                     else -> result.notImplemented()
-                }
-            }
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PRIVATE_FILE_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                if (call.method != "openFile") {
-                    result.notImplemented()
-                    return@setMethodCallHandler
-                }
-                val path = call.argument<String>("path")
-                val mime = call.argument<String>("mimeType") ?: "application/octet-stream"
-                val allowedMime = mime == "application/pdf" || mime.startsWith("image/") || mime.startsWith("video/")
-                if (path.isNullOrEmpty() || !allowedMime) {
-                    result.error("invalid", "A supported private file is required", null)
-                    return@setMethodCallHandler
-                }
-                try {
-                    val file = File(path).canonicalFile
-                    val cacheRoot = cacheDir.canonicalFile
-                    if (!file.isFile || !file.path.startsWith(cacheRoot.path + File.separator)) {
-                        result.error("invalid", "Only app-cache files can be opened", null)
-                        return@setMethodCallHandler
-                    }
-                    val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, mime)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    startActivity(intent)
-                    result.success(true)
-                } catch (e: android.content.ActivityNotFoundException) {
-                    result.success(false)
-                } catch (e: Exception) {
-                    result.error("open_failed", "The private file could not be opened", null)
                 }
             }
 
@@ -180,8 +143,8 @@ class MainActivity : FlutterActivity() {
                             } catch (e: Exception) {
                                 // Never swallow the OS reason — Dart shows it
                                 // verbatim so the failure is diagnosable.
-                                Log.w("EmergencySms", "tracked SMS send failed: ${e.javaClass.simpleName}")
-                                result.error("send_failed", e.javaClass.simpleName, null)
+                                Log.w("EmergencySms", "tracked SMS send failed: ${e.javaClass.simpleName}: ${e.message}")
+                                result.error("send_failed", "${e.javaClass.simpleName}: ${e.message}", null)
                             }
                         }
                     }

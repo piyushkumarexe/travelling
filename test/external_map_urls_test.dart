@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tourism/core/utils/external_map_urls.dart';
+import 'package:yatrawise/core/utils/external_map_urls.dart';
 
 void main() {
   group('ExternalMapUrls', () {

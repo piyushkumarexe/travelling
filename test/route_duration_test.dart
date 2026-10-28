@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tourism/core/network/osrm_client.dart';
+import 'package:yatrawise/core/network/osrm_client.dart';
 
 void main() {
   group('mode-aware route duration', () {

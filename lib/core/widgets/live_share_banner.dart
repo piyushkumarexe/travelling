@@ -28,10 +28,8 @@ class LiveShareBanner extends StatelessWidget {
           listenable: c.liveLocationShare,
           builder: (BuildContext context, _) {
             if (!c.liveLocationShare.active) return const SizedBox.shrink();
-            final int sent = c.liveLocationShare.smsQueued;
+            final int sent = c.liveLocationShare.smsSent;
             final bool smsOn = c.liveLocationShare.smsEnabled;
-            final bool cloudUnavailable =
-                c.liveLocationShare.lastError == 'cloud-unavailable';
             final String who = c.liveLocationShare.sosContactName.isNotEmpty
                 ? c.liveLocationShare.sosContactName
                 : 'your SOS contact';
@@ -57,12 +55,7 @@ class LiveShareBanner extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _statusText(
-                          who: who,
-                          sent: sent,
-                          smsOn: smsOn,
-                          cloudUnavailable: cloudUnavailable,
-                        ),
+                        _statusText(who: who, sent: sent, smsOn: smsOn),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -127,10 +120,8 @@ class LiveShareBannerInline extends StatelessWidget {
       listenable: c.liveLocationShare,
       builder: (BuildContext context, _) {
         if (!c.liveLocationShare.active) return const SizedBox.shrink();
-        final int sent = c.liveLocationShare.smsQueued;
+        final int sent = c.liveLocationShare.smsSent;
         final bool smsOn = c.liveLocationShare.smsEnabled;
-        final bool cloudUnavailable =
-            c.liveLocationShare.lastError == 'cloud-unavailable';
         final String who = c.liveLocationShare.sosContactName.isNotEmpty
             ? c.liveLocationShare.sosContactName
             : 'your SOS contact';
@@ -150,12 +141,7 @@ class LiveShareBannerInline extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _statusText(
-                    who: who,
-                    sent: sent,
-                    smsOn: smsOn,
-                    cloudUnavailable: cloudUnavailable,
-                  ),
+                  _statusText(who: who, sent: sent, smsOn: smsOn),
                   style: const TextStyle(
                     color: AppTheme.danger,
                     fontSize: 13,
@@ -205,10 +191,10 @@ void showLiveShareFeedback(
   if (result == LiveShareStartResult.declined) return;
   final String message = switch (result) {
     LiveShareStartResult.started => smsEnabled
-        ? 'Live location updates started. SMS delivery is not confirmed; '
-            'check the banner for queued and cloud status.'
-        : 'Live location updates started, but SMS permission is off — your '
-            'contact will not receive SMS until you tap "Enable SMS".',
+        ? 'Live location sharing is ON — your SOS contact will receive your '
+            'location by SMS (in the Messages app, not WhatsApp).'
+        : 'Live location sharing is ON, but the SMS permission is off — tap '
+            '"Enable SMS" on the red banner so your contact gets messages.',
     LiveShareStartResult.noContact => 'Add an SOS contact first to share '
         'your live location.',
     LiveShareStartResult.noLocation => 'Could not get your GPS location — '
@@ -227,23 +213,8 @@ void showLiveShareFeedback(
 }
 
 /// One-line status for the share banners, honest about the SMS channel.
-String _statusText({
-  required String who,
-  required int sent,
-  required bool smsOn,
-  required bool cloudUnavailable,
-}) {
-  final String cloud = cloudUnavailable ? ' · cloud offline' : '';
-  if (sent > 0) {
-    return 'Live updates · $sent SMS queued to $who '
-        '(delivery not confirmed)$cloud';
-  }
-  if (smsOn && cloudUnavailable) {
-    return 'Cloud offline · attempting SMS to $who';
-  }
-  if (smsOn) return 'Live updates active · attempting first SMS to $who';
-  if (cloudUnavailable) {
-    return 'Cloud offline · SMS permission off — no automatic contact update';
-  }
-  return 'Cloud active · SMS permission off — contact not alerted by SMS';
+String _statusText({required String who, required int sent, required bool smsOn}) {
+  if (sent > 0) return 'Sharing live location with $who · $sent SMS sent';
+  if (smsOn) return 'Sharing live location with $who · first SMS going out…';
+  return 'Sharing live location with $who · SMS permission off';
 }

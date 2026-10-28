@@ -145,12 +145,12 @@ class _IncidentHistoryScreenState extends State<IncidentHistoryScreen> {
                                           .bodySmall,
                                     ),
                                     const Spacer(),
-                                    if (inc.photoPath != null || inc.photoUrl != null)
+                                    if (inc.photoUrl != null)
                                       const Padding(
                                         padding: EdgeInsets.only(right: 8),
                                         child: Icon(Icons.photo, size: 14),
                                       ),
-                                    if (inc.videoPath != null || inc.videoUrl != null)
+                                    if (inc.videoUrl != null)
                                       const Icon(Icons.videocam, size: 14),
                                   ],
                                 ),

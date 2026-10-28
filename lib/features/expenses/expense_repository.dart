@@ -177,15 +177,13 @@ class ExpenseRepository extends ChangeNotifier {
     await _saveCache();
     notifyListeners();
     await _enqueue(<String, dynamic>{'key': newId(), 'op': 'delete', 'id': id});
-    if (target?.receiptPath != null) {
-      unawaited(_deleteReceipt(path: target!.receiptPath!));
-    } else if (target?.receiptUrl != null) {
-      unawaited(_deleteReceipt(legacyUrl: target!.receiptUrl!));
+    if (target?.receiptUrl != null) {
+      unawaited(_deleteReceipt(target!.receiptUrl!));
     }
     unawaited(_sync());
   }
 
-  /// Receipt attach after save: uploads and links the private object path.
+  /// Receipt attach AFTER save (retry path): uploads and links the URL.
   Future<void> attachReceipt(String expenseId, XFile receipt) async {
     await _uploadReceipt(expenseId, receipt);
   }
@@ -194,21 +192,17 @@ class ExpenseRepository extends ChangeNotifier {
     // Reuses the app's StorageService (validation + rules path
     // receipts/{uid}/{expenseId}.jpg). image_picker already resized the
     // photo at pick time, keeping text readable while small.
-    final String path = await storage.uploadReceipt(file, _uid!, expenseId);
+    final String url = await storage.uploadReceipt(file, _uid!, expenseId);
     final Expense? e =
         _expenses.where((Expense x) => x.id == expenseId).firstOrNull;
     if (e != null) {
-      await updateExpense(e.copyWith(receiptPath: path));
+      await updateExpense(e.copyWith(receiptUrl: url));
     }
   }
 
-  Future<void> _deleteReceipt({String? path, String? legacyUrl}) async {
+  Future<void> _deleteReceipt(String url) async {
     try {
-      if (path != null) {
-        await _storage.ref(path).delete();
-      } else if (legacyUrl != null) {
-        await _storage.refFromURL(legacyUrl).delete();
-      }
+      await _storage.refFromURL(url).delete();
     } catch (_) {
       // Best-effort: an already-missing file must not block the delete.
     }

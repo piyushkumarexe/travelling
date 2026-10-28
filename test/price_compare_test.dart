@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tourism/features/booking/booking_models.dart';
-import 'package:tourism/features/booking/price_compare.dart';
+import 'package:yatrawise/features/booking/booking_models.dart';
+import 'package:yatrawise/features/booking/price_compare.dart';
 
 /// Locks the behaviour the "one tap price comparison" promise rests on:
 /// deterministic numbers, honest confidence, cheapest-first ordering and a

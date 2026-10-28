@@ -58,7 +58,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
       _when = e.expenseDate;
       _tripId = e.tripId;
       _payment = e.paymentMethod;
-      _receiptPath = e.receiptPath ?? e.receiptUrl; // existing attachment
+      _receiptPath = e.receiptUrl; // existing remote url shown as attached
       _splitOn = e.splits.isNotEmpty;
       _splitMode = 'custom';
       for (final SplitParticipant p in e.splits) {

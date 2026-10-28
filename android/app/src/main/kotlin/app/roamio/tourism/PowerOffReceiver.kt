@@ -53,7 +53,6 @@ class PowerOffReceiver : BroadcastReceiver() {
         private const val K_PHONE = "flutter.power_off_safety.sos_phone"
         private const val K_NAME = "flutter.power_off_safety.sos_name"
         private const val K_PROJECT = "flutter.power_off_safety.project_id"
-        private const val K_UID = "flutter.power_off_safety.uid"
         private const val K_TOKEN = "flutter.power_off_safety.id_token"
         private const val K_LAST_POS = "flutter.last_known_position"
         private const val K_EVENT = "flutter.power_off_safety.last_event"
@@ -72,7 +71,7 @@ class PowerOffReceiver : BroadcastReceiver() {
             try {
                 handleShutdown(context)
             } catch (t: Throwable) {
-                Log.w(TAG, "power-off attempt failed")
+                Log.w(TAG, "power-off attempt failed", t)
             } finally {
                 pending.finish()
             }
@@ -123,7 +122,7 @@ class PowerOffReceiver : BroadcastReceiver() {
                 fixAgeMs = fixAgeMs
             )
         } catch (t: Throwable) {
-            Log.w(TAG, "power-off SMS failed")
+            Log.w(TAG, "power-off SMS failed", t)
             false
         }
         event.put("smsQueued", smsQueued)
@@ -133,7 +132,7 @@ class PowerOffReceiver : BroadcastReceiver() {
             prefs.getString(K_PROJECT, null),
             prefs.getString(K_TOKEN, null),
             prefs.getString(K_NAME, null).orEmpty(),
-            prefs.getString(K_UID, null),
+            phone,
             lat,
             lng
         )
@@ -196,10 +195,10 @@ class PowerOffReceiver : BroadcastReceiver() {
             } else {
                 sms.sendMultipartTextMessage(phone, null, parts, null, null)
             }
-            Log.i(TAG, "power-off SMS handed to radio")
+            Log.i(TAG, "power-off SMS handed to radio ($phone)")
             return true
         } catch (e: SecurityException) {
-            Log.w(TAG, "power-off SMS security exception; trying base manager")
+            Log.w(TAG, "power-off SMS SecurityException, trying base manager: ${e.message}")
             try {
                 val base = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                     context.getSystemService(SmsManager::class.java)
@@ -214,15 +213,15 @@ class PowerOffReceiver : BroadcastReceiver() {
                     } else {
                         base.sendMultipartTextMessage(phone, null, parts, null, null)
                     }
-                    Log.i(TAG, "power-off SMS handed to radio via base manager")
+                    Log.i(TAG, "power-off SMS handed to radio via base manager ($phone)")
                     return true
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "power-off SMS base fallback failed")
+                Log.w(TAG, "power-off SMS base fallback failed", t)
             }
             return false
         } catch (t: Throwable) {
-            Log.w(TAG, "power-off SMS failed")
+            Log.w(TAG, "power-off SMS failed", t)
             return false
         }
     }
@@ -278,7 +277,7 @@ class PowerOffReceiver : BroadcastReceiver() {
             if (lat.isNaN() || lng.isNaN() || lat == 0.0 && lng == 0.0) null
             else Triple(lat, lng, if (json.has("timestamp")) json.optLong("timestamp") else null)
         } catch (t: Throwable) {
-            Log.w(TAG, "could not parse cached location")
+            Log.w(TAG, "could not parse cached location", t)
             null
         }
     }
@@ -288,19 +287,18 @@ class PowerOffReceiver : BroadcastReceiver() {
         projectId: String?,
         idToken: String?,
         name: String,
-        uid: String?,
+        phone: String,
         lat: Double,
         lng: Double
     ): Boolean {
-        if (projectId.isNullOrEmpty() || idToken.isNullOrEmpty() || uid.isNullOrEmpty()) return false
+        if (projectId.isNullOrEmpty() || idToken.isNullOrEmpty()) return false
         return try {
             val body = JSONObject()
                 .put("fields", JSONObject()
-                    .put("uid", stringValue(uid.orEmpty()))
+                    .put("uid", stringValue("power_off_$phone"))
                     .put("name", stringValue(name.ifEmpty { "Traveler" }))
-                    .put("status", stringValue("active"))
-                    .put("kind", stringValue("power_off"))
-                    .put("reason", stringValue("Power-off safety location (best-effort during shutdown)"))
+                    .put("status", stringValue("power_off"))
+                    .put("note", stringValue("Power-off safety location (best-effort during shutdown)"))
                     .put("location", JSONObject()
                         .put("mapValue", JSONObject()
                             .put("fields", JSONObject()
@@ -328,7 +326,7 @@ class PowerOffReceiver : BroadcastReceiver() {
                 conn.disconnect()
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "emergency event POST failed")
+            Log.w(TAG, "emergency event POST failed", t)
             false
         }
     }
@@ -346,7 +344,7 @@ class PowerOffReceiver : BroadcastReceiver() {
         try {
             prefs.edit().putString(K_EVENT, event.toString()).apply()
         } catch (t: Throwable) {
-            Log.w(TAG, "could not persist event record")
+            Log.w(TAG, "could not persist event record", t)
         }
     }
 }

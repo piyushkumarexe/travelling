@@ -36,17 +36,14 @@ say()  { printf "${GREEN}==>${NC} %s\n" "$1"; }
 warn() { printf "${YELLOW}!!${NC} %s\n" "$1"; }
 info() { printf "${CYAN}   %s\n${NC}" "$1"; }
 
-command -v node >/dev/null 2>&1 || { echo "ERROR: Node.js 24 is required."; exit 1; }
-command -v npm  >/dev/null 2>&1 || { echo "ERROR: npm is required."; exit 1; }
-[ "$(node -p 'process.versions.node.split(".")[0]')" = "24" ] || {
-  echo "ERROR: Use Node.js 24 to match the Functions runtime."; exit 1;
-}
+command -v node >/dev/null 2>&1 || { echo "ERROR: Node.js not found. Install it from https://nodejs.org"; exit 1; }
+command -v npm  >/dev/null 2>&1 || { echo "ERROR: npm not found. Install it from https://nodejs.org"; exit 1; }
 
 # firebase-tools runs via npx so you don't have to install anything globally.
 FB="npx --yes firebase-tools"
 
 say "Step 1/5 — Installing backend dependencies"
-(cd functions && npm ci --no-audit --no-fund)
+(cd functions && npm install --no-audit --no-fund)
 
 say "Step 2/5 — Firebase login"
 if ! $FB login:list 2>/dev/null | grep -q "@"; then

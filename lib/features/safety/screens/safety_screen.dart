@@ -70,8 +70,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
   StreamSubscription<Profile?>? _profileSub;
   Profile? _profile;
   bool _contactSaving = false;
-  GeofenceService? _geofenceService;
-  SettingsService? _settings;
 
   @override
   void initState() {
@@ -79,11 +77,10 @@ class _SafetyScreenState extends State<SafetyScreen> {
     // Reflect live geofence status (the service is also started from the app
     // shell on sign-in), so the card and buttons update without a manual
     // rebuild.
-    _geofenceService = _c.geofenceService
-      ..addListener(_onGeofenceChanged);
+    _c.geofenceService.addListener(_onGeofenceChanged);
     // SOS contact is device-local (SettingsService) — rebuild whenever it
     // changes so Add/Edit/Remove reflects immediately without Firestore.
-    _settings = _c.settings..addListener(_onSettingsChanged);
+    _c.settings.addListener(_onSettingsChanged);
     _init();
     if (widget.openSosContact) {
       // Direct route from Settings → "Add SOS Contact" works with or without
@@ -359,8 +356,8 @@ class _SafetyScreenState extends State<SafetyScreen> {
 
   @override
   void dispose() {
-    _geofenceService?.removeListener(_onGeofenceChanged);
-    _settings?.removeListener(_onSettingsChanged);
+    _c.geofenceService.removeListener(_onGeofenceChanged);
+    _c.settings.removeListener(_onSettingsChanged);
     _posSub?.cancel();
     _zonesSub?.cancel();
     _incidentsSub?.cancel();
@@ -521,7 +518,6 @@ class _SafetyScreenState extends State<SafetyScreen> {
           sosPhone: phone,
           sosName: name,
           projectId: projectId ?? '',
-          uid: _c.authRepository.currentUser?.uid ?? '',
           idToken: token,
         );
         // Also make sure the SEND_SMS permission is in place — it is the

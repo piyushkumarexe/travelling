@@ -6,13 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/app_config.dart';
-import '../../../core/services/settings_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/private_storage_image.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/profile.dart';
 
@@ -32,13 +30,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
-  SettingsService? _settings;
   /// Real save state. This was `final bool _saving = false;` — never set to
   /// true — so the sheet's Save button stayed enabled and a fast double tap
   /// fired two Firestore writes (and popped the sheet twice).
   bool _saving = false;
   bool _uploadingPhoto = false;
-  bool _deletingAccount = false;
 
   String get profileContactName =>
       _c.settings.sosContactName.isNotEmpty
@@ -55,7 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Rebuild when the device-local SOS contact changes (added/removed on the
     // SOS screen) so the toggle gate and "Your details" stay in sync even
     // when Firestore sync is unavailable.
-    _settings = _c.settings..addListener(_onSettingsChanged);
+    _c.settings.addListener(_onSettingsChanged);
     _listen();
   }
 
@@ -122,72 +118,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (ok != true) return;
     if (!mounted) return;
-    try {
-      await _c.liveLocationShare.stop();
-      await _c.privateFiles.clearTemporaryFiles();
-      await _c.settings.clearSessionData();
-      await _c.authRepository.signOut();
-      if (mounted) context.go('/login');
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sign out could not be completed.')),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteAccount() async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: const Text('Permanently delete account?'),
-        content: const Text(
-          'This permanently deletes your Tourism Auth account, cloud records, '
-          'Digital ID verification tokens and uploaded files. It also clears '
-          'Tourism preferences and downloaded private temporary files on this '
-          'device. This cannot be undone.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete permanently'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    setState(() => _deletingAccount = true);
-    bool cloudDeleted = false;
-    try {
-      await _c.liveLocationShare.stop();
-      await _c.authRepository.deleteAccount();
-      cloudDeleted = true;
-      await _c.privateFiles.clearTemporaryFiles();
-      await _c.settings.clearAllLocalData();
-      if (mounted) context.go('/login');
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              cloudDeleted
-                  ? 'Cloud account deletion succeeded, but local temporary cleanup '
-                      'was incomplete. Clear Tourism app storage in Android settings.'
-                  : 'Deletion could not be confirmed. Check your connection and retry; '
-                      'contact an administrator if it persists.',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _deletingAccount = false);
-    }
+    await _c.authRepository.signOut();
+    if (mounted) context.go('/login');
   }
 
   void _editProfile() {
@@ -234,7 +166,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 next.uid,
                 name: next.name,
                 photoUrl: next.photoUrl,
-                photoPath: next.photoPath,
                 language: next.language,
                 emergencyContactName: next.emergencyContactName,
                 emergencyContactPhone: next.emergencyContactPhone,
@@ -275,12 +206,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (mounted) setState(() => _uploadingPhoto = false);
         return;
       }
-      final String path = await _c.storageService.uploadAvatar(file, uid);
+      final String url = await _c.storageService.uploadAvatar(file, uid);
       await _c.profileRepository.update(
         uid,
         name: p.name,
-        photoUrl: p.photoUrl,
-        photoPath: path,
+        photoUrl: url,
         language: p.language,
         emergencyContactName: p.emergencyContactName,
         emergencyContactPhone: p.emergencyContactPhone,
@@ -300,7 +230,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    _settings?.removeListener(_onSettingsChanged);
+    _c.settings.removeListener(_onSettingsChanged);
     _sub?.cancel();
     super.dispose();
   }
@@ -355,7 +285,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       sosPhone: phone,
       sosName: profileContactName,
       projectId: projectId ?? '',
-      uid: _c.authRepository.currentUser?.uid ?? '',
       idToken: token,
     );
   }
@@ -408,7 +337,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       sosPhone: phone,
       sosName: profileContactName,
       projectId: projectId ?? '',
-      uid: _c.authRepository.currentUser?.uid ?? '',
       idToken: token,
     );
     // SMS is the channel that works during shutdown (no mobile data needed).
@@ -459,17 +387,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                      child: ((p?.photoPath?.isNotEmpty ?? false) ||
-                              (p?.photoUrl?.isNotEmpty ?? false))
+                      child: (p?.photoUrl != null &&
+                              p!.photoUrl!.isNotEmpty)
                           ? ClipOval(
-                              child: PrivateStorageImage(
-                                storagePath: p!.photoPath,
-                                legacyUrl: p.photoUrl,
+                              child: Image.network(
+                                p.photoUrl!,
                                 width: 80,
                                 height: 80,
-                                maxBytes: 5 * 1024 * 1024,
-                                placeholder: Icon(Icons.person,
-                                    size: 40, color: scheme.primary),
+                                cacheWidth: 240,
+                                cacheHeight: 240,
+                                fit: BoxFit.cover,
+                                errorBuilder: (BuildContext context,
+                                        Object e, StackTrace? s) =>
+                                    Icon(Icons.person,
+                                        size: 40, color: scheme.primary),
                               ),
                             )
                           : Text(
@@ -734,16 +665,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'Sign out',
             icon: Icons.logout,
             danger: true,
-            onPressed: _deletingAccount ? null : _signOut,
-          ),
-          const SizedBox(height: 8),
-          PrimaryButton(
-            label: 'Delete account and cloud data',
-            icon: Icons.delete_forever_outlined,
-            danger: true,
-            outlined: true,
-            loading: _deletingAccount,
-            onPressed: _deletingAccount ? null : _deleteAccount,
+            onPressed: _signOut,
           ),
           const SizedBox(height: 8),
           Center(
@@ -877,7 +799,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       uid: p.uid,
       name: name,
       photoUrl: p.photoUrl,
-      photoPath: p.photoPath,
       language: _language,
       emergencyContactName: _contactName.text.trim(),
       emergencyContactPhone: phone,

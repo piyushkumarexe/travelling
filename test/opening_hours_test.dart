@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tourism/features/autopilot/opening_hours.dart';
+import 'package:yatrawise/features/autopilot/opening_hours.dart';
 
 void main() {
   group('parseOpeningHours (honest: unknown → null)', () {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
@@ -11,7 +12,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../data/models/digital_id.dart';
 
 /// Verifies a Digital Emergency ID by its token (scanned from the QR code
-/// or typed manually) against the minimal public verification collection.
+/// or typed manually) against the live digitalIds collection.
 class VerifyIdScreen extends StatefulWidget {
   const VerifyIdScreen({super.key});
 
@@ -54,12 +55,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
       }
       return;
     }
-    if (mounted) {
-      setState(() {
-        _state = _VerifyState.verifying;
-        _error = null;
-      });
-    }
+    if (mounted) setState(() => _state = _VerifyState.verifying);
     try {
       final DigitalId? id = await _c.digitalIdRepository.verify(token);
       if (!mounted) return;
@@ -71,11 +67,11 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                 ? _VerifyState.verifiedActive
                 : _VerifyState.verifiedRevoked);
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _state = _VerifyState.idle;
-        _error = 'Verification is unavailable. Check your connection and retry.';
+        _error = e.toString();
       });
     }
   }
@@ -95,6 +91,14 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
         onToken: (String t) => Navigator.of(ctx).pop(t),
       ),
     );
+  }
+
+  Future<void> _call(String phone) async {
+    final Uri uri =
+        Uri.parse('tel:${phone.replaceAll(RegExp(r'[^0-9+]'), '')}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -190,7 +194,7 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'No public verification record matches this token. '
+                    'No active digital emergency ID matches this token. '
                     'Check that the token was scanned completely, or ask '
                     'the person to re-share their ID.',
                     style: Theme.of(context).textTheme.bodySmall,
@@ -255,7 +259,21 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
           CircleAvatar(
             radius: 34,
             backgroundColor: scheme.primary.withValues(alpha: 0.12),
-            child: Icon(Icons.badge_outlined, size: 36, color: scheme.primary),
+            child: id.photoUrl != null && id.photoUrl!.isNotEmpty
+                ? ClipOval(
+                    child: Image.network(
+                      id.photoUrl!,
+                      width: 68,
+                      height: 68,
+                      cacheWidth: 204,
+                      cacheHeight: 204,
+                      fit: BoxFit.cover,
+                      errorBuilder: (BuildContext context, Object e,
+                              StackTrace? s) =>
+                          Icon(Icons.person, color: scheme.primary),
+                    ),
+                  )
+                : Icon(Icons.person, size: 36, color: scheme.primary),
           ),
           const SizedBox(height: 12),
           Text(
@@ -267,10 +285,68 @@ class _VerifyIdScreenState extends State<VerifyIdScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Record updated ${Fmt.date(id.createdAt)}',
+            'ID created ${Fmt.date(id.createdAt)}',
             style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
           ),
           const SizedBox(height: 14),
+          if (id.emergencyContactName != null &&
+              id.emergencyContactName!.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.contacts, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Emergency contact',
+                          style: TextStyle(
+                              color: scheme.onSurfaceVariant, fontSize: 11),
+                        ),
+                        Text(
+                          id.emergencyContactName!,
+                          style: TextStyle(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (id.emergencyContactPhone != null &&
+                      id.emergencyContactPhone!.isNotEmpty)
+                    Material(
+                      color: scheme.primaryContainer,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: () => _call(id.emergencyContactPhone!),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(Icons.call,
+                              color: AppTheme.danger, size: 20),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (id.emergencyContactPhone != null &&
+              id.emergencyContactPhone!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Phone: ${id.emergencyContactPhone}',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            ),
           const SizedBox(height: 14),
           PrimaryButton(
             label: 'Verify another ID',

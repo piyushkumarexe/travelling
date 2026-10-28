@@ -63,10 +63,9 @@ class SetupGuideScreen extends StatelessWidget {
       ),
       (
         '3. Deploy the Tourism backend',
-        'After authorized backend review: `firebase deploy --only functions` '
-        'with NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_MAPS_API_KEY in '
-        'Firebase Secret Manager (see BACKEND_SETUP.md). Private provider '
-        'keys must never be Flutter dart-defines.',
+        'From the functions/ folder: `firebase deploy --only functions` with '
+        'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
+        '(see functions/.env.example).',
       ),
       (
         '4. Deploy rules',
@@ -75,9 +74,9 @@ class SetupGuideScreen extends StatelessWidget {
       ),
       (
         '5. Google Maps key',
-        'Set MAPS_ANDROID_API_KEY in the build environment to an '
-        'Android-restricted Maps SDK key for app.roamio.tourism. Do not '
-        'hardcode the key in AndroidManifest.xml.',
+        'In android/app/src/main/AndroidManifest.xml replace '
+        'REPLACE_WITH_GOOGLE_MAPS_ANDROID_API_KEY with an Android-restricted '
+        'Maps SDK key for app.roamio.tourism.',
       ),
       (
         '6. Restart the app',

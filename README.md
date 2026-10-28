@@ -4,8 +4,8 @@
 
 **Tourism** is a Flutter-based Android application designed to help travellers plan, automate, navigate, monitor, and manage a journey from one place. It combines trip planning, live navigation, travel safety, expense control, booking hand-offs, document storage, nearby discovery, AI assistance, and real notification automations without pretending that unavailable data is live or verified.
 
-> **Current application version:** `1.0.35+36`
-> **Android requirement:** Android 6.0 or later (`minSdk 23`; a merged dependency manifest can raise this)
+> **Current application version:** `1.0.30+31`
+> **Android requirement:** Android 7.0 or later (`minSdk 24`)
 > **Application ID:** `app.roamio.tourism`
 > **Status:** Active development
 
@@ -746,12 +746,12 @@ The following official or primary sources are useful for the project’s design 
 
 ### Prerequisites
 
-- Flutter stable 3.47 or newer with Dart 3.13 or newer, matching the committed `pubspec.lock`.
-- The project Dart SDK constraint remains `>=3.5.0 <5.0.0`; the resolved locked packages require Dart 3.13+.
+- Flutter stable compatible with the repository SDK constraint.
+- Dart SDK `>=3.5.0 <5.0.0`.
 - Android Studio and Android SDK.
 - JDK 21 for the CI-compatible Android build environment.
 - Firebase CLI for backend and rules deployment.
-- An Android 6.0+ device or emulator (subject to the built APK's effective minSdk).
+- An Android 7.0+ device or emulator.
 - A Firebase project.
 
 ### Install dependencies
@@ -767,8 +767,8 @@ flutter pub get
 3. Enable the required authentication methods.
 4. Create Firestore and Firebase Storage.
 5. Configure `lib/firebase_options.dart` with the correct project values.
-6. Register the **existing** signing certificate SHA-1/SHA-256 values required by Google Sign-In; do not rotate the key to address error 10. See `android/GOOGLE_SIGN_IN.md`.
-7. Configure the existing Google web client ID where required.
+6. Register the signing certificate SHA-1/SHA-256 values required by Google Sign-In.
+7. Configure the Google web client ID where required.
 8. Deploy Firestore and Storage rules.
 
 Useful scripts:
@@ -780,17 +780,15 @@ bash scripts/deploy-backend.sh
 
 ### Service configuration
 
-Private provider credentials belong only in backend Firebase secrets:
+Depending on the features being deployed, configure supported credentials as Firebase secrets, CI secrets or approved build-time definitions:
 
-- `NVIDIA_API_KEY` for server-side AI calls.
-- `OPENWEATHER_API_KEY` and `GOOGLE_MAPS_API_KEY` for server-side integrations.
+- AI provider credentials.
+- OpenWeather key.
+- Google server API key.
+- MapTiler key.
+- Google Sign-In web client ID.
 
-Never pass private AI credentials through `--dart-define`; CI deliberately does
-not inject them and checks client source for provider-key definitions. MapTiler
-and Google Sign-In client identifiers may be supplied as client configuration,
-but restrict them by API/application and quota. Android Maps uses the separately
-restricted `MAPS_ANDROID_API_KEY` manifest value. **Never commit real secrets to
-source control.** See `BACKEND_SETUP.md` and `android/RELEASE_SIGNING.md`.
+**Never commit real secrets to source control.**
 
 ### Run locally
 
@@ -811,12 +809,7 @@ flutter test
 
 ### Local release build
 
-First configure the existing upload key as described in
-`android/RELEASE_SIGNING.md`. Release packaging fails without all signing
-values and never silently uses a debug certificate.
-
 ```bash
-flutter build apk --debug
 flutter build apk --release --split-per-abi
 flutter build apk --release
 ```
@@ -829,15 +822,12 @@ build/app/outputs/flutter-apk/
 
 ### GitHub Actions
 
-`.github/workflows/build-apk.yml` runs strict backend syntax/unit/audit checks,
-Firestore/Storage emulator tests, Flutter analyze/tests, and a debug APK build
-on development branches and pull requests. No mandatory step uses
-`continue-on-error`.
+The repository contains:
 
-Protected `main` runs additionally require the `production` environment's four
-signing secrets, build signed split/universal APKs, verify signer/package/
-alignment, and upload `tourism-*` artifacts only after success. The workflow
-does not deploy Firebase resources or create/update GitHub Releases.
+- `.github/workflows/verify.yml` — dependency install, static analysis, tests and rules checks.
+- `.github/workflows/build-apk.yml` — verification, signed release build, APK inspection and artifact preparation.
+
+The release pipeline verifies APK signing and Android package metadata. Public release publication is intentionally controlled by workflow conditions; feature branches must not overwrite the public rolling release.
 
 ### APK selection
 
@@ -919,15 +909,6 @@ An APK is an installable package. Do not extract it as if it were a normal ZIP a
 - OCR is not claimed where it is not implemented.
 - Safety-zone awareness is informational and cannot guarantee that an area is safe or unsafe.
 - Eco tracking does not claim an exact carbon reduction without a verified methodology and input data.
-- Existing Firebase Storage download URLs are bearer links; deploying new
-  owner rules does not revoke already-issued tokens. Rotate/revoke legacy
-  tokens during the production migration, then deploy the rules before new
-  path-based uploads are relied upon.
-- Account deletion requires the authenticated backend `/deleteAccount`
-  endpoint to be deployed and reachable; the client does not claim cloud
-  deletion before that backend confirms it.
-- Legacy unscoped saved-place preferences are not automatically assigned to a
-  signed-in account because their owner cannot be established safely.
 
 ---
 

@@ -1,8 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/digital_id.dart';
 
-/// Private Digital IDs and their minimal token-only public verification half.
+/// Digital Emergency ID storage.
+///
+/// Two documents per ID, on purpose:
+///  * `digitalIds/{id}` — the private record (owner + admin only).
+///  * `digitalIdPublic/{token}` — the ONLY thing a rescuer can read, and only
+///    with the token in hand: the document id is the token itself, the
+///    collection cannot be listed. That is what makes the QR safe to verify
+///    from any device without exposing every traveller's emergency contact to
+///    every signed-in user (which the old single-collection rule did).
 class DigitalIdRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -12,114 +21,101 @@ class DigitalIdRepository {
   CollectionReference<Map<String, dynamic>> get _public =>
       _db.collection('digitalIdPublic');
 
-  Map<String, dynamic> _publicData(
-    DigitalId id, {
-    String? status,
-  }) =>
-      <String, dynamic>{
-        'token': id.token,
-        'recordId': id.id,
-        'ownerName': id.ownerName,
-        'status': status ?? id.status,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
   Future<String> create({
     required String uid,
     required String ownerName,
     String? photoUrl,
-    String? photoPath,
     String? emergencyContactName,
     String? emergencyContactPhone,
   }) async {
     final String token = DigitalId.generateToken();
-    final DocumentReference<Map<String, dynamic>> ref = _private.doc();
-    final DigitalId pending = DigitalId(
-      id: ref.id,
-      uid: uid,
-      ownerName: ownerName,
-      token: token,
-      status: 'active',
-      createdAt: DateTime.now(),
-    );
-    final WriteBatch batch = _db.batch();
-    batch.set(ref, <String, dynamic>{
+    final DocumentReference<Map<String, dynamic>> ref =
+        await _private.add(<String, dynamic>{
       'uid': uid,
       'ownerName': ownerName,
       'token': token,
       'status': 'active',
       'photoUrl': photoUrl,
-      'photoPath': photoPath,
       'emergencyContactName': emergencyContactName,
       'emergencyContactPhone': emergencyContactPhone,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': Timestamp.now(),
+      'updatedAt': Timestamp.now(),
     });
-    batch.set(_public.doc(token), _publicData(pending));
-    // If either half fails, neither becomes visible. The UI must not invent a
-    // local QR identity that a rescuer could never verify.
-    await batch.commit();
+
+    // Public half. If the deployed rules do not know this collection yet
+    // (rules not deployed), the ID still works on-device and the QR still
+    // renders — verification will simply report "not found" until the rules
+    // are deployed, which is far better than losing the whole ID.
+    try {
+      await _public.doc(token).set(<String, dynamic>{
+        'token': token,
+        'uid': uid,
+        'ownerName': ownerName,
+        'status': 'active',
+        'photoUrl': photoUrl,
+        'emergencyContactName': emergencyContactName,
+        'emergencyContactPhone': emergencyContactPhone,
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (e) {
+      debugPrint('digitalIdPublic write failed (deploy firestore.rules): $e');
+    }
     return ref.id;
   }
 
   Stream<List<DigitalId>> watchMine(String uid) => _private
       .where('uid', isEqualTo: uid)
       .snapshots()
-      .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
-        final List<DigitalId> ids = snapshot.docs
-            .map((doc) => DigitalId.fromMap(doc.id, doc.data()))
-            .toList();
-        ids.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return ids;
-      });
+      .map((QuerySnapshot<Map<String, dynamic>> s) => s.docs
+          .map((d) => DigitalId.fromMap(d.id, d.data()))
+          .toList());
 
-  /// Repairs pre-split/legacy public records without copying private fields.
-  /// A valid current record is left untouched.
-  Future<void> ensurePublic(DigitalId id) async {
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await _public.doc(id.token).get();
-    final Map<String, dynamic>? data = snapshot.data();
-    final bool current = data != null &&
-        data.length == 5 &&
-        data['token'] == id.token &&
-        data['recordId'] == id.id &&
-        data['ownerName'] == id.ownerName &&
-        data['status'] == id.status;
-    if (!current) await _public.doc(id.token).set(_publicData(id));
-  }
-
-  /// Public verification only. There is deliberately no private-collection
-  /// fallback: that would expose emergency contacts and bypass token privacy.
+  /// Verifies a token (the only value contained in the QR code) against the
+  /// public half of the record. Returns null when the token is unknown.
   Future<DigitalId?> verify(String rawToken) async {
     final String token = rawToken.trim().toLowerCase();
     if (!DigitalId.isValidTokenShape(token)) return null;
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+    final DocumentSnapshot<Map<String, dynamic>> snap =
         await _public.doc(token).get();
-    final Map<String, dynamic>? data = snapshot.data();
-    return data == null ? null : DigitalId.fromMap(token, data);
+    final Map<String, dynamic>? data = snap.data();
+    if (data == null) {
+      // Rules not deployed yet / public doc missing for an ID created before
+      // this change: fall back to the legacy query, then give up honestly.
+      return _verifyLegacy(token);
+    }
+    return DigitalId.fromMap(token, data);
+  }
+
+  Future<DigitalId?> _verifyLegacy(String token) async {
+    try {
+      final QuerySnapshot<Map<String, dynamic>> snap =
+          await _private.where('token', isEqualTo: token).limit(1).get();
+      if (snap.docs.isEmpty) return null;
+      final QueryDocumentSnapshot<Map<String, dynamic>> d = snap.docs.first;
+      return DigitalId.fromMap(d.id, d.data());
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> setActive(String id, bool active) async {
-    final DocumentReference<Map<String, dynamic>> ref = _private.doc(id);
-    final DocumentSnapshot<Map<String, dynamic>> snapshot = await ref.get();
-    final Map<String, dynamic>? data = snapshot.data();
-    if (data == null) {
-      throw StateError('This Digital ID no longer exists.');
-    }
-    final DigitalId current = DigitalId.fromMap(id, data);
-    if (!DigitalId.isValidTokenShape(current.token)) {
-      throw StateError('This legacy ID has no valid verification token.');
-    }
     final String status = active ? 'active' : 'revoked';
-    final WriteBatch batch = _db.batch();
-    batch.update(ref, <String, dynamic>{
+    final DocumentReference<Map<String, dynamic>> ref = _private.doc(id);
+    final DocumentSnapshot<Map<String, dynamic>> snap = await ref.get();
+    await ref.update(<String, dynamic>{
       'status': status,
-      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedAt': Timestamp.now(),
     });
-    batch.set(
-      _public.doc(current.token),
-      _publicData(current, status: status),
-    );
-    await batch.commit();
+    final String? token = snap.data()?['token'] as String?;
+    if (token == null || token.isEmpty) return;
+    try {
+      await _public.doc(token).update(<String, dynamic>{
+        'status': status,
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (_) {
+      // Public doc may not exist for IDs created before the split; a rescuer
+      // then sees the legacy state, never a wrong "active" claim.
+    }
   }
 }

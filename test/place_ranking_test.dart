@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
-import 'package:tourism/core/network/free_geo_client.dart';
-import 'package:tourism/data/models/places.dart';
-import 'package:tourism/data/repositories/places_repository.dart';
+import 'package:yatrawise/core/network/free_geo_client.dart';
+import 'package:yatrawise/data/models/places.dart';
+import 'package:yatrawise/data/repositories/places_repository.dart';
 
 Place _p(String name, double lat, double lng, {String? address,
     String? city, String? state, String? country}) => Place(

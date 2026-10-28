@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:tourism/core/utils/sos_messages.dart';
+import 'package:yatrawise/core/utils/sos_messages.dart';
 
 Position _pos(double lat, double lng, {double accuracy = 12}) => Position(
       latitude: lat,
@@ -81,28 +81,6 @@ void main() {
         position: _pos(10, 20),
       );
       expect(text, contains('navigating in Tourism'));
-    });
-
-    test('labels an old fix as last known instead of live', () {
-      final Position stale = Position(
-        latitude: 10,
-        longitude: 20,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 10)),
-        accuracy: 12,
-        altitude: 0,
-        altitudeAccuracy: 0,
-        heading: 0,
-        headingAccuracy: 0,
-        speed: 0,
-        speedAccuracy: 0,
-      );
-      final String text = SosMessages.buildLiveShareText(
-        travelerName: 'Sam',
-        position: stale,
-      );
-      expect(text, startsWith('LAST KNOWN LOCATION'));
-      expect(text, contains('10 min old'));
-      expect(text, isNot(contains('LIVE LOCATION:')));
     });
   });
 }

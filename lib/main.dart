@@ -38,20 +38,16 @@ Future<void> main() async {
   // release builds — any build-time exception becomes a featureless WHITE
   // screen with no way forward (reported: Trip Planner from Travel
   // Intelligence). From now on a build error shows a real page saying what
-  // to do — the user is never stuck on a blank screen again. Only a
-  // non-sensitive exception type is shown/persisted; full exception details
-  // remain available in non-release diagnostics.
+  // to do — the user is never stuck on a blank screen again — AND the exact
+  // exception is shown on-screen (and kept in local prefs) so a screenshot
+  // is enough to diagnose the crash precisely.
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    const bool release = bool.fromEnvironment('dart.vm.product');
-    if (release) {
-      // Exception messages can contain URLs, record fields or provider
-      // details. Keep release diagnostics to a non-sensitive type code.
-      debugPrint('Tourism UI error (${details.exception.runtimeType})');
-    } else {
-      FlutterError.presentError(details);
-    }
-    final String diagnosticCode = details.exception.runtimeType.toString();
-    unawaited(_persistUiError('Type: $diagnosticCode'));
+    FlutterError.presentError(details); // still logged for debugging
+    final String errorText = (details.exception.toString());
+    final String short = errorText.length > 600
+        ? errorText.substring(0, 600)
+        : errorText;
+    unawaited(_persistUiError(short));
     return Material(
       color: const Color(0xFFF8FAFC),
       child: SafeArea(
@@ -87,8 +83,7 @@ Future<void> main() async {
                   height: 110,
                   child: SingleChildScrollView(
                     child: SelectableText(
-                      'Diagnostic code (safe to share): $diagnosticCode\n'
-                      'Sensitive exception details are not shown.',
+                      'Error details (send this screenshot):\n$short',
                       style: const TextStyle(
                           fontSize: 11, color: Colors.black45),
                     ),
@@ -114,7 +109,7 @@ Future<void> main() async {
       // Firebase exists but failed to initialize (bad key, offline first
       // start, ...). The app still opens in a guided setup state so the user
       // can fix the configuration.
-      debugPrint('Tourism: Firebase init failed (${e.runtimeType})');
+      debugPrint('Tourism: Firebase init failed: $e');
       app = null;
     }
   }

@@ -9,11 +9,10 @@ import '../models/weather.dart';
 /// real free fallback (Open-Meteo, no key) so weather works even before the
 /// backend is deployed.
 class WeatherRepository {
-  WeatherRepository(this._api, {FreeGeoClient? free})
-      : _free = free ?? FreeGeoClient();
+  WeatherRepository(this._api);
 
   final ApiClient _api;
-  final FreeGeoClient _free;
+  final FreeGeoClient _free = FreeGeoClient();
 
   Future<WeatherCurrent> current(LatLng location) async {
     try {
@@ -26,10 +25,8 @@ class WeatherRepository {
       if (c is Map<String, dynamic>) return WeatherCurrent.fromJson(c);
       throw ApiException(ApiErrorKind.upstream,
           'The weather service returned no data for this location.');
-    } on ApiException {
-      // A deployed backend with a missing/rejected provider key is still an
-      // outage. Fall back to real Open-Meteo data instead of leaving Weather
-      // broken; only genuine fallback failure is surfaced to the screen.
+    } on ApiException catch (e) {
+      if (e.kind == ApiErrorKind.upstream) rethrow;
       return _free.weather(location.latitude, location.longitude);
     }
   }

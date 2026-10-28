@@ -31,7 +31,6 @@ class _VehicleScreenState extends State<VehicleScreen> {
   bool _loading = true;
   bool _saving = false;
   StreamSubscription<Profile?>? _sub;
-  FuelLogStore? _fuelLogStore;
 
   static const List<(String, IconData, String)> _options =
       <(String, IconData, String)>[
@@ -43,12 +42,10 @@ class _VehicleScreenState extends State<VehicleScreen> {
   @override
   void initState() {
     super.initState();
-    final FuelLogStore store = _c.fuelLogStore;
-    _fuelLogStore = store;
     final String? uid = _c.authRepository.currentUser?.uid;
     if (uid != null) {
-      unawaited(store.loadFor(uid));
-      store.addListener(_onFuelChanged);
+      unawaited(_c.fuelLogStore.loadFor(uid));
+      _c.fuelLogStore.addListener(_onFuelChanged);
       _sub = _c.profileRepository.watch(uid).listen((Profile? p) {
         if (mounted) {
           setState(() {
@@ -71,7 +68,7 @@ class _VehicleScreenState extends State<VehicleScreen> {
   @override
   void dispose() {
     _sub?.cancel();
-    _fuelLogStore?.removeListener(_onFuelChanged);
+    _c.fuelLogStore.removeListener(_onFuelChanged);
     super.dispose();
   }
 

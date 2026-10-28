@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/private_storage_image.dart';
 import '../expense_icons.dart';
 import '../expense_math.dart';
 import '../expense_models.dart';
@@ -128,7 +127,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                           ? 'Syncing…'
                           : 'Saved locally — will sync automatically'),
               const SizedBox(height: 12),
-              if (e.receiptPath != null || e.receiptUrl != null) ...<Widget>[
+              if (e.receiptUrl != null) ...<Widget>[
                 Text('Receipt',
                     style: Theme.of(context)
                         .textTheme
@@ -137,16 +136,22 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 const SizedBox(height: 8),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: PrivateStorageImage(
-                    storagePath: e.receiptPath,
-                    legacyUrl: e.receiptUrl,
+                  child: Image.network(
+                    e.receiptUrl!,
                     height: 220,
+                    cacheWidth: 1200,
                     fit: BoxFit.cover,
-                    maxBytes: 5 * 1024 * 1024,
-                    placeholder: const Text(
-                      'Receipt image could not be loaded.',
-                      style: TextStyle(color: AppTheme.danger),
-                    ),
+                    loadingBuilder: (BuildContext ctx, Widget child,
+                            ImageChunkEvent? progress) =>
+                        progress == null
+                            ? child
+                            : const Padding(
+                                padding: EdgeInsets.all(24),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2)),
+                    errorBuilder: (_, __, ___) => const Text(
+                        'Receipt image could not be loaded.',
+                        style: TextStyle(color: AppTheme.danger)),
                   ),
                 ),
                 const SizedBox(height: 12),

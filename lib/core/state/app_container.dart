@@ -31,7 +31,6 @@ import '../services/geofence_service.dart';
 import '../services/live_location_share.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
-import '../services/private_file_service.dart';
 import '../services/settings_service.dart';
 import '../services/sms_service.dart';
 import '../services/storage_service.dart';
@@ -61,8 +60,7 @@ class AppContainer {
   late final ApiClient apiClient = ApiClient(baseUrl: functionsBaseUrl ?? '');
 
   // --- Repositories ---
-  late final AuthRepository authRepository =
-      AuthRepository(apiClient: apiClient);
+  late final AuthRepository authRepository = AuthRepository();
   late final ProfileRepository profileRepository = ProfileRepository();
   late final ZonesRepository zonesRepository = ZonesRepository();
   late final IncidentsRepository incidentsRepository = IncidentsRepository();
@@ -86,7 +84,6 @@ class AppContainer {
   // --- Device / platform services ---
   late final LocationService locationService = LocationService();
   late final StorageService storageService = StorageService();
-  late final PrivateFileService privateFiles = PrivateFileService();
   late final NotificationService notificationService = NotificationService();
   late final SettingsService settings = SettingsService();
   late final EcoTrackerService ecoTracker =
@@ -202,13 +199,8 @@ class AppScope extends InheritedWidget {
   final AppContainer container;
 
   static AppContainer of(BuildContext context) {
-    // The container is created once in main() and never replaced during the
-    // app's lifetime. Use the non-subscribing lookup so repositories/services
-    // can also be read safely from initState(). A subscribing inherited
-    // lookup throws before initState completes and previously crashed Home,
-    // Safety, Vehicle, Weather, Profile and other screens on startup.
     final AppScope? scope =
-        context.getInheritedWidgetOfExactType<AppScope>();
+        context.dependOnInheritedWidgetOfExactType<AppScope>();
     if (scope == null) {
       throw StateError('AppScope not found above this widget.');
     }

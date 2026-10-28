@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:tourism/data/models/itinerary.dart';
-import 'package:tourism/data/models/trip_plan.dart';
-import 'package:tourism/features/automation/travel_automation_engine.dart';
+import 'package:yatrawise/data/models/itinerary.dart';
+import 'package:yatrawise/data/models/trip_plan.dart';
+import 'package:yatrawise/features/automation/travel_automation_engine.dart';
 
 TripPlan _trip({int days = 3}) => TripPlan(
       id: 'trip-1',

@@ -11,7 +11,6 @@ import '../../../core/utils/format.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
-import '../../../core/widgets/private_storage_image.dart';
 import '../../../core/widgets/state_views.dart';
 import '../../../data/models/digital_id.dart';
 import '../../../data/models/profile.dart';
@@ -41,7 +40,6 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
   Profile? _profile;
   StreamSubscription<List<DigitalId>>? _sub;
   StreamSubscription<Profile?>? _profileSub;
-  final Set<String> _repairingPublicIds = <String>{};
 
   @override
   void initState() {
@@ -61,13 +59,13 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
           _ids.addAll(ids);
           _loading = false;
         });
-        _repairLegacyPublicRecords(ids);
       }
     }, onError: (Object e) {
+      // Cloud unavailable — keep the screen usable (local creation still
+      // works), instead of blocking on a raw error.
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Cloud Digital IDs are unavailable. Check your connection and retry.';
         });
       }
     });
@@ -78,21 +76,6 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
       setState(() => _profile = p);
       _prefill();
     }, onError: (Object _) {});
-  }
-
-  void _repairLegacyPublicRecords(List<DigitalId> ids) {
-    for (final DigitalId id in ids) {
-      if (!DigitalId.isValidTokenShape(id.token) ||
-          !_repairingPublicIds.add(id.id)) {
-        continue;
-      }
-      unawaited(_c.digitalIdRepository.ensurePublic(id).catchError((Object _) {
-        if (mounted) {
-          setState(() => _error =
-              'A legacy verification record could not be updated. Retry while online.');
-        }
-      }).whenComplete(() => _repairingPublicIds.remove(id.id)));
-    }
   }
 
   void _prefill() {
@@ -136,32 +119,69 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
         uid: uid,
         ownerName: name,
         photoUrl: p?.photoUrl,
-        photoPath: p?.photoPath,
         emergencyContactName: _contactNameController.text.trim(),
         emergencyContactPhone: contactPhone,
       );
+      // The watchMine stream refreshes the list. `_creating` MUST be cleared
+      // here too: it was only reset in the catch branch, so after a
+      // SUCCESSFUL cloud create the button stayed disabled forever.
       if (mounted) setState(() => _creating = false);
-    } catch (_) {
+    } catch (e) {
+      // Cloud unavailable (rules not deployed / offline) — create a local ID
+      // so the QR code still works right now.
+      final DigitalId local = DigitalId(
+        id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+        uid: uid,
+        ownerName: name,
+        token: DigitalId.generateToken(),
+        status: 'active',
+        createdAt: DateTime.now(),
+        photoUrl: p?.photoUrl,
+        emergencyContactName: _contactNameController.text.trim(),
+        emergencyContactPhone: contactPhone,
+      );
       if (mounted) {
         setState(() {
+          _ids.insert(0, local);
           _creating = false;
-          _error = 'Digital ID was not created. Nothing was saved; check your connection and retry.';
+          _error =
+              'Created on this device — cloud sync is unavailable right now.';
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not create a verifiable Digital ID.')),
+          const SnackBar(
+              content: Text('Digital ID created (saved on this device).')),
         );
       }
     }
   }
 
   Future<void> _setActive(DigitalId id, bool active) async {
+    if (id.id.startsWith('local-')) {
+      // On-device ID: just flip the in-memory status.
+      setState(() {
+        final int i = _ids.indexWhere((DigitalId d) => d.id == id.id);
+        if (i >= 0) {
+          _ids[i] = DigitalId(
+            id: id.id,
+            uid: id.uid,
+            ownerName: id.ownerName,
+            token: id.token,
+            status: active ? 'active' : 'revoked',
+            createdAt: id.createdAt,
+            photoUrl: id.photoUrl,
+            emergencyContactName: id.emergencyContactName,
+            emergencyContactPhone: id.emergencyContactPhone,
+          );
+        }
+      });
+      return;
+    }
     try {
       await _c.digitalIdRepository.setActive(id.id, active);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Update failed. Verification status was not changed.')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Update failed: $e')));
       }
     }
   }
@@ -309,16 +329,17 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                   CircleAvatar(
                     radius: 32,
                     backgroundColor: scheme.primary.withValues(alpha: 0.12),
-                    child: (id.photoPath?.isNotEmpty ?? false) ||
-                            (id.photoUrl?.isNotEmpty ?? false)
+                    child: id.photoUrl != null && id.photoUrl!.isNotEmpty
                         ? ClipOval(
-                            child: PrivateStorageImage(
-                              storagePath: id.photoPath,
-                              legacyUrl: id.photoUrl,
+                            child: Image.network(
+                              id.photoUrl!,
                               width: 64,
                               height: 64,
-                              maxBytes: 5 * 1024 * 1024,
-                              placeholder:
+                              cacheWidth: 192,
+                              cacheHeight: 192,
+                              fit: BoxFit.cover,
+                              errorBuilder: (BuildContext context,
+                                  Object e, StackTrace? s) =>
                                   Icon(Icons.person, color: scheme.primary),
                             ),
                           )

@@ -1,29 +1,13 @@
 {
-  "name": "tourism-functions",
-  "description": "Tourism authenticated backend proxies, usage limits and account cleanup.",
+  "name": "yatrawise-functions",
+  "description": "Tourism secure backend: NVIDIA AI, OpenWeather and Google Maps proxies, rate limiting.",
   "private": true,
   "main": "index.js",
-  "scripts": {
-    "test": "node --test test/validation.test.js test/auth.test.js test/account.test.js",
-    "test:rules": "node --test test/rules.test.js",
-    "check": "node --check index.js && node --check lib/http.js && node --check lib/validation.js && node --check lib/ai.js && node --check lib/rate_limit.js && node --check lib/account.js"
-  },
   "engines": {
-    "node": "24"
+    "node": "20"
   },
   "dependencies": {
-    "firebase-admin": "^14.5.0",
-    "firebase-functions": "^7.4.0"
-  },
-  "devDependencies": {
-    "@firebase/rules-unit-testing": "5.0.2",
-    "firebase-tools": "^15.34.1"
-  },
-  "overrides": {
-    "@grpc/grpc-js": "^1.14.6",
-    "uuid": "^11.1.1",
-    "@opentelemetry/core": "^2.8.0",
-    "@firebase/app": "0.16.4",
-    "@firebase/app-compat": "0.5.20"
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
   }
 }

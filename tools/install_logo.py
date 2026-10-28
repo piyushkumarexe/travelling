@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Install the Tourism logo everywhere it belongs — no Pillow, no network.
+"""Install the YatraWise logo everywhere it belongs — no Pillow, no network.
 
 Usage:
     python3 tools/install_logo.py <path-to-logo.png>
 
 What it does:
-  1. assets/images/tourism-logo.png   (in-app brand mark; AppLogo prefers
+  1. assets/images/yatrawise-logo.png   (in-app brand mark; AppLogo prefers
      this file, so the login screen picks it up with zero code changes)
   2. android .../mipmap-*/ic_launcher.png, ic_launcher_round.png and
      ic_launcher_foreground.png at the densities Flutter/Android expect
@@ -24,7 +24,7 @@ import sys
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSET = os.path.join(ROOT, 'assets', 'images', 'tourism-logo.png')
+ASSET = os.path.join(ROOT, 'assets', 'images', 'yatrawise-logo.png')
 RES = os.path.join(ROOT, 'android', 'app', 'src', 'main', 'res')
 
 # (density dir, legacy icon size, adaptive foreground size)
@@ -36,7 +36,7 @@ DENSITIES = [
     ('mipmap-xxxhdpi', 192, 432),
 ]
 ASSET_SIZE = 1024
-BRAND_BACKGROUND = '#000000'   # matches the supplied blue logo's outer canvas
+BRAND_CREAM = '#FEFAF1'   # the logo's own background colour
 PREP_SIZE = 512   # working size for the icon sweep (quality vs. pure-python speed)
 
 
@@ -313,9 +313,9 @@ def main():
                          "pad = keep proportions on a square canvas (asset)")
     ap.add_argument('--only', choices=('all', 'asset', 'icons'), default='all')
     ap.add_argument('--asset-size', type=int, default=ASSET_SIZE,
-                    help='edge length of assets/images/tourism-logo.png')
+                    help='edge length of assets/images/yatrawise-logo.png')
     ap.add_argument('--asset', default=ASSET, help='override the asset path')
-    ap.add_argument('--flatten', default=BRAND_BACKGROUND,
+    ap.add_argument('--flatten', default=BRAND_CREAM,
                     help='opaque background for the legacy launcher icons')
     args = ap.parse_args()
     if not args.source or not os.path.exists(args.source):

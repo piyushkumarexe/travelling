@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tourism/core/utils/price_guard.dart';
+import 'package:yatrawise/core/utils/price_guard.dart';
 
 void main() {
   group('PriceGuard taxi/auto (distance-based)', () {

@@ -119,13 +119,9 @@ class LocationService {
   Future<Position?> refreshPosition({
     Duration timeout = const Duration(seconds: 8),
   }) {
-    if (timeout <= Duration.zero) return Future<Position?>.value(null);
     final Future<Position?>? pending = _freshInFlight;
-    if (pending != null) {
-      return pending.timeout(timeout, onTimeout: () => null);
-    }
-    final DateTime deadline = DateTime.now().add(timeout);
-    final Future<Position?> request = _obtainFresh(deadline: deadline)
+    if (pending != null) return pending;
+    final Future<Position?> request = _obtainFresh(timeout: timeout)
         .timeout(timeout, onTimeout: () => null);
     _freshInFlight = request;
     return request.whenComplete(() {
@@ -155,30 +151,31 @@ class LocationService {
   /// arbitrary first emission.
   static const double _acceptableAccuracyMeters = 50;
 
-  Future<Position?> _obtainFresh({required DateTime deadline}) async {
-    Duration remaining() {
-      final Duration value = deadline.difference(DateTime.now());
-      return value.isNegative ? Duration.zero : value;
-    }
-    bool expired() => remaining() <= Duration.zero;
-
+  Future<Position?> _obtainFresh({Duration timeout = const Duration(seconds: 8)}) async {
     try {
-      if (expired()) return null;
-      final bool serviceOn = await Geolocator.isLocationServiceEnabled()
-          .timeout(remaining(), onTimeout: () => false);
-      if (!serviceOn || expired()) return null;
-      LocationPermission p = await Geolocator.checkPermission()
-          .timeout(remaining(), onTimeout: () => LocationPermission.denied);
-      if (p == LocationPermission.denied && !expired()) {
-        p = await Geolocator.requestPermission()
-            .timeout(remaining(), onTimeout: () => LocationPermission.denied);
+      final bool serviceOn = await Geolocator.isLocationServiceEnabled();
+      if (!serviceOn) return null;
+      LocationPermission p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
       }
       if (p == LocationPermission.denied ||
-          p == LocationPermission.deniedForever ||
-          expired()) {
+          p == LocationPermission.deniedForever) {
         return null;
       }
-
+      // Accuracy-aware collection on the fused position stream:
+      //   - the stream's first emission is often a coarse NETWORK fix
+      //     (±100–500 m — this used to be returned blindly, which made
+      //     "current location" jump around and put nearby/search results
+      //     in the wrong street or even the wrong city);
+      //   - a fix already within [_acceptableAccuracyMeters] is returned
+      //     instantly (fast path, same behaviour as before for good GPS);
+      //   - otherwise we keep listening within the HARD timeout, tracking
+      //     the best (smallest error) fix seen, and return that — the GPS
+      //     fix typically arrives within 2–6 s of the network fix.
+      // At the deadline we return the best fix seen (even coarse — callers
+      // like the SOS path label honesty via age/accuracy) or null when
+      // nothing was emitted.
       final Completer<Position?> accepted = Completer<Position?>();
       Position? best;
       final StreamSubscription<Position> sub = Geolocator.getPositionStream(
@@ -186,63 +183,60 @@ class LocationService {
           accuracy: LocationAccuracy.best,
           distanceFilter: 0,
         ),
-      ).listen((Position position) {
+      ).listen((Position p) {
+        // Local copy so the analyzer can promote the nullable (a captured
+        // mutable local does not promote across the closure boundary).
         final Position? previousBest = best;
         if (previousBest == null ||
-            (position.accuracy > 0 &&
-                position.accuracy < previousBest.accuracy)) {
-          best = position;
+            (p.accuracy > 0 && p.accuracy < previousBest.accuracy)) {
+          best = p;
         }
-        if (position.accuracy <= _acceptableAccuracyMeters &&
-            !accepted.isCompleted) {
-          accepted.complete(position);
+        if (p.accuracy <= _acceptableAccuracyMeters && !accepted.isCompleted) {
+          accepted.complete(p);
         }
       }, onError: (Object _) {});
 
-      Position? result;
-      if (!expired()) {
-        result = await accepted.future.timeout(
-          remaining(),
-          onTimeout: () => best,
-        );
-      }
-      // Do not let stream teardown or disk I/O extend the caller's deadline.
-      unawaited(sub.cancel());
+      final Position? result = await accepted.future.timeout(
+        timeout,
+        onTimeout: () => best,
+      );
+      await sub.cancel();
       if (result != null) {
         _cached = result;
-        unawaited(_persistCacheNow(result));
+        await _persistCacheNow(result);
         return result;
       }
-
-      // Legacy fused/OS-manager tiers share the SAME deadline. They never
-      // receive a fresh 10–12 second budget after the stream has timed out.
-      for (final (LocationAccuracy accuracy, bool forceManager)
-          in const <(LocationAccuracy, bool)>[
-        (LocationAccuracy.best, false),
-        (LocationAccuracy.high, true),
+      // No stream emission in time — the legacy blocking tiers as a last
+      // resort (bounded so the hard cap still holds).
+      for (final (LocationAccuracy accuracy, int seconds, bool forceManager)
+          in const <(LocationAccuracy, int, bool)>[
+        (LocationAccuracy.best, 10, false),
+        (LocationAccuracy.high, 10, true), // OS location manager fallback
       ]) {
-        if (expired()) break;
-        final Duration left = remaining();
-        const Duration tierCap = Duration(seconds: 10);
-        final Duration budget = left > tierCap ? tierCap : left;
         try {
           final LocationSettings settings = forceManager
               ? AndroidSettings(
                   accuracy: accuracy,
-                  timeLimit: budget,
+                  timeLimit: Duration(seconds: seconds),
                   forceLocationManager: true,
                 )
-              : LocationSettings(accuracy: accuracy, timeLimit: budget);
+              : LocationSettings(
+                  accuracy: accuracy,
+                  timeLimit: Duration(seconds: seconds),
+                );
           final Position pos = await Geolocator.getCurrentPosition(
             locationSettings: settings,
-          ).timeout(budget);
+          ).timeout(Duration(seconds: seconds + 2));
           _cached = pos;
-          unawaited(_persistCacheNow(pos));
+          await _persistCacheNow(pos);
           return pos;
         } catch (_) {
-          // Try the next tier only if the original deadline still has time.
+          // Next tier.
         }
       }
+      // An explicit fresh request must not silently downgrade to a cached
+      // coordinate. Callers can still use [currentPosition] for a fast
+      // last-known fix, but nearby refreshes need a clear unavailable result.
       return null;
     } catch (_) {
       return null;
