@@ -165,7 +165,7 @@ service cloud.firestore {
       return data.keys().hasOnly(['token', 'recordId', 'ownerName', 'status', 'updatedAt'])
         && data.keys().hasAll(['token', 'recordId', 'ownerName', 'status', 'updatedAt'])
         && data.token == token
-        && token.matches(r'^[0-9a-f]{64}$')
+        && token.matches('^[0-9a-f]{64}$')
         && requiredString(data, 'recordId', 128)
         && requiredString(data, 'ownerName', 80)
         && data.status in ['active', 'revoked']
@@ -178,7 +178,7 @@ service cloud.firestore {
           'photoUrl', 'photoPath', 'emergencyContactName', 'emergencyContactPhone'
         ])
         && requiredString(data, 'ownerName', 80)
-        && data.token is string && data.token.matches(r'^[0-9a-f]{64}$')
+        && data.token is string && data.token.matches('^[0-9a-f]{64}$')
         && data.status in ['active', 'revoked']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp
