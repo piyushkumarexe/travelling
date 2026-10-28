@@ -203,10 +203,10 @@ test('expense budgets, bookings and vault records enforce ownership', async () =
 test('Storage avatar and receipt access is owner-only with type limits', async () => {
   const alice = testEnv.authenticatedContext('alice').storage();
   const bob = testEnv.authenticatedContext('bob').storage();
-  await assertSucceeds(alice.ref('avatars/alice/avatar.jpg').putString('image', {contentType: 'image/jpeg'}));
+  await assertSucceeds(alice.ref('avatars/alice/avatar.jpg').putString('image', 'raw', {contentType: 'image/jpeg'}));
   await assertSucceeds(alice.ref('avatars/alice/avatar.jpg').getDownloadURL());
   await assertFails(bob.ref('avatars/alice/avatar.jpg').getDownloadURL());
-  await assertFails(bob.ref('avatars/alice/stolen.jpg').putString('image', {contentType: 'image/jpeg'}));
-  await assertFails(alice.ref('receipts/alice/receipt.exe').putString('not an image', {contentType: 'application/octet-stream'}));
-  await assertSucceeds(alice.ref('receipts/alice/receipt.jpg').putString('image', {contentType: 'image/jpeg'}));
+  await assertFails(bob.ref('avatars/alice/stolen.jpg').putString('image', 'raw', {contentType: 'image/jpeg'}));
+  await assertFails(alice.ref('receipts/alice/receipt.exe').putString('not an image', 'raw', {contentType: 'application/octet-stream'}));
+  await assertSucceeds(alice.ref('receipts/alice/receipt.jpg').putString('image', 'raw', {contentType: 'image/jpeg'}));
 });
