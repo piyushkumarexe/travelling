@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/loading_indicator.dart';
+
 /// Shown when Firebase is not configured yet (or on the splash route).
 /// This is a real, actionable state — the app never pretends to work
 /// without configuration.
@@ -22,22 +24,23 @@ class SetupGuideScreen extends StatelessWidget {
                 width: 84,
                 height: 84,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[Color(0xFF0B3954), Color(0xFF0E7C7B)],
-                  ),
+                  color: scheme.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: scheme.outlineVariant),
                 ),
-                child: const Icon(Icons.explore, size: 46, color: Colors.white),
+                child: Icon(Icons.explore, size: 46, color: scheme.primary),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'YatraWise',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+              Text(
+                'Tourism',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: scheme.onSurface,
+                ),
               ),
               const SizedBox(height: 20),
-              const CircularProgressIndicator(),
+              const LoadingIndicator(),
             ],
           ),
         ),
@@ -59,7 +62,7 @@ class SetupGuideScreen extends StatelessWidget {
         'manually (apiKey, appId, messagingSenderId, projectId, bucket).',
       ),
       (
-        '3. Deploy the YatraWise backend',
+        '3. Deploy the Tourism backend',
         'From the functions/ folder: `firebase deploy --only functions` with '
         'NVIDIA_API_KEY, OPENWEATHER_API_KEY and GOOGLE_PLACES_API_KEY set '
         '(see functions/.env.example).',
@@ -83,7 +86,7 @@ class SetupGuideScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('YatraWise setup')),
+      appBar: AppBar(title: const Text('Tourism setup')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: <Widget>[

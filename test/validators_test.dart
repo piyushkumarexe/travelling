@@ -41,6 +41,33 @@ void main() {
     });
   });
 
+  group('Validators.email', () {
+    test('accepts valid emails', () {
+      expect(Validators.email('you@example.com'), isNull);
+      expect(Validators.email('  you@example.com  '), isNull); // trimmed
+      expect(Validators.email('a.b+tag@sub.domain.co.in'), isNull);
+    });
+
+    test('rejects invalid emails', () {
+      expect(Validators.email(''), isNotNull);
+      expect(Validators.email('not-an-email'), isNotNull);
+      expect(Validators.email('a@b'), isNotNull);
+      expect(Validators.email('a @b.com'), isNotNull);
+    });
+  });
+
+  group('Validators.password', () {
+    test('sign-in only requires non-empty', () {
+      expect(Validators.password('x'), isNull);
+      expect(Validators.password(''), isNotNull);
+    });
+
+    test('sign-up requires at least 6 characters', () {
+      expect(Validators.password('12345', isSignUp: true), isNotNull);
+      expect(Validators.password('123456', isSignUp: true), isNull);
+    });
+  });
+
   group('Validators lat/lng/radius', () {
     test('isLat bounds', () {
       expect(Validators.isLat(45.0), isTrue);
