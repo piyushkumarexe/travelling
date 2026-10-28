@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yatrawise/core/state/active_trip.dart';
+import 'package:tourism/core/state/active_trip.dart';
 
 void main() {
   test('ending navigation removes all resumable destination data', () {

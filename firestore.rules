@@ -2,7 +2,6 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function signedIn() {
       return request.auth != null;
     }
@@ -21,51 +20,94 @@ service cloud.firestore {
         && lng is number && lng >= -180 && lng <= 180;
     }
 
-    // ---- Account (role gate; clients can only create role 'user') ----
+    function optionalString(data, field, max) {
+      return !(field in data) || data[field] == null
+        || (data[field] is string && data[field].size() <= max);
+    }
+
+    function requiredString(data, field, max) {
+      return field in data && data[field] is string
+        && data[field].size() > 0 && data[field].size() <= max;
+    }
+
+    function validLocation(location) {
+      return location is map
+        && location.keys().hasOnly(['lat', 'lng', 'accuracy'])
+        && validCoords(location.lat, location.lng)
+        && (!('accuracy' in location) || location.accuracy == null
+          || (location.accuracy is number
+            && location.accuracy >= 0 && location.accuracy <= 50000));
+    }
+
+    // Account/role records. Owners cannot change role, createdAt, or grant
+    // themselves administrative privileges. Backend Admin SDK bypasses rules.
     match /users/{uid} {
       allow get: if isSelf(uid) || isAdmin();
       allow list: if isAdmin();
       allow create: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['role', 'displayName', 'email', 'createdAt'])
+        && request.resource.data.keys().hasAll(['role', 'createdAt'])
         && request.resource.data.role == 'user'
-        && request.resource.data.keys().hasAll(['role'])
-        && request.resource.data.keys().hasAtMost(['role', 'displayName', 'email', 'createdAt']);
-      allow update: if (isSelf(uid)
-        && resource.data.role == request.resource.data.role)
-        || isAdmin();
+        && request.resource.data.createdAt is timestamp
+        && optionalString(request.resource.data, 'displayName', 120)
+        && optionalString(request.resource.data, 'email', 320);
+      allow update: if isAdmin() || (isSelf(uid)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['displayName', 'email', 'updatedAt']));
       allow delete: if isAdmin();
     }
 
-    // ---- Profiles (private per user) ----
+    // Profiles are private. Focused contact/vehicle upserts remain supported,
+    // including repair of a missing profile on first run.
     match /profiles/{uid} {
       allow get: if isSelf(uid) || isAdmin();
       allow list: if isAdmin();
-      allow create, update: if isSelf(uid);
+      allow create, update: if isSelf(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid', 'name', 'photoUrl', 'photoPath', 'language',
+          'emergencyContactName', 'emergencyContactPhone', 'interests',
+          'budget', 'travelStyle', 'vehicle', 'createdAt', 'updatedAt',
+          'travelDocumentsV1', 'journeyOperationsV1'
+        ])
+        && (!('uid' in request.resource.data) || request.resource.data.uid == uid)
+        && optionalString(request.resource.data, 'name', 120)
+        && optionalString(request.resource.data, 'photoUrl', 2048)
+        && optionalString(request.resource.data, 'photoPath', 1024)
+        && optionalString(request.resource.data, 'language', 20)
+        && optionalString(request.resource.data, 'emergencyContactName', 120)
+        && optionalString(request.resource.data, 'emergencyContactPhone', 40)
+        && optionalString(request.resource.data, 'budget', 30)
+        && optionalString(request.resource.data, 'travelStyle', 30)
+        && optionalString(request.resource.data, 'vehicle', 30)
+        && (!('interests' in request.resource.data)
+          || (request.resource.data.interests is list
+            && request.resource.data.interests.size() <= 30))
+        && (!('travelDocumentsV1' in request.resource.data)
+          || request.resource.data.travelDocumentsV1 is list)
+        && (!('journeyOperationsV1' in request.resource.data)
+          || request.resource.data.journeyOperationsV1 is list);
       allow delete: if isSelf(uid) || isAdmin();
     }
 
-    // ---- Safety zones: any signed-in traveler can read; only admins write ----
     match /safetyZones/{zoneId} {
       allow get, list: if signedIn();
       allow create, update, delete: if isAdmin();
     }
 
-    // ---- Incidents: reporter reads their own; admins read/manage all ----
+    // Incident coordinates match Incident.toMap(): location.lat/location.lng.
     match /incidents/{incidentId} {
       allow get: if isSelf(resource.data.uid) || isAdmin();
-      // The app's "My reports" screen runs a `where('uid', == me)` LIST query.
-      // With `list: if isAdmin()` only, that query was rejected outright and
-      // every normal traveller's history stayed empty, so a reporter is
-      // allowed to list exactly their own documents (rules evaluate the
-      // per-document predicate, and the query is constrained by uid).
       allow list: if isAdmin()
         || (signedIn() && resource.data.uid == request.auth.uid);
-
-      // The client stores the coordinates nested (location.lat / location.lng)
-      // — see Incident.toMap(). Validating top-level `lat`/`lng` made this
-      // rule reference a non-existent field, which is an EVALUATION ERROR, and
-      // Firestore denies on error: no incident could ever be reported.
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'reporterName', 'description', 'category', 'severity',
+          'status', 'location', 'summary', 'recommendedAction', 'photoUrl',
+          'videoUrl', 'photoPath', 'videoPath', 'createdAt', 'updatedAt'
+        ])
         && request.resource.data.status == 'reported'
         && request.resource.data.severity in ['low', 'medium', 'high', 'critical']
         && request.resource.data.category in [
@@ -73,292 +115,369 @@ service cloud.firestore {
           'unsafe_area', 'poor_infrastructure', 'natural_hazard', 'other'
         ]
         && 'location' in request.resource.data
-        && request.resource.data.location is map
-        && validCoords(request.resource.data.location.lat,
-                       request.resource.data.location.lng)
-        && request.resource.data.description is string
+        && validLocation(request.resource.data.location)
+        && requiredString(request.resource.data, 'description', 2000)
         && request.resource.data.description.size() >= 10
-        && request.resource.data.description.size() <= 2000
-        && request.resource.data.reporterName is string
-        && request.resource.data.reporterName.size() <= 120;
-
-      // Admins may change any field (status workflow); nobody else.
+        && requiredString(request.resource.data, 'reporterName', 120)
+        && optionalString(request.resource.data, 'summary', 500)
+        && optionalString(request.resource.data, 'recommendedAction', 500)
+        && optionalString(request.resource.data, 'photoUrl', 2048)
+        && optionalString(request.resource.data, 'videoUrl', 2048)
+        && optionalString(request.resource.data, 'photoPath', 1024)
+        && optionalString(request.resource.data, 'videoPath', 1024)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
       allow update: if isAdmin()
         && request.resource.data.uid == resource.data.uid;
       allow delete: if isAdmin();
     }
 
-    // ---- SOS emergency events: self + admins ----
     match /emergencyEvents/{eventId} {
       allow get: if isSelf(resource.data.uid) || isAdmin();
-      // Same reason as /incidents: the Safety screen lists the traveller's own
-      // SOS events with `where('uid', == me)`, which admin-only `list` denied.
       allow list: if isAdmin()
         || (signedIn() && resource.data.uid == request.auth.uid);
-
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'name', 'status', 'kind', 'reason', 'location', 'createdAt'
+        ])
         && request.resource.data.status == 'active'
-        && validCoords(request.resource.data.location.lat,
-                       request.resource.data.location.lng)
-        && request.resource.data.name is string
-        && request.resource.data.name.size() <= 120;
-
-      // Owners may cancel/resolve their own active SOS; while an event is
-      // active the owner may also refresh its live location fields (live
-      // location sharing). Field changes other than the whitelisted live
-      // keys are still rejected; admins may manage everything.
-      allow update: if (
-        (isSelf(resource.data.uid)
-          && resource.data.status == 'active'
-          && request.resource.data.uid == resource.data.uid
-          && (
-            request.resource.data.status in ['cancelled', 'resolved']
-            || (
-              request.resource.data.status == resource.data.status
-              && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['status', 'kind', 'reason', 'location', 'updatedAt', 'lastLocationAt'])
-            )
-          )
-        )
-        || isAdmin());
+        && request.resource.data.kind in ['sos', 'power_off', 'live_share']
+        && requiredString(request.resource.data, 'name', 120)
+        && optionalString(request.resource.data, 'reason', 300)
+        && validLocation(request.resource.data.location)
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isAdmin() || (isSelf(resource.data.uid)
+        && resource.data.status == 'active'
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status in ['active', 'cancelled', 'resolved']
+        && validLocation(request.resource.data.location)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'location', 'updatedAt', 'lastLocationAt', 'resolvedAt'
+        ]));
       allow delete: if isAdmin();
     }
 
-    // ---- Digital emergency IDs ----
-    // The private record (owner + admin only). Previously `get, list: if
-    // signedIn()` let ANY signed-in user enumerate every traveller's name,
-    // emergency contact phone and verification token — the token is the whole
-    // secret of the QR, so that was a privacy hole, not a feature.
+    function validPublicId(data, token) {
+      return data.keys().hasOnly(['token', 'recordId', 'ownerName', 'status', 'updatedAt'])
+        && data.keys().hasAll(['token', 'recordId', 'ownerName', 'status', 'updatedAt'])
+        && data.token == token
+        && token.matches(r'^[0-9a-f]{64}$')
+        && requiredString(data, 'recordId', 128)
+        && requiredString(data, 'ownerName', 80)
+        && data.status in ['active', 'revoked']
+        && data.updatedAt is timestamp;
+    }
+
+    function validPrivateId(data) {
+      return data.keys().hasOnly([
+          'uid', 'ownerName', 'token', 'status', 'createdAt', 'updatedAt',
+          'photoUrl', 'photoPath', 'emergencyContactName', 'emergencyContactPhone'
+        ])
+        && requiredString(data, 'ownerName', 80)
+        && data.token is string && data.token.matches(r'^[0-9a-f]{64}$')
+        && data.status in ['active', 'revoked']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && optionalString(data, 'photoUrl', 2048)
+        && optionalString(data, 'photoPath', 1024)
+        && optionalString(data, 'emergencyContactName', 120)
+        && optionalString(data, 'emergencyContactPhone', 40);
+    }
+
+    // A private ID and its minimal public verification record are written in
+    // one batch. getAfter ensures revocation cannot leave a stale active token.
     match /digitalIds/{id} {
       allow get: if isSelf(resource.data.uid) || isAdmin();
       allow list: if isAdmin()
         || (signedIn() && resource.data.uid == request.auth.uid);
-
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.status == 'active'
-        && request.resource.data.token is string
-        && request.resource.data.token.matches(r'^[0-9a-f]{64}$')
-        && request.resource.data.ownerName is string
-        && request.resource.data.ownerName.size() <= 80;
-
-      // Owners may revoke/reactivate; admins may manage everything.
-      allow update: if (isSelf(resource.data.uid)
-        && request.resource.data.status in ['active', 'revoked']
-        && request.resource.data.uid == resource.data.uid)
-        || isAdmin();
-      allow delete: if isSelf(resource.data.uid) || isAdmin();
+        && validPrivateId(request.resource.data)
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(request.resource.data.token)).data.recordId == id
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(request.resource.data.token)).data.token == request.resource.data.token
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(request.resource.data.token)).data.ownerName == request.resource.data.ownerName
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(request.resource.data.token)).data.status == 'active';
+      allow update: if isAdmin() || (isSelf(resource.data.uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.token == resource.data.token
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validPrivateId(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerName', 'status', 'updatedAt', 'photoUrl', 'photoPath',
+          'emergencyContactName', 'emergencyContactPhone'
+        ])
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(resource.data.token)).data.recordId == id
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(resource.data.token)).data.ownerName == request.resource.data.ownerName
+        && getAfter(/databases/$(database)/documents/digitalIdPublic/$(resource.data.token)).data.status == request.resource.data.status);
+      allow delete: if isAdmin() || (isSelf(resource.data.uid)
+        && !existsAfter(/databases/$(database)/documents/digitalIdPublic/$(resource.data.token)));
     }
 
-    // Public half of a Digital Emergency ID — what a rescuer who physically
-    // has the QR code is allowed to see. The document id IS the 64-char token,
-    // so `get` works for anyone who scanned the code while `list` stays
-    // denied: the collection cannot be enumerated or harvested.
-    // A revoked id is still readable (its status field says 'revoked'), which
-    // is exactly how the verify screen reports a revoked ID.
+    // Unauthenticated single-token verification is intentional for rescuers.
+    // Only name/status/timestamps are public; contacts, UID and photos never are.
     match /digitalIdPublic/{token} {
-      allow get: if signedIn()
-        && token.matches(r'^[0-9a-f]{64}$')
-        && resource.data.token == token;
-      // No list/query on purpose: tokens cannot be harvested in bulk.
+      allow get: if validPublicId(resource.data, token);
       allow list: if false;
-
-      allow create, update, delete: if signedIn()
-        && request.resource.data.token == token
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(
-             ['token', 'uid', 'ownerName', 'status', 'photoUrl',
-              'emergencyContactName', 'emergencyContactPhone', 'updatedAt']);
+      allow create, update: if signedIn()
+        && validPublicId(request.resource.data, token)
+        && getAfter(/databases/$(database)/documents/digitalIds/$(request.resource.data.recordId)).data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/digitalIds/$(request.resource.data.recordId)).data.token == token
+        && getAfter(/databases/$(database)/documents/digitalIds/$(request.resource.data.recordId)).data.ownerName == request.resource.data.ownerName
+        && getAfter(/databases/$(database)/documents/digitalIds/$(request.resource.data.recordId)).data.status == request.resource.data.status;
+      allow delete: if signedIn()
+        && validPublicId(resource.data, token)
+        && get(/databases/$(database)/documents/digitalIds/$(resource.data.recordId)).data.uid == request.auth.uid;
     }
 
-    // ---- Itineraries: per-user subcollection (rules-safe ownership) ----
     match /users/{uid}/itineraries/{itineraryId} {
       allow read: if isSelf(uid);
       allow create: if isSelf(uid)
-        && request.resource.data.destination is string
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'destination', 'days', 'interests', 'budget', 'travelStyle',
+          'plan', 'createdAt', 'updatedAt'
+        ])
+        && requiredString(request.resource.data, 'destination', 120)
         && request.resource.data.destination.size() >= 2
-        && request.resource.data.destination.size() <= 120
-        && request.resource.data.days is number
-        && request.resource.data.days >= 1
-        && request.resource.data.days <= 10
+        && request.resource.data.days is int
+        && request.resource.data.days >= 1 && request.resource.data.days <= 10
+        && request.resource.data.interests is list
+        && request.resource.data.interests.size() <= 10
         && request.resource.data.budget in ['budget', 'mid', 'luxury']
         && request.resource.data.travelStyle in ['relaxed', 'balanced', 'packed']
-        && request.resource.data.plan is list;
-      allow update, delete: if isSelf(uid);
+        && request.resource.data.plan is list
+        && request.resource.data.plan.size() >= 1
+        && request.resource.data.plan.size() <= 10
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isSelf(uid);
     }
 
-    // ---- Eco score (document per uid) + activities subcollection ----
     match /ecoScores/{uid} {
       allow get: if isSelf(uid) || isAdmin();
       allow list: if isAdmin();
       allow create, update: if isSelf(uid)
-        && request.resource.data.uid == uid;
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'score', 'byMode', 'badges', 'sessions', 'updatedAt'])
+        && request.resource.data.score is number
+        && request.resource.data.score >= 0
+        && request.resource.data.byMode is map
+        && request.resource.data.badges is list
+        && request.resource.data.badges.size() <= 30
+        && request.resource.data.sessions is number
+        && request.resource.data.sessions >= 0
+        && request.resource.data.updatedAt is string;
       allow delete: if isSelf(uid) || isAdmin();
 
       match /activities/{activityId} {
         allow get, list: if isSelf(uid);
         allow create: if isSelf(uid)
           && request.resource.data.uid == uid
+          && request.resource.data.keys().hasOnly([
+            'uid', 'mode', 'distanceMeters', 'durationSeconds', 'note', 'createdAt'
+          ])
           && request.resource.data.mode in ['walk', 'cycle', 'transit']
           && request.resource.data.distanceMeters is number
           && request.resource.data.distanceMeters > 0
-          && request.resource.data.distanceMeters <= 2000000;
-        allow delete: if isSelf(uid) || isAdmin();
+          && request.resource.data.distanceMeters <= 2000000
+          && request.resource.data.durationSeconds is number
+          && request.resource.data.durationSeconds >= 0
+          && optionalString(request.resource.data, 'note', 300);
+        allow update, delete: if false;
       }
     }
 
-    // ---- Notifications live in the per-user subcollection ----
     match /users/{uid}/notifications/{notificationId} {
       allow read: if isSelf(uid);
       allow create: if isSelf(uid)
         && request.resource.data.uid == uid
-        && request.resource.data.title is string
-        && request.resource.data.title.size() <= 160
-        && request.resource.data.body is string
-        && request.resource.data.body.size() <= 600;
+        && request.resource.data.keys().hasOnly([
+          'uid', 'title', 'body', 'type', 'read', 'payload', 'createdAt'
+        ])
+        && requiredString(request.resource.data, 'title', 160)
+        && requiredString(request.resource.data, 'body', 600)
+        && requiredString(request.resource.data, 'type', 40)
+        && request.resource.data.read is bool
+        && request.resource.data.payload is map
+        && request.resource.data.createdAt is timestamp;
       allow update: if isSelf(uid)
-        && request.resource.data.uid == resource.data.uid;
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read is bool;
       allow delete: if isSelf(uid);
     }
 
-    // ---- Travel Expense Guard: strictly owner-only expense records ----
-    // Nested under users/{uid} like itineraries; the authenticated UID must
-    // match {uid} and the document's own userId field must match too, so a
-    // user can never create/read/modify another user's expenses.
     match /users/{uid}/expenses/{expenseId} {
       allow read: if isSelf(uid);
-      allow create: if isSelf(uid)
-        && request.resource.data.userId == request.auth.uid
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
         && request.resource.data.id == expenseId
+        && request.resource.data.keys().hasOnly([
+          'id', 'userId', 'tripId', 'amount', 'currency', 'category',
+          'merchant', 'expenseDate', 'paymentMethod', 'notes', 'receiptUrl',
+          'receiptPath', 'latitude', 'longitude', 'locationName', 'splits',
+          'createdAt', 'updatedAt'
+        ])
         && request.resource.data.amount is number
         && request.resource.data.amount > 0
         && request.resource.data.amount <= 10000000
-        && request.resource.data.currency is string
+        && requiredString(request.resource.data, 'currency', 8)
         && request.resource.data.currency.size() >= 3
-        && request.resource.data.currency.size() <= 8
         && request.resource.data.category in [
           'food', 'transport', 'stay', 'tickets', 'shopping', 'fuel',
           'activities', 'medical', 'emergency', 'other'
         ]
-        && request.resource.data.merchant is string
-        && request.resource.data.merchant.size() <= 200
+        && optionalString(request.resource.data, 'merchant', 200)
         && request.resource.data.expenseDate is number
         && request.resource.data.createdAt is number
-        && request.resource.data.updatedAt is number;
-      allow update: if isSelf(uid)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.amount is number
-        && request.resource.data.amount > 0
-        && request.resource.data.amount <= 10000000;
+        && request.resource.data.updatedAt is number
+        && optionalString(request.resource.data, 'tripId', 128)
+        && optionalString(request.resource.data, 'paymentMethod', 30)
+        && optionalString(request.resource.data, 'notes', 2000)
+        && optionalString(request.resource.data, 'receiptUrl', 2048)
+        && optionalString(request.resource.data, 'receiptPath', 1024)
+        && optionalString(request.resource.data, 'locationName', 200)
+        && request.resource.data.splits is list
+        && request.resource.data.splits.size() <= 50
+        && (resource == null || request.resource.data.createdAt == resource.data.createdAt);
       allow delete: if isSelf(uid);
     }
 
-    // Optional budget configuration (single doc per user).
     match /users/{uid}/expenseData/{docId} {
       allow read: if isSelf(uid);
-      allow write: if isSelf(uid)
-        && (!('daily' in request.resource.data)
-            || request.resource.data.daily == null
-            || (request.resource.data.daily is number
-                && request.resource.data.daily > 0
-                && request.resource.data.daily <= 10000000));
+      allow write: if isSelf(uid) && docId == 'budget'
+        && request.resource.data.keys().hasOnly(['daily', 'perTrip', 'currency', 'updatedAt'])
+        && (!('daily' in request.resource.data) || request.resource.data.daily == null
+          || (request.resource.data.daily is number
+            && request.resource.data.daily > 0
+            && request.resource.data.daily <= 10000000))
+        && (!('perTrip' in request.resource.data) || request.resource.data.perTrip is map)
+        && requiredString(request.resource.data, 'currency', 8)
+        && request.resource.data.updatedAt is number;
     }
 
-    // ---- Travel Booking Hub: user-saved booking references ----
-    // Only metadata the user enters manually (provider, reference/PNR,
-    // route text). Ownership strictly enforced; no credentials stored.
     match /users/{uid}/bookingRefs/{bookingId} {
       allow read: if isSelf(uid);
-      allow create: if isSelf(uid)
-        && request.resource.data.userId == request.auth.uid
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
         && request.resource.data.bookingId == bookingId
-        && request.resource.data.provider is string
-        && request.resource.data.provider.size() >= 1
-        && request.resource.data.provider.size() <= 60
-        && request.resource.data.category in ['ride','flight','train','bus','hotel','carRental','activities']
-        && request.resource.data.status in ['saved','confirmed','cancelled']
-        && (!('externalReference' in request.resource.data)
-            || (request.resource.data.externalReference is string
-                && request.resource.data.externalReference.size() <= 60));
-      allow update: if isSelf(uid)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.keys().hasOnly([
+          'bookingId', 'userId', 'tripId', 'category', 'provider',
+          'serviceType', 'origin', 'destination', 'bookingDate', 'status',
+          'externalReference', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && requiredString(request.resource.data, 'provider', 60)
+        && request.resource.data.category in [
+          'ride', 'flight', 'train', 'bus', 'hotel', 'carRental', 'activities'
+        ]
+        && request.resource.data.status in ['saved', 'confirmed', 'cancelled']
+        && optionalString(request.resource.data, 'tripId', 128)
+        && optionalString(request.resource.data, 'serviceType', 60)
+        && optionalString(request.resource.data, 'origin', 200)
+        && optionalString(request.resource.data, 'destination', 200)
+        && optionalString(request.resource.data, 'bookingDate', 20)
+        && optionalString(request.resource.data, 'externalReference', 100)
+        && optionalString(request.resource.data, 'notes', 2000)
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number
+        && (resource == null || request.resource.data.createdAt == resource.data.createdAt);
       allow delete: if isSelf(uid);
     }
 
-    // ---- Travel Document & Booking Vault: private per user ----
-    // Metadata only — files live in Storage (see storage.rules).
     match /users/{uid}/travelDocuments/{documentId} {
       allow read: if isSelf(uid);
-      allow create: if isSelf(uid)
-        && request.resource.data.userId == request.auth.uid
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
         && request.resource.data.documentId == documentId
+        && request.resource.data.keys().hasOnly([
+          'documentId', 'userId', 'tripId', 'type', 'title', 'documentNumber',
+          'issuer', 'issueDate', 'expiryDate', 'travelDate', 'startDate', 'endDate',
+          'departureLocation', 'arrivalLocation', 'notes', 'fileUrl', 'storagePath',
+          'fileName', 'fileSize', 'uploadStatus', 'pnr', 'bookingRef', 'airline',
+          'flightNumber', 'departureAirport', 'arrivalAirport', 'terminal', 'seat',
+          'departureDateTime', 'arrivalDateTime', 'hotelName', 'checkInDateTime',
+          'checkOutDateTime', 'address', 'contact', 'operatorName', 'providerName',
+          'venue', 'location', 'eventDateTime', 'createdAt', 'updatedAt'
+        ])
         && request.resource.data.type in [
           'passport', 'visa', 'idProof', 'flightTicket', 'trainTicket',
           'busTicket', 'hotelBooking', 'cabRental', 'activityTicket',
           'travelInsurance', 'other'
         ]
-        && request.resource.data.title is string
-        && request.resource.data.title.size() >= 1
-        && request.resource.data.title.size() <= 120
-        && request.resource.data.uploadStatus in ['none', 'uploaded', 'uploadFailed']
-        && (!('tripId' in request.resource.data)
-            || request.resource.data.tripId == null
-            || request.resource.data.tripId is string)
-        && (!('notes' in request.resource.data)
-            || request.resource.data.notes == null
-            || (request.resource.data.notes is string
-                && request.resource.data.notes.size() <= 2000));
-      allow update: if isSelf(uid)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.documentId == documentId;
+        && requiredString(request.resource.data, 'title', 120)
+        && request.resource.data.uploadStatus in ['none', 'uploading', 'uploaded', 'uploadFailed']
+        && optionalString(request.resource.data, 'tripId', 128)
+        && optionalString(request.resource.data, 'notes', 2000)
+        && optionalString(request.resource.data, 'fileUrl', 2048)
+        && optionalString(request.resource.data, 'storagePath', 1024)
+        && optionalString(request.resource.data, 'fileName', 255)
+        && request.resource.data.createdAt is number
+        && request.resource.data.updatedAt is number
+        && (resource == null || request.resource.data.createdAt == resource.data.createdAt);
       allow delete: if isSelf(uid);
     }
 
-    // ---- Journey Operations: twelve private, Firebase-synced travel tools ----
     match /users/{uid}/journeyOperations/{operationId} {
       allow read: if isSelf(uid);
-      allow create: if isSelf(uid)
-        && request.resource.data.userId == request.auth.uid
+      allow create, update: if isSelf(uid)
+        && request.resource.data.userId == uid
         && request.resource.data.id == operationId
+        && request.resource.data.keys().hasOnly([
+          'id', 'userId', 'kind', 'title', 'detail', 'extra', 'completed',
+          'createdAt', 'updatedAt'
+        ])
         && request.resource.data.kind in [
           'medicine', 'luggage', 'taskBoard', 'contacts', 'connectivity',
           'dietary', 'accessibility', 'souvenirs', 'journal', 'checkpoints',
-          'homeReadiness', 'localKnowledge'
+          'homeReadiness', 'localKnowledge', 'visaTracker', 'travelInsurance',
+          'bookingConfirmations', 'flightBoarding', 'trainCoach', 'busBoarding',
+          'hotelStay', 'rentalInspection', 'parkingLocator', 'tollsPermits',
+          'fuelStops', 'restBreaks', 'meetingPoints', 'groupRoster', 'childTravel',
+          'seniorCare', 'petTravel', 'laundryPlan', 'waterRefills',
+          'deviceCharging', 'workationSetup', 'localEvents', 'weatherBackup',
+          'medicalFacilities', 'lostAndFound'
         ]
-        && request.resource.data.title is string
-        && request.resource.data.title.size() >= 1
-        && request.resource.data.title.size() <= 160
+        && requiredString(request.resource.data, 'title', 160)
         && request.resource.data.detail is string
         && request.resource.data.detail.size() <= 2000
         && request.resource.data.extra is string
         && request.resource.data.extra.size() <= 500
         && request.resource.data.completed is bool
         && request.resource.data.createdAt is number
-        && request.resource.data.updatedAt is number;
-      allow update: if isSelf(uid)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.id == resource.data.id
-        && request.resource.data.kind == resource.data.kind
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.title is string
-        && request.resource.data.title.size() >= 1
-        && request.resource.data.title.size() <= 160
-        && request.resource.data.detail is string
-        && request.resource.data.detail.size() <= 2000
-        && request.resource.data.extra is string
-        && request.resource.data.extra.size() <= 500
-        && request.resource.data.completed is bool
-        && request.resource.data.updatedAt is number;
+        && request.resource.data.updatedAt is number
+        && (resource == null || (request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.kind == resource.data.kind));
       allow delete: if isSelf(uid);
     }
 
-    // ---- Rate limits are backend-only ----
+    match /users/{uid}/savedPlaces/{savedId} {
+      allow read: if isSelf(uid);
+      allow create, update: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'placeId', 'place', 'createdAt', 'updatedAt'])
+        && requiredString(request.resource.data, 'placeId', 500)
+        && request.resource.data.place is map
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && (resource == null || (request.resource.data.uid == resource.data.uid
+          && request.resource.data.placeId == resource.data.placeId
+          && request.resource.data.createdAt == resource.data.createdAt));
+      allow delete: if isSelf(uid);
+    }
+
     match /rateLimits/{key} {
+      allow read, write: if false;
+    }
+
+    // Deny every unlisted/current-and-future collection by default.
+    match /{document=**} {
       allow read, write: if false;
     }
   }

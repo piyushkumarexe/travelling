@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 /// app shows its identity).
 ///
 /// It resolves the PNG first and falls back to the bundled JPEG, so swapping
-/// the artwork is a plain file copy into `assets/images/yatrawise-logo.png` —
+/// the artwork is a plain file copy into `assets/images/tourism-logo.png` —
 /// no code change, and the build never breaks while only one of the two files
 /// exists (a missing asset would otherwise throw inside [Image.asset]).
 class AppLogo extends StatelessWidget {
@@ -21,8 +21,8 @@ class AppLogo extends StatelessWidget {
   /// Soft drop shadow, matching the login card style.
   final bool shadow;
 
-  static const String pngAsset = 'assets/images/yatrawise-logo.png';
-  static const String jpgAsset = 'assets/images/yatrawise-logo.jpg';
+  static const String pngAsset = 'assets/images/tourism-logo.png';
+  static const String jpgAsset = 'assets/images/tourism-logo.jpg';
 
   @override
   Widget build(BuildContext context) {

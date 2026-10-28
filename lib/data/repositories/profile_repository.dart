@@ -21,6 +21,7 @@ class ProfileRepository {
     String uid, {
     required String name,
     String? photoUrl,
+    String? photoPath,
     required String language,
     required String emergencyContactName,
     required String emergencyContactPhone,
@@ -35,6 +36,7 @@ class ProfileRepository {
       'uid': uid,
       'name': name,
       if (photoUrl != null) 'photoUrl': photoUrl,
+      if (photoPath != null) 'photoPath': photoPath,
       'language': language,
       'emergencyContactName': emergencyContactName,
       'emergencyContactPhone': emergencyContactPhone,

@@ -1,78 +1,71 @@
-YatraWise — permanent release-signing key (maintainer notes)
-=============================================================
+# Tourism release signing
 
-WHY THIS FILE EXISTS
---------------------
-Every "Latest Tourism APK" must be signed with ONE permanent certificate.
-If a release ever ships with a different (e.g. throwaway debug) key, users
-see "App not installed" when updating, because Android refuses to update an
-app with a mismatched signature. The CI workflow FAILS the build if the
-key is missing, so this can never happen silently.
+The application ID remains `app.roamio.tourism` for installed-app and Firebase
+compatibility. Release signing is independent of that identifier.
 
-HOW IT IS WIRED (no secrets in this file — never commit the keystore!)
-----------------------------------------------------------------------
-1. The PKCS#12 upload keystore lives ONLY in the GitHub Actions secret
-   named exactly:
+## Safety properties
 
-       ANDROID_KEYSTORE_BASE64
+- Debug APKs use the normal local debug certificate and need no release secrets.
+- Release packaging fails explicitly unless a complete upload-key configuration
+  exists. It never silently falls back to a debug certificate.
+- No keystore, password, or private provider key is stored in this repository.
+- CI builds signed releases only for protected `main` pushes/manual runs using
+  the `production` GitHub environment. Development branches and pull requests
+  build unsigned-source debug APKs only; they cannot publish a signed release.
+- CI uploads artifacts only after build and signature checks succeed. It does
+  not create or update GitHub Releases and does not deploy Firebase resources.
 
-   (Settings -> Secrets and variables -> Actions -> New repository secret.)
-   Its value is the base64 of the .p12 file (single line, no wrapping).
+## Protected CI configuration
 
-2. CI decodes it to android/app/upload-keystore.p12 at build time and
-   android/app/build.gradle.kts signs the release buildTypes with it.
-   Default passwords/alias (override via keystore.properties or env if you
-   rotate — but read the ROTATION warning first):
+Create a GitHub Actions environment named **production** and protect it with
+the repository's required-review/branch policies. Add these environment
+secrets:
 
-       storePassword = YatraWise-Upload-2026
-       keyAlias      = upload
-       keyPassword   = YatraWise-Upload-2026
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Single-line base64 of the existing upload keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Existing key alias |
+| `ANDROID_KEY_PASSWORD` | Private-key password |
 
-3. The CI "installability gate" compares every published APK's signing
-   certificate against this keystore and refuses to publish on mismatch.
-   The release notes always print the APK's SHA-256 signature so anyone
-   can confirm which key signed a build.
+Use the existing certificate whenever possible. Changing the certificate can
+prevent installed-app updates and can require Google/Firebase console changes.
+Do not generate a replacement merely because a password is missing; recover
+the password and encrypted backup through the project's normal secret process.
 
-CREATING THE SECRET (first time / disaster recovery)
------------------------------------------------------
-Run on a trusted machine (NOT in CI, NOT in this repo):
+CI validates that the alias can be read, then compares every APK's SHA-256
+signer digest with the configured keystore before uploading `tourism-*` files.
 
-    # 1. Generate a new upload key (valid ~25 years):
-    keytool -genkeypair -v -storetype PKCS12 \
-      -keystore upload-keystore.p12 -alias upload \
-      -keyalg RSA -keysize 2048 -validity 9125 \
-      -storepass 'YatraWise-Upload-2026' -keypass 'YatraWise-Upload-2026' \
-      -dname 'CN=YatraWise Tourism, OU=Mobile, O=YatraWise, L=Lucknow, C=IN'
+## Local release build
 
-    # 2. Record the fingerprints (keep a copy in a password manager):
-    keytool -list -v -keystore upload-keystore.p12 \
-      -storepass 'YatraWise-Upload-2026' | grep -E 'Alias name|SHA1:|SHA256:'
+Keep secrets outside Git in `android/keystore.properties` (already ignored):
 
-    # 3. Export single-line base64 (Linux):
-    base64 -w0 upload-keystore.p12
-    # macOS:
-    base64 -i upload-keystore.p12 | tr -d '\n'
-    # Windows PowerShell:
-    # [Convert]::ToBase64String([IO.File]::ReadAllBytes('upload-keystore.p12'))
+```properties
+storeFile=/absolute/path/to/existing-upload-keystore.p12
+storePassword=RECOVER_FROM_PASSWORD_MANAGER
+keyAlias=EXISTING_ALIAS
+keyPassword=RECOVER_FROM_PASSWORD_MANAGER
+```
 
-    # 4. Paste the output as the ANDROID_KEYSTORE_BASE64 repo secret.
+Alternatively set `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` in the shell environment.
+Never paste the values into source, tickets, workflow logs, or chat.
 
-    # 5. DELETE upload-keystore.p12 from that machine (keep ONE offline
-    #    backup, e.g. encrypted USB + password manager).
+## Creating a key only for a genuinely new app
 
-ROTATION WARNING
-----------------
-Changing this key = EVERY existing user must uninstall + reinstall (their
-updates will fail with "App not installed"). Only rotate if the key is
-compromised, and announce it loudly in the release notes.
+For a new app with no installed users, generate a key on a trusted machine and
+store unique passwords in a password manager. Do not use example passwords in
+a real keystore:
 
-BACKUP CHECKLIST (fill in, keep OFF GitHub — password manager / paper)
------------------------------------------------------------------------
-Write the filled-in copy to `android/RELEASE_SIGNING_BACKUP.txt` on your
-own machine ONLY — that filename is gitignored on purpose, so it can
-never be committed by accident.
+```sh
+keytool -genkeypair -v -storetype PKCS12 \
+  -keystore /secure/path/upload-keystore.p12 -alias NEW_ALIAS \
+  -keyalg RSA -keysize 3072 -validity 9125 \
+  -dname 'CN=Tourism, OU=Mobile, O=Tourism, C=IN'
+base64 -w0 /secure/path/upload-keystore.p12
+```
 
-[ ] Keystore .p12 backed up offline (encrypted): location _______________
-[ ] storePassword / keyPassword stored:        location _______________
-[ ] SHA-256 fingerprint recorded:              _________________________
-[ ] Date / rotated-by:                         _________________________
+Keep an encrypted offline backup and record the certificate fingerprints.
+Rotating an established app's signing identity is a migration, not routine
+maintenance; plan installed-app updates and console verification before doing
+it.

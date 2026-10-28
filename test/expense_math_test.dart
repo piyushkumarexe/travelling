@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/features/expenses/expense_math.dart';
-import 'package:yatrawise/features/expenses/expense_models.dart';
+import 'package:tourism/features/expenses/expense_math.dart';
+import 'package:tourism/features/expenses/expense_models.dart';
 
 Expense _e(
   String id,

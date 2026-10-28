@@ -129,15 +129,15 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
       _submitPhase = 'Starting…';
     });
     try {
-      String? photoUrl;
+      String? photoPath;
       if (_photo != null) {
         if (mounted) setState(() => _submitPhase = 'Uploading photo…');
-        photoUrl = await _c.storageService.uploadIncidentImage(_photo!, uid);
+        photoPath = await _c.storageService.uploadIncidentImage(_photo!, uid);
       }
-      String? videoUrl;
+      String? videoPath;
       if (_video != null) {
         if (mounted) setState(() => _submitPhase = 'Uploading video…');
-        videoUrl = await _c.storageService.uploadIncidentVideo(_video!, uid);
+        videoPath = await _c.storageService.uploadIncidentVideo(_video!, uid);
       }
 
       if (mounted) setState(() => _submitPhase = 'Analyzing with AI…');
@@ -148,8 +148,8 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
           .analyzeIncident(
         description: desc,
         locationLabel: label,
-        hasPhoto: photoUrl != null,
-        hasVideo: videoUrl != null,
+        hasPhoto: photoPath != null,
+        hasVideo: videoPath != null,
       );
 
       if (mounted) setState(() => _submitPhase = 'Saving report…');
@@ -168,8 +168,8 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         lng: pos.longitude,
         summary: analysis['summary'],
         recommendedAction: analysis['recommendedAction'],
-        photoUrl: photoUrl,
-        videoUrl: videoUrl,
+        photoPath: photoPath,
+        videoPath: videoPath,
         createdAt: DateTime.now(),
       );
       final String id;
@@ -200,6 +200,8 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         recommendedAction: incident.recommendedAction,
         photoUrl: incident.photoUrl,
         videoUrl: incident.videoUrl,
+        photoPath: incident.photoPath,
+        videoPath: incident.videoPath,
         createdAt: incident.createdAt,
       );
 

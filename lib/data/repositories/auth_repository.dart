@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/app_config.dart';
+import '../../core/network/api_client.dart';
 
 /// Real Google Sign-In + Firebase Authentication.
 
@@ -16,6 +16,9 @@ class AuthException implements Exception {
 }
 
 class AuthRepository {
+  AuthRepository({ApiClient? apiClient}) : _apiClient = apiClient;
+
+  final ApiClient? _apiClient;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -56,7 +59,6 @@ class AuthRepository {
     } on FirebaseAuthException catch (e) {
       throw AuthException(_friendlyAuthError(e));
     } catch (e) {
-      debugPrint('Google sign-in error: $e');
       throw AuthException(_googleSignInError(e));
     }
   }
@@ -88,9 +90,7 @@ class AuthRepository {
               'ID and that the OAuth consent screen is published.';
       }
     }
-    final String short =
-        detail.length > 180 ? '${detail.substring(0, 180)}…' : detail;
-    return 'Google sign-in failed. $short';
+    return 'Google sign-in failed. Check the app configuration and try again.';
   }
 
   String _friendlyAuthError(FirebaseAuthException e) {
@@ -130,10 +130,31 @@ class AuthRepository {
     } catch (_) {
       // ignore
     }
+    // Google cleanup is best-effort, but Firebase sign-out must not be
+    // silently reported as successful when the local session remains.
+    await _auth.signOut();
+  }
+
+  /// Permanently deletes cloud data, Storage objects and the Auth account.
+  /// No local success is reported before the backend confirms deletion.
+  Future<void> deleteAccount() async {
+    if (_auth.currentUser == null) {
+      throw AuthException('Sign in again before deleting your account.');
+    }
+    final ApiClient? api = _apiClient;
+    if (api == null) {
+      throw AuthException('Account deletion is not configured.');
+    }
+    await api.post(
+      '/deleteAccount',
+      <String, dynamic>{},
+      receiveTimeout: const Duration(seconds: 130),
+    );
     try {
-      await _auth.signOut();
+      await signOut();
     } catch (_) {
-      // ignore
+      // The backend has confirmed deletion; local session cleanup must not
+      // turn that confirmed outcome into a false "not deleted" message.
     }
   }
 

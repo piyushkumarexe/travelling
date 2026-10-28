@@ -4,8 +4,8 @@
 
 **Tourism** is a Flutter-based Android application designed to help travellers plan, automate, navigate, monitor, and manage a journey from one place. It combines trip planning, live navigation, travel safety, expense control, booking hand-offs, document storage, nearby discovery, AI assistance, and real notification automations without pretending that unavailable data is live or verified.
 
-> **Current application version:** `1.0.30+31`
-> **Android requirement:** Android 7.0 or later (`minSdk 24`)
+> **Current application version:** `1.0.35+36`
+> **Android requirement:** Android 6.0 or later (`minSdk 23`; a merged dependency manifest can raise this)
 > **Application ID:** `app.roamio.tourism`
 > **Status:** Active development
 
@@ -751,7 +751,7 @@ The following official or primary sources are useful for the project’s design 
 - Android Studio and Android SDK.
 - JDK 21 for the CI-compatible Android build environment.
 - Firebase CLI for backend and rules deployment.
-- An Android 7.0+ device or emulator.
+- An Android 6.0+ device or emulator (subject to the built APK's effective minSdk).
 - A Firebase project.
 
 ### Install dependencies
@@ -780,15 +780,17 @@ bash scripts/deploy-backend.sh
 
 ### Service configuration
 
-Depending on the features being deployed, configure supported credentials as Firebase secrets, CI secrets or approved build-time definitions:
+Private provider credentials belong only in backend Firebase secrets:
 
-- AI provider credentials.
-- OpenWeather key.
-- Google server API key.
-- MapTiler key.
-- Google Sign-In web client ID.
+- `NVIDIA_API_KEY` for server-side AI calls.
+- `OPENWEATHER_API_KEY` and `GOOGLE_MAPS_API_KEY` for server-side integrations.
 
-**Never commit real secrets to source control.**
+Never pass private AI credentials through `--dart-define`; CI deliberately does
+not inject them and checks client source for provider-key definitions. MapTiler
+and Google Sign-In client identifiers may be supplied as client configuration,
+but restrict them by API/application and quota. Android Maps uses the separately
+restricted `MAPS_ANDROID_API_KEY` manifest value. **Never commit real secrets to
+source control.** See `BACKEND_SETUP.md` and `android/RELEASE_SIGNING.md`.
 
 ### Run locally
 
@@ -809,7 +811,12 @@ flutter test
 
 ### Local release build
 
+First configure the existing upload key as described in
+`android/RELEASE_SIGNING.md`. Release packaging fails without all signing
+values and never silently uses a debug certificate.
+
 ```bash
+flutter build apk --debug
 flutter build apk --release --split-per-abi
 flutter build apk --release
 ```
@@ -822,12 +829,15 @@ build/app/outputs/flutter-apk/
 
 ### GitHub Actions
 
-The repository contains:
+`.github/workflows/build-apk.yml` runs strict backend syntax/unit/audit checks,
+Firestore/Storage emulator tests, Flutter analyze/tests, and a debug APK build
+on development branches and pull requests. No mandatory step uses
+`continue-on-error`.
 
-- `.github/workflows/verify.yml` — dependency install, static analysis, tests and rules checks.
-- `.github/workflows/build-apk.yml` — verification, signed release build, APK inspection and artifact preparation.
-
-The release pipeline verifies APK signing and Android package metadata. Public release publication is intentionally controlled by workflow conditions; feature branches must not overwrite the public rolling release.
+Protected `main` runs additionally require the `production` environment's four
+signing secrets, build signed split/universal APKs, verify signer/package/
+alignment, and upload `tourism-*` artifacts only after success. The workflow
+does not deploy Firebase resources or create/update GitHub Releases.
 
 ### APK selection
 
@@ -909,6 +919,15 @@ An APK is an installable package. Do not extract it as if it were a normal ZIP a
 - OCR is not claimed where it is not implemented.
 - Safety-zone awareness is informational and cannot guarantee that an area is safe or unsafe.
 - Eco tracking does not claim an exact carbon reduction without a verified methodology and input data.
+- Existing Firebase Storage download URLs are bearer links; deploying new
+  owner rules does not revoke already-issued tokens. Rotate/revoke legacy
+  tokens during the production migration, then deploy the rules before new
+  path-based uploads are relied upon.
+- Account deletion requires the authenticated backend `/deleteAccount`
+  endpoint to be deployed and reachable; the client does not claim cloud
+  deletion before that backend confirms it.
+- Legacy unscoped saved-place preferences are not automatically assigned to a
+  signed-in account because their owner cannot be established safely.
 
 ---
 

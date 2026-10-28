@@ -41,6 +41,9 @@ class _SosSheetViewState extends State<_SosSheetView> {
   List<Place> _services = <Place>[];
   bool _loadingServices = false;
   String? _error;
+  String? _cloudError;
+  String? _servicesError;
+  bool _activating = false;
 
   /// Status of the automatic SOS-contact alert (SMS/WhatsApp).
   String? _contactAlert;
@@ -48,9 +51,15 @@ class _SosSheetViewState extends State<_SosSheetView> {
   AppContainer get _c => AppScope.of(context);
 
   Future<void> _activate() async {
+    if (_activating) return;
+    _activating = true;
     setState(() {
       _stage = _SosStage.creating;
       _error = null;
+      _cloudError = null;
+      _servicesError = null;
+      _contactAlert = null;
+      _event = null;
     });
     try {
       final Position? pos = await _c.locationService.currentPosition();
@@ -64,73 +73,80 @@ class _SosSheetViewState extends State<_SosSheetView> {
         return;
       }
       final user = _c.authRepository.currentUser;
-      final String uid = user?.uid ?? 'guest';
+      final String? uid = user?.uid;
       String name = (user?.displayName?.isNotEmpty ?? false)
           ? user!.displayName!
           : 'Traveler';
-      try {
-        final String? profileName = (await _c.profileRepository.get(uid))?.name;
-        if (profileName != null && profileName.isNotEmpty) name = profileName;
-      } catch (_) {}
+      if (uid != null) {
+        try {
+          final String? profileName =
+              (await _c.profileRepository.get(uid))?.name;
+          if (profileName != null && profileName.isNotEmpty) name = profileName;
+        } catch (_) {}
+      }
 
-      // Create the cloud event; if the cloud is unreachable (rules not
-      // deployed / offline), still proceed with a local id — the emergency
-      // flow (call services + share location) must never be blocked.
-      String id;
-      try {
-        id = await _c.emergencyRepository.create(
-          uid: uid,
-          name: name,
-          lat: pos.latitude,
-          lng: pos.longitude,
-          accuracyMeters: pos.accuracy,
-        );
-      } catch (_) {
-        id = 'local-${DateTime.now().millisecondsSinceEpoch}';
+      EmergencyEvent? event;
+      String? cloudError;
+      if (uid == null) {
+        cloudError = 'No cloud event was submitted: sign in is required. '
+            'Emergency calls and contact sharing are still available.';
+      } else {
+        try {
+          final String id = await _c.emergencyRepository.create(
+            uid: uid,
+            name: name,
+            lat: pos.latitude,
+            lng: pos.longitude,
+            accuracyMeters: pos.accuracy,
+          );
+          event = EmergencyEvent(
+            id: id,
+            uid: uid,
+            name: name,
+            lat: pos.latitude,
+            lng: pos.longitude,
+            accuracyMeters: pos.accuracy,
+            status: 'active',
+            createdAt: DateTime.now(),
+          );
+        } catch (_) {
+          cloudError = 'Cloud event was not submitted. No online emergency '
+              'record was created; emergency calls and contact sharing still work.';
+        }
       }
       if (!mounted) return;
-
-      final EmergencyEvent event = EmergencyEvent(
-        id: id,
-        uid: uid,
-        name: name,
-        lat: pos.latitude,
-        lng: pos.longitude,
-        accuracyMeters: pos.accuracy,
-        status: 'active',
-        createdAt: DateTime.now(),
-      );
       setState(() {
         _position = pos;
         _event = event;
+        _cloudError = cloudError;
         _stage = _SosStage.active;
       });
 
-      // Persist in-app notification record + real Android notification.
-      unawaitedAdd(uid, id, name);
+      if (event != null && uid != null) {
+        unawaitedAdd(uid, event.id, name);
+      }
       _c.notificationService.show(
         id: DateTime.now().millisecondsSinceEpoch % 1000000,
-        title: '🆘 SOS activated',
-        body: 'Your location was recorded at '
+        title: event != null ? '🆘 SOS activated' : '🆘 SOS tools active',
+        body: 'Location captured on this device at '
             '${pos.latitude.toStringAsFixed(5)}, '
-            '${pos.longitude.toStringAsFixed(5)}. Use the buttons below to '
-            'call nearby emergency services.',
+            '${pos.longitude.toStringAsFixed(5)}. '
+            '${event != null ? 'Cloud event submitted.' : 'Cloud event not submitted.'}',
         channel: 'emergency',
         important: true,
-        payload: 'sos:$id',
+        payload: event == null ? 'sos:local-tools' : 'sos:${event.id}',
       );
 
-      // Immediately alert the SOS contact with the coordinates + a Google
-      // Maps link by SMS (works even with no mobile data) — and record the
-      // share in the notification history.
       await _alertSosContact(pos, name);
       unawaited(_loadServices());
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _stage = _SosStage.confirm;
-        _error = 'Could not create the emergency event: $e';
+        _error = 'Could not start SOS tools. Check location permissions and retry.';
       });
+    } finally {
+      _activating = false;
     }
   }
 
@@ -154,7 +170,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
     if (phone.isEmpty) {
       if (mounted) {
         setState(() => _contactAlert = 'No SOS contact added — add one on the '
-            'Safety screen so your location is sent automatically.');
+            'Safety screen so the app can try to alert them automatically.');
       }
       return;
     }
@@ -164,30 +180,31 @@ class _SosSheetViewState extends State<_SosSheetView> {
       travelerName: travelerName,
       position: pos,
     );
-    bool sent = false;
+    bool queued = false;
     if (granted) {
-      sent = await _c.smsService.sendSms(phone, text);
+      queued = await _c.smsService.sendSms(phone, text);
     }
     if (!mounted) return;
     setState(() {
-      _contactAlert = sent
-          ? 'Location sent to ${_c.settings.sosContactName.isNotEmpty ? _c.settings.sosContactName : phone} by SMS.'
+      _contactAlert = queued
+          ? 'Location SMS queued to ${_c.settings.sosContactName.isNotEmpty ? _c.settings.sosContactName : phone}; delivery is not confirmed.'
           : 'SMS could not be sent automatically — use the SMS / WhatsApp '
               'buttons below to share your location with your SOS contact.';
     });
-    unawaited(_c.notificationsRepository
-        .add(
-      uid: _c.authRepository.currentUser?.uid ?? 'guest',
-      title: sent ? 'SOS location sent to your contact' : 'SOS contact alert',
-      body: sent
-          ? 'Your coordinates and a map link were sent to your SOS contact '
-              'by SMS.'
-          : 'Automatic SMS failed. Share your location with your SOS contact '
-              'using the SMS or WhatsApp buttons.',
-      type: 'emergency',
-      payload: <String, dynamic>{'eventId': _event?.id ?? ''},
-    )
-        .catchError((Object _) => ''));
+    final String? uid = _c.authRepository.currentUser?.uid;
+    if (uid != null) {
+      unawaited(_c.notificationsRepository
+          .add(
+        uid: uid,
+        title: queued ? 'SOS location SMS queued' : 'SOS contact alert',
+        body: queued
+            ? 'Your coordinates and map link were handed to the cellular radio; delivery is not confirmed.'
+            : 'Automatic SMS failed. Share your location using the SMS or WhatsApp buttons.',
+        type: 'emergency',
+        payload: <String, dynamic>{'eventId': _event?.id ?? ''},
+      )
+          .catchError((Object _) => ''));
+    }
   }
 
   Future<void> _sendSmsToContact() async {
@@ -199,27 +216,28 @@ class _SosSheetViewState extends State<_SosSheetView> {
           content: Text('No SOS contact added. Add one on the Safety screen.')));
       return;
     }
+    final String text = SosMessages.buildEmergencyText(
+      travelerName: _event?.name ?? 'Traveler',
+      position: pos,
+    );
     final bool granted = await _c.smsService.ensureSendSmsPermission();
-    final bool ok = granted
-        ? await _c.smsService.sendSms(
-            phone,
-            SosMessages.buildEmergencyText(
-              travelerName: _event?.name ?? 'Traveler',
-              position: pos,
-            ),
-          )
-        : await _c.smsService.openSmsComposer(
-            phone,
-            SosMessages.buildEmergencyText(
-              travelerName: _event?.name ?? 'Traveler',
-              position: pos,
-            ),
-          );
+    if (granted) {
+      final bool queued = await _c.smsService.sendSms(phone, text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(queued
+            ? 'Location SMS queued; delivery is not confirmed.'
+            : 'SMS could not be queued. Check the SIM/number and try again.'),
+      ));
+      return;
+    }
+    final bool opened = await _c.smsService.openSmsComposer(phone, text);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok
-            ? 'Location SMS sent to your SOS contact.'
-            : 'SMS could not be sent. Check the SIM/number and try again.')));
+      content: Text(opened
+          ? 'SMS app opened — press Send there to share your location.'
+          : 'SMS is unavailable on this device.'),
+    ));
   }
 
   Future<void> _sendWhatsAppToContact() async {
@@ -251,7 +269,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
     if (result == LiveShareStartResult.started) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text(
-              'Live location sharing is ON — updates go to your SOS contact.')));
+              'Live location updates started; check the banner for SMS and cloud status.')));
     }
   }
 
@@ -273,31 +291,41 @@ class _SosSheetViewState extends State<_SosSheetView> {
       if (!mounted) return;
       setState(() {
         _loadingServices = false;
-        _error = 'Emergency event created, but nearby services could not be '
-            'loaded: $e';
+        _servicesError = 'Nearby services could not be loaded. '
+            'Call your local emergency number directly.';
       });
     }
   }
 
   Future<void> _cancel() async {
     final EmergencyEvent? event = _event;
-    if (event == null) return;
+    if (_c.liveLocationShare.active) {
+      await _c.liveLocationShare.stop();
+    }
+    if (event == null) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('SOS tools closed. No cloud event had been created.'),
+          ),
+        );
+      }
+      return;
+    }
     bool markedCancelled = false;
     try {
       await _c.emergencyRepository.updateStatus(event.id, 'cancelled');
       markedCancelled = true;
-    } catch (_) {
-      // Even if the update fails we still close the sheet; the event
-      // remains and the user can retry from the Safety screen.
-    }
+    } catch (_) {}
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(markedCancelled
               ? 'SOS cancelled.'
-              : 'SOS closed, but the event could not be marked as cancelled. '
-                  'You can retry from the Safety screen.'),
+              : 'SOS tools closed, but the cloud event is still active. '
+                  'Retry cancellation from the Safety screen.'),
         ),
       );
     }
@@ -525,7 +553,7 @@ class _SosSheetViewState extends State<_SosSheetView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'SOS ACTIVE',
+                      event != null ? 'SOS ACTIVE' : 'SOS TOOLS ACTIVE',
                       style: TextStyle(
                         color: AppTheme.danger,
                         fontWeight: FontWeight.w800,
@@ -560,6 +588,21 @@ class _SosSheetViewState extends State<_SosSheetView> {
               ),
             ],
           ),
+        if (_cloudError != null) ...<Widget>[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: scheme.errorContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              _cloudError!,
+              style: TextStyle(color: scheme.onErrorContainer),
+            ),
+          ),
+        ],
         if (_contactAlert != null) ...<Widget>[
           const SizedBox(height: 10),
           Container(
@@ -661,6 +704,15 @@ class _SosSheetViewState extends State<_SosSheetView> {
               ?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 12),
+        if (_servicesError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _servicesError!,
+              style: TextStyle(color: scheme.error),
+              textAlign: TextAlign.center,
+            ),
+          ),
         if (_loadingServices)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),

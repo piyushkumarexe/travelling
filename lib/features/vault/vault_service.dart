@@ -196,8 +196,15 @@ class VaultService extends ChangeNotifier {
   /// metadata. If Storage deletion fails for a real reason, nothing is
   /// deleted and the error propagates to the UI.
   Future<void> deleteDocument(TravelDocument doc) async {
-    if (doc.storagePath != null && doc.storagePath!.isNotEmpty) {
-      await _storage.deleteVaultFile(doc.storagePath!);
+    final String legacyPath =
+        'users/${doc.userId}/travelDocuments/${doc.id}/file';
+    final String storagePath =
+        (doc.storagePath?.isNotEmpty ?? false) ? doc.storagePath! : legacyPath;
+    // Legacy metadata often has only fileUrl. The canonical path still lets
+    // us remove that object instead of silently orphaning a private file.
+    if ((doc.storagePath?.isNotEmpty ?? false) ||
+        (doc.fileUrl?.isNotEmpty ?? false)) {
+      await _storage.deleteVaultFile(storagePath);
     }
     if (_profileFallback) {
       final List<TravelDocument> next = List<TravelDocument>.from(_docs)
@@ -229,11 +236,11 @@ class VaultService extends ChangeNotifier {
     return _storage.startVaultUpload(file, uid, docId);
   }
 
-  /// Records a finished upload (URL + path + file info) on the metadata.
+  /// Records a finished private upload. Null fileUrl clears a legacy token.
   Future<void> completeUpload({
     required String uid,
     required String docId,
-    required String fileUrl,
+    String? fileUrl,
     required String storagePath,
     required String fileName,
     required int fileSize,

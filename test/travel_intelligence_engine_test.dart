@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/data/models/itinerary.dart';
-import 'package:yatrawise/features/intelligence/engine/decision_replay_store.dart';
-import 'package:yatrawise/features/intelligence/engine/engine_models.dart';
-import 'package:yatrawise/features/intelligence/engine/trip_intelligence_engine.dart';
+import 'package:tourism/data/models/itinerary.dart';
+import 'package:tourism/features/intelligence/engine/decision_replay_store.dart';
+import 'package:tourism/features/intelligence/engine/engine_models.dart';
+import 'package:tourism/features/intelligence/engine/trip_intelligence_engine.dart';
 
 ItineraryItem _it(String time, String title, {String cost = ''}) =>
     ItineraryItem(time: time, title: title, cost: cost);

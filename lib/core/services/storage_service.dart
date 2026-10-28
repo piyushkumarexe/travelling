@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../app_config.dart';
 
-/// Validates + uploads user media to Firebase Storage under strict
-/// path/type/size rules (mirrored server-side by storage rules).
+/// Validates and uploads media to owner-scoped Storage paths. Upload methods
+/// return object paths, never bearer download URLs; reads use the authenticated SDK.
 
 class StorageValidationException implements Exception {
   StorageValidationException(this.message);
@@ -84,7 +84,7 @@ class StorageService {
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_img.${_ext(file)}');
     await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
-    return ref.getDownloadURL();
+    return ref.fullPath;
   }
 
   Future<String> uploadIncidentVideo(XFile file, String uid) async {
@@ -95,7 +95,7 @@ class StorageService {
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_vid.${_ext(file)}');
     await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
-    return ref.getDownloadURL();
+    return ref.fullPath;
   }
 
   Future<String> uploadAvatar(XFile file, String uid) async {
@@ -106,7 +106,7 @@ class StorageService {
         .child(uid)
         .child('${DateTime.now().millisecondsSinceEpoch}_avatar.${_ext(file)}');
     await ref.putFile(File(file.path), SettableMetadata(contentType: _contentType(file)));
-    return ref.getDownloadURL();
+    return ref.fullPath;
   }
 
   /// Receipt photos for Travel Expense Guard: receipts/{uid}/{expenseId}.jpg.
@@ -121,7 +121,7 @@ class StorageService {
         .child('$expenseId.jpg');
     await ref.putFile(
         File(file.path), SettableMetadata(contentType: _contentType(file)));
-    return ref.getDownloadURL();
+    return ref.fullPath;
   }
 
   /// Camera capture pre-compressed for a readable, small receipt photo.

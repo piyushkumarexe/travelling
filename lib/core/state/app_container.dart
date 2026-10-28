@@ -31,6 +31,7 @@ import '../services/geofence_service.dart';
 import '../services/live_location_share.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
+import '../services/private_file_service.dart';
 import '../services/settings_service.dart';
 import '../services/sms_service.dart';
 import '../services/storage_service.dart';
@@ -60,7 +61,8 @@ class AppContainer {
   late final ApiClient apiClient = ApiClient(baseUrl: functionsBaseUrl ?? '');
 
   // --- Repositories ---
-  late final AuthRepository authRepository = AuthRepository();
+  late final AuthRepository authRepository =
+      AuthRepository(apiClient: apiClient);
   late final ProfileRepository profileRepository = ProfileRepository();
   late final ZonesRepository zonesRepository = ZonesRepository();
   late final IncidentsRepository incidentsRepository = IncidentsRepository();
@@ -84,6 +86,7 @@ class AppContainer {
   // --- Device / platform services ---
   late final LocationService locationService = LocationService();
   late final StorageService storageService = StorageService();
+  late final PrivateFileService privateFiles = PrivateFileService();
   late final NotificationService notificationService = NotificationService();
   late final SettingsService settings = SettingsService();
   late final EcoTrackerService ecoTracker =

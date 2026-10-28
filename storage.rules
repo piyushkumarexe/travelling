@@ -2,7 +2,6 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-
     function signedIn() {
       return request.auth != null;
     }
@@ -21,54 +20,46 @@ service firebase.storage {
     }
 
     function isVideo() {
-      return request.resource.contentType.matches(
-        'video/(mp4|quicktime|webm|3gpp)');
+      return request.resource.contentType.matches('video/(mp4|quicktime|webm|3gpp)');
     }
 
-    // Incident evidence: incidents/{uid}/* — owner uploads, owner + admin read
+    // New app versions keep authenticated Storage paths in Firestore and read
+    // through the SDK. Existing download tokens cannot be revoked by rules;
+    // rotate them in Firebase console during the documented migration.
     match /incidents/{uid}/{fileName} {
       allow read: if isSelf(uid) || isAdmin();
-      allow write: if isSelf(uid)
-        && (isImage() || isVideo())
-        && request.resource.size <= 52428800; // 50 MB
+      allow create, update: if isSelf(uid)
+        && ((isImage() && request.resource.size <= 10485760)
+          || (isVideo() && request.resource.size <= 52428800));
       allow delete: if isSelf(uid) || isAdmin();
     }
 
-    // Profile photos: avatars/{uid}/* — small, image-only
+    // Avatars are private account data, not readable by every signed-in user.
     match /avatars/{uid}/{fileName} {
-      allow read: if signedIn();
-      allow write: if isSelf(uid)
-        && isImage()
-        && request.resource.size <= 5242880; // 5 MB
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isSelf(uid)
+        && isImage() && request.resource.size <= 5242880;
       allow delete: if isSelf(uid) || isAdmin();
     }
 
-    // Receipt photos: receipts/{uid}/{expenseId}.jpg — owner-only,
-    // image-only, small (5 MB cap). Firestore stores just the download URL.
     match /receipts/{uid}/{fileName} {
       allow read: if isSelf(uid);
-      allow write: if isSelf(uid)
-        && isImage()
-        && request.resource.size <= 5242880; // 5 MB
+      allow create, update: if isSelf(uid)
+        && isImage() && request.resource.size <= 5242880;
       allow delete: if isSelf(uid);
     }
 
-    // Travel Document & Booking Vault files: strict owner-only path
-    // users/{uid}/travelDocuments/{documentId}/file — PDF or image,
-    // 10 MB cap. Never public.
     function isVaultDocument() {
       return isImage() || request.resource.contentType == 'application/pdf';
     }
 
     match /users/{uid}/travelDocuments/{documentId}/file {
       allow read: if isSelf(uid);
-      allow write: if isSelf(uid)
-        && isVaultDocument()
-        && request.resource.size <= 10485760; // 10 MB
+      allow create, update: if isSelf(uid)
+        && isVaultDocument() && request.resource.size <= 10485760;
       allow delete: if isSelf(uid);
     }
 
-    // Everything else is denied by default.
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -518,6 +518,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
           sosPhone: phone,
           sosName: name,
           projectId: projectId ?? '',
+          uid: _c.authRepository.currentUser?.uid ?? '',
           idToken: token,
         );
         // Also make sure the SEND_SMS permission is in place — it is the

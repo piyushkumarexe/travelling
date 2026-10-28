@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/private_storage_image.dart';
 import '../travel_document.dart';
 import '../vault_icons.dart';
 import '../vault_service.dart';
@@ -209,7 +210,8 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
   }
 
   Widget _fileCard(TravelDocument d) {
-    final bool hasFile = d.fileUrl != null && d.storagePath != null;
+    final bool hasFile =
+        (d.storagePath?.isNotEmpty ?? false) || (d.fileUrl?.isNotEmpty ?? false);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -309,52 +311,66 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
   // ---------------- actions ----------------
 
   Future<void> _openFile(TravelDocument d) async {
-    final bool isImage =
-        (d.fileName ?? '').toLowerCase().endsWith('.pdf') == false;
-    if (isImage) {
-      await showDialog<void>(
-        context: context,
-        builder: (BuildContext ctx) => Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              AppBar(
-                title: const Text('Preview'),
-                actions: <Widget>[
-                  IconButton(
-                    icon: const Icon(Icons.open_in_new),
-                    tooltip: 'Open externally',
-                    onPressed: () => _launchExternal(ctx, d.fileUrl!),
-                  ),
-                ],
-              ),
-              Flexible(
-                child: InteractiveViewer(
-                  child: Image.network(
-                    d.fileUrl!,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (BuildContext c, Widget w,
-                            ImageChunkEvent? p) =>
-                        const Padding(
-                            padding: EdgeInsets.all(40),
-                            child: CircularProgressIndicator()),
-                    errorBuilder: (_, __, ___) => const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                          'Could not load the preview. Check your internet '
-                          'connection, or open the file externally.'),
-                    ),
+    final bool isImage = !(d.fileName ?? '').toLowerCase().endsWith('.pdf');
+    if (!isImage) {
+      await _openExternal(context, d);
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AppBar(
+              title: const Text('Preview'),
+              actions: <Widget>[
+                IconButton(
+                  icon: const Icon(Icons.open_in_new),
+                  tooltip: 'Open externally',
+                  onPressed: () => _openExternal(ctx, d),
+                ),
+              ],
+            ),
+            Flexible(
+              child: InteractiveViewer(
+                child: PrivateStorageImage(
+                  storagePath: d.storagePath,
+                  legacyUrl: d.fileUrl,
+                  fit: BoxFit.contain,
+                  placeholder: const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('Could not load the private file preview.'),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
-    } else {
-      await _launchExternal(context, d.fileUrl!);
+      ),
+    );
+  }
+
+  Future<void> _openExternal(BuildContext context, TravelDocument d) async {
+    final String path = d.storagePath?.trim() ?? '';
+    if (path.isNotEmpty) {
+      try {
+        await _c.privateFiles.open(
+          storagePath: path,
+          fileName: d.fileName ?? path.split('/').last,
+        );
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open the private file.')),
+          );
+        }
+      }
+      return;
     }
+    final String legacy = d.fileUrl?.trim() ?? '';
+    if (legacy.isNotEmpty) await _launchExternal(context, legacy);
   }
 
   Future<void> _launchExternal(BuildContext context, String url) async {
@@ -390,12 +406,10 @@ class _VaultDetailScreenState extends State<VaultDetailScreen> {
           setState(() => _replaceProgress = s.bytesTransferred / s.totalBytes);
         }
       });
-      final TaskSnapshot snap = await task;
-      final String url = await snap.ref.getDownloadURL();
+      await task;
       await _c.vaultService.completeUpload(
         uid: uid,
         docId: d.id,
-        fileUrl: url,
         storagePath: 'users/$uid/travelDocuments/${d.id}/file',
         fileName: file.name,
         fileSize: await file.length(),

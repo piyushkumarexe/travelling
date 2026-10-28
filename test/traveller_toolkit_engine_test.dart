@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/features/toolkit/traveller_toolkit_engine.dart';
+import 'package:tourism/features/toolkit/traveller_toolkit_engine.dart';
 
 void main() {
   group('Smart Packing', () {

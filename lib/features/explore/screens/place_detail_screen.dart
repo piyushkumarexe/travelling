@@ -189,7 +189,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   Future<void> _initSaved() async {
     final Place? p = _place;
     if (p == null) return;
-    final bool saved = await FavoritesStore.contains(p.placeId);
+    final bool saved = await FavoritesStore.containsPlace(p);
     if (mounted) setState(() => _saved = saved);
   }
 

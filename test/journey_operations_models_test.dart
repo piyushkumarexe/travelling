@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yatrawise/features/operations/journey_operations_models.dart';
+import 'package:tourism/features/operations/journey_operations_models.dart';
 
 void main() {
   test('exposes thirty-seven distinct working journey tools', () {

@@ -145,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 // Brand mark. See AppLogo: it picks up
-                // assets/images/yatrawise-logo.png the moment that file is
+                // assets/images/tourism-logo.png the moment that file is
                 // dropped in (the .jpg stays as the fallback).
                 const Center(
                   child: AppLogo(size: 152, radius: 34),

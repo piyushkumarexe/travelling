@@ -318,11 +318,9 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
               () => _uploadProgress = s.bytesTransferred / s.totalBytes);
         }
       });
-      final TaskSnapshot snap =
-          await task; // throws FirebaseException('canceled') / errors
-      final String url = await snap.ref.getDownloadURL();
+      await task; // throws FirebaseException('canceled') / errors
       final TravelDocument withFile = doc.copyWith(
-        fileUrl: url,
+        clearFileUrl: true,
         storagePath: 'users/$uid/travelDocuments/${doc.id}/file',
         fileName: file.name,
         fileSize: await file.length(),
@@ -575,7 +573,8 @@ class _VaultEditScreenState extends State<VaultEditScreen> {
   }
 
   Widget _fileSection() {
-    final bool hasExistingFile = _existing?.fileUrl != null;
+    final bool hasExistingFile = _existing?.storagePath != null ||
+        _existing?.fileUrl != null;
     final bool attachmentsAvailable = !_c.vaultService.metadataFallback;
     return Card(
       margin: const EdgeInsets.only(bottom: 4),

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/features/booking/booking_models.dart';
+import 'package:tourism/features/booking/booking_models.dart';
 
 void main() {
   group('Provider deep links (native schemes)', () {

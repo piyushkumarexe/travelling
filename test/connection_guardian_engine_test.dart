@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yatrawise/features/connection_guardian/connection_guardian_engine.dart';
+import 'package:tourism/features/connection_guardian/connection_guardian_engine.dart';
 
 void main() {
   final DateTime arrival = DateTime(2026, 10, 2, 10);

@@ -93,6 +93,7 @@ class Expense {
     this.paymentMethod,
     this.notes,
     this.receiptUrl,
+    this.receiptPath,
     this.latitude,
     this.longitude,
     this.locationName,
@@ -114,7 +115,8 @@ class Expense {
   final String? tripId; // link to the existing local TripPlan id
   final String? paymentMethod; // cash | upi | card | other
   final String? notes;
-  final String? receiptUrl; // Storage download URL (binary never in Firestore)
+  final String? receiptUrl; // Legacy download URL; new uploads use receiptPath.
+  final String? receiptPath;
   final double? latitude;
   final double? longitude;
   final String? locationName;
@@ -137,6 +139,7 @@ class Expense {
     String? notes,
     bool clearNotes = false,
     String? receiptUrl,
+    String? receiptPath,
     double? latitude,
     double? longitude,
     String? locationName,
@@ -160,6 +163,7 @@ class Expense {
           clearPayment ? null : (paymentMethod ?? this.paymentMethod),
       notes: clearNotes ? null : (notes ?? this.notes),
       receiptUrl: receiptUrl ?? this.receiptUrl,
+      receiptPath: receiptPath ?? this.receiptPath,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       locationName: locationName ?? this.locationName,
@@ -181,6 +185,7 @@ class Expense {
         'paymentMethod': paymentMethod,
         'notes': notes,
         'receiptUrl': receiptUrl,
+        'receiptPath': receiptPath,
         'latitude': latitude,
         'longitude': longitude,
         'locationName': locationName,
@@ -208,6 +213,7 @@ class Expense {
       paymentMethod: m['paymentMethod'] as String?,
       notes: m['notes'] as String?,
       receiptUrl: m['receiptUrl'] as String?,
+      receiptPath: m['receiptPath'] as String?,
       latitude: (m['latitude'] as num?)?.toDouble(),
       longitude: (m['longitude'] as num?)?.toDouble(),
       locationName: m['locationName'] as String?,
@@ -241,6 +247,7 @@ class Expense {
       paymentMethod: e.paymentMethod,
       notes: e.notes,
       receiptUrl: e.receiptUrl,
+      receiptPath: e.receiptPath,
       latitude: e.latitude,
       longitude: e.longitude,
       locationName: e.locationName,

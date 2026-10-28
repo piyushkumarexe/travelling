@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 
-import 'package:yatrawise/core/network/free_geo_client.dart';
-import 'package:yatrawise/data/models/incident.dart';
-import 'package:yatrawise/data/models/places.dart';
+import 'package:tourism/core/network/free_geo_client.dart';
+import 'package:tourism/data/models/incident.dart';
+import 'package:tourism/data/models/places.dart';
 
 /// Locks the two behaviour contracts behind the 2026-09 search/safety fixes:
 ///  * a CATEGORY query must never be filtered down to nothing by name

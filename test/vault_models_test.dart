@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/features/vault/travel_document.dart';
+import 'package:tourism/features/vault/travel_document.dart';
 
 TravelDocument _doc(Map<String, Object?> overrides) {
   final Map<String, Object?> m = <String, Object?>{

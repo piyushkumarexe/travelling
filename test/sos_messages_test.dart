@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:yatrawise/core/utils/sos_messages.dart';
+import 'package:tourism/core/utils/sos_messages.dart';
 
 Position _pos(double lat, double lng, {double accuracy = 12}) => Position(
       latitude: lat,

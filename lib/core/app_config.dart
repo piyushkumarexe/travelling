@@ -40,94 +40,6 @@ class AppConfig {
     defaultValue: '216165370573-eteu1jqusr6853ps9kru5ii8raejem3l.apps.googleusercontent.com',
   );
 
-  /// Direct NVIDIA access — fallback when the Cloud Functions backend is
-  /// not deployed/reachable yet. Injected at build time:
-  ///   flutter build apk --dart-define=NVIDIA_API_KEY=nvapi-...
-  /// Empty by default, in which case only the backend is used.
-  static const String nvidiaApiKey =
-      String.fromEnvironment('NVIDIA_API_KEY', defaultValue: '');
-  static const String nvidiaModel = String.fromEnvironment(
-    'NVIDIA_MODEL',
-    defaultValue: 'nvidia/nemotron-3.5-lightning-30b-a3b',
-  );
-  static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
-
-  /// True when a direct NVIDIA key was compiled into the app.
-  static bool get nvidiaDirectEnabled => nvidiaApiKey.isNotEmpty;
-
-  /// Groq — very fast LPU inference (OpenAI-compatible), responses in ~1s.
-  /// Preferred transport when a key is compiled in. Build with:
-  ///   flutter build apk --dart-define=GROQ_API_KEY=gsk_...
-  /// Free key: https://console.groq.com/keys
-  static const String groqApiKey =
-      String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
-  static const String groqModel = String.fromEnvironment(
-    'GROQ_MODEL',
-    defaultValue: 'openai/gpt-oss-120b',
-  );
-  static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
-
-  /// Google Gemini — easiest free option (Google account, no credit card).
-  /// Uses Gemini's OpenAI-compatible endpoint so the app only needs ONE
-  /// build-time value:
-  ///   flutter build apk --dart-define=GEMINI_API_KEY=AIza...
-  /// Free key: https://aistudio.google.com/apikey
-  static const String geminiApiKey =
-      String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
-  static const String geminiModel = String.fromEnvironment(
-    'GEMINI_MODEL',
-    defaultValue: 'gemini-2.5-flash',
-  );
-  static const String geminiBaseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/openai';
-
-  /// Generic OpenAI-compatible AI provider — used when NO NVIDIA/Gemini key
-  /// is set. Lets the app talk to any provider (Groq, OpenRouter, Hack Club
-  /// AI, Mistral, …) that exposes `/chat/completions`. Build with:
-  ///   flutter build apk \
-  ///     --dart-define=AI_API_KEY=... \
-  ///     --dart-define=AI_BASE_URL=https://api.example.com/v1 \
-  ///     --dart-define=AI_MODEL=some/model
-  static const String aiApiKey =
-      String.fromEnvironment('AI_API_KEY', defaultValue: '');
-  static const String aiBaseUrl =
-      String.fromEnvironment('AI_BASE_URL', defaultValue: '');
-  static const String aiModel = String.fromEnvironment(
-    'AI_MODEL',
-    defaultValue: 'meta-llama/llama-3.1-8b-instruct',
-  );
-
-  /// True when any direct AI transport (Groq, NVIDIA, Gemini or generic) is
-  /// compiled in.
-  static bool get aiDirectEnabled =>
-      groqApiKey.isNotEmpty ||
-      nvidiaApiKey.isNotEmpty ||
-      geminiApiKey.isNotEmpty ||
-      (aiApiKey.isNotEmpty && aiBaseUrl.isNotEmpty);
-
-  /// Resolved direct-AI settings: prefer Groq, then NVIDIA, then Gemini,
-  /// then the generic OpenAI-compatible provider.
-  static String get aiResolvedBaseUrl {
-    if (groqApiKey.isNotEmpty) return groqBaseUrl;
-    if (nvidiaApiKey.isNotEmpty) return nvidiaBaseUrl;
-    if (geminiApiKey.isNotEmpty) return geminiBaseUrl;
-    return aiBaseUrl;
-  }
-
-  static String get aiResolvedApiKey {
-    if (groqApiKey.isNotEmpty) return groqApiKey;
-    if (nvidiaApiKey.isNotEmpty) return nvidiaApiKey;
-    if (geminiApiKey.isNotEmpty) return geminiApiKey;
-    return aiApiKey;
-  }
-
-  static String get aiResolvedModel {
-    if (groqApiKey.isNotEmpty) return groqModel;
-    if (nvidiaApiKey.isNotEmpty) return nvidiaModel;
-    if (geminiApiKey.isNotEmpty) return geminiModel;
-    return aiModel;
-  }
-
   /// OpenWeather units used across the app.
   static const String weatherUnits = 'metric';
 
@@ -146,16 +58,9 @@ class AppConfig {
   /// True when a MapTiler key was compiled into this build.
   static bool get mapTilerConfigured => mapTilerApiKey.isNotEmpty;
 
-  /// Sanitized runtime diagnostic — never logs the key itself, only whether
-  /// it is present, its length and its first 4 characters.
-  static String debugMapConfig() {
-    final String key = mapTilerApiKey;
-    final String prefix = key.length >= 4
-        ? key.substring(0, 4)
-        : (key.isEmpty ? '<empty>' : key);
-    return 'MapTiler configured=$mapTilerConfigured, '
-        'keyLength=${key.length}, keyPrefix=$prefix';
-  }
+  /// Sanitized runtime diagnostic: never includes key material or length.
+  static String debugMapConfig() =>
+      'MapTiler configured=$mapTilerConfigured';
 
   /// Raster tile URL template for [style], matching MapTiler's official
   /// TileJSON: `satellite` and `hybrid` serve JPEG tiles, everything else

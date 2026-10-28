@@ -6,7 +6,7 @@ import '../theme/app_theme.dart';
 
 /// What happened after the live-share prompt flow ran.
 enum LiveShareStartResult {
-  /// The user accepted and sharing is now ACTIVE (cloud + SMS).
+  /// The user accepted and local live updates started; see per-channel status.
   started,
 
   /// The user chose "Not now".
@@ -62,9 +62,9 @@ Future<LiveShareStartResult> showLiveSharePrompt(
           const SizedBox(height: 10),
           Text(
             hasContact
-                ? 'While you navigate, $contactLabel will receive your '
-                    'coordinates and a live map link by SMS, and your '
-                    'position will keep updating in this app. With internet '
+                ? 'While you navigate, Tourism will try to send $contactLabel '
+                    'your coordinates and a map link by SMS. The banner shows '
+                    'queued, not delivered, status and cloud availability. With internet '
                     'on, your WhatsApp chat also opens automatically with '
                     'the message ready — just press send. You can stop '
                     'sharing any time.'
@@ -116,9 +116,9 @@ Future<LiveShareStartResult> showLiveSharePrompt(
     c.liveLocationShare.recordHistoryEvent(
       'Live location sharing started',
       destinationName != null
-          ? 'Your live location is being shared while you navigate to '
-              '$destinationName.'
-          : 'Your live location is being shared with your SOS contact.',
+          ? 'Automatic live updates started for navigation to '
+              '$destinationName. SMS delivery is not confirmed.'
+          : 'Automatic live updates started. SMS delivery is not confirmed.',
     );
     return LiveShareStartResult.started;
   }

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yatrawise/features/digital_twin/digital_twin_engine.dart';
+import 'package:tourism/features/digital_twin/digital_twin_engine.dart';
 
 TwinSimulationInput input({
   TwinCrowdScenario crowd = TwinCrowdScenario.normal,
