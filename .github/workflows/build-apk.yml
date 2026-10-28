@@ -99,16 +99,26 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+          sections = []
           for name in ('analyze.log', 'test.log'):
               p = Path(name)
               if not p.exists():
                   continue
-              lines = p.read_text(errors='replace').splitlines()
-              issues = [line for line in lines if 'error •' in line or 'warning •' in line or '[E]' in line or 'Expected:' in line or 'Actual:' in line]
-              selected = issues[:60] if issues else lines[-60:]
-              for line in selected:
-                  safe = line.replace('%', '%25').replace('\r', '%0D')
-                  print(f'::error title=Flutter diagnostic::{safe}')
+              text = re.sub(r'\x1b\[[0-9;]*m', '', p.read_text(errors='replace'))
+              lines = text.splitlines()
+              markers = ('error •', 'warning •', '[E]', 'Expected:', 'Actual:', 'Test failed', 'EXCEPTION', 'Incorrect use of ParentDataWidget')
+              indexes = [i for i, line in enumerate(lines) if any(marker in line for marker in markers)]
+              if indexes:
+                  start = max(0, indexes[0] - 8)
+                  selected = lines[start:start + 220]
+              else:
+                  selected = lines[-100:]
+              sections.append(f'--- {name} ---\n' + '\n'.join(selected))
+          payload = '\n'.join(sections) or 'No Flutter diagnostic log was produced.'
+          for index in range(0, min(len(payload), 24000), 3000):
+              safe = payload[index:index + 3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Flutter diagnostic::{safe}')
           PY
 
   build-debug:
