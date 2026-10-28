@@ -49,8 +49,7 @@ class FavoritesStore {
       if (decoded is! List) return <Place>[];
       return decoded
           .whereType<Map>()
-          .map((entry) => Place.fromJson(
-              Map<String, dynamic>.from(entry as Map)))
+          .map((entry) => Place.fromJson(Map<String, dynamic>.from(entry)))
           .toList();
     } catch (_) {
       return <Place>[];

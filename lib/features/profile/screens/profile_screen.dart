@@ -172,7 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
               cloudDeleted
                   ? 'Cloud account deletion succeeded, but local temporary cleanup '

@@ -53,8 +53,13 @@ jobs:
           from pathlib import Path
           p = Path('rules-emulator.log')
           lines = p.read_text(errors='replace').splitlines() if p.exists() else ['No emulator log was produced.']
-          for line in lines[-70:]:
-              safe = line.replace('%', '%25').replace('\r', '%0D')
+          markers = ('not ok', 'error:', 'expected:', 'actual:', 'failureType:', 'FirebaseError', 'PERMISSION', 'ERR_')
+          selected = [line for line in lines if any(marker in line for marker in markers)]
+          if not selected:
+              selected = lines[-80:]
+          payload = '\n'.join(selected)
+          for index in range(0, min(len(payload), 12000), 3000):
+              safe = payload[index:index + 3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error title=rules diagnostic::{safe}')
           PY
 
