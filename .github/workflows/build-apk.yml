@@ -146,16 +146,15 @@ jobs:
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
           MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
-          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           defines=()
           if [ -n "${MAPTILER_API_KEY:-}" ]; then
             defines+=("--dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY")
           fi
-          if [ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
-            defines+=("--dart-define=GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID")
-          fi
+          # Use the verified public Web client from AppConfig. A stale hidden
+          # CI override can otherwise produce Google error 10 even when the
+          # APK's package/SHA registration is correct.
           set -o pipefail
           flutter build apk --debug \
             --build-number='${{ github.run_number }}' "${defines[@]}" 2>&1 | tee build-debug.log
@@ -276,16 +275,14 @@ jobs:
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
           MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
-          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           defines=()
           if [ -n "${MAPTILER_API_KEY:-}" ]; then
             defines+=("--dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY")
           fi
-          if [ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]; then
-            defines+=("--dart-define=GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID")
-          fi
+          # Keep release OAuth identity aligned with the verified public Web
+          # client in AppConfig rather than an unreviewed hidden override.
           set -o pipefail
           flutter build apk --release --split-per-abi \
             --build-number='${{ github.run_number }}' "${defines[@]}" 2>&1 | tee build-release.log
