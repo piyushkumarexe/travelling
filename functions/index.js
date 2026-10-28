@@ -1,916 +1,465 @@
-/* YatraWise secure backend — all third-party secrets stay server-side.
- * Each endpoint is a v2 onRequest export; the export name is the URL path. */
 'use strict';
 
-const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const {onRequest} = require('firebase-functions/v2/https');
+const {defineSecret} = require('firebase-functions/params');
+
+const {HttpError, requiredEnv, makeHandler, requireUid, fetchJson} = require('./lib/http');
+const v = require('./lib/validation');
+const {chatComplete, chatJson} = require('./lib/ai');
+const {createRateLimiter} = require('./lib/rate_limit');
+const {deleteAccount} = require('./lib/account');
 
 admin.initializeApp();
 
-const REGION = process.env.GOOGLE_FUNCTION_REGION || 'us-central1';
-const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const OWM_URL = 'https://api.openweathermap.org/data/2.5';
+const REGION = process.env.FUNCTION_REGION || 'us-central1';
+const NVIDIA_API_KEY = defineSecret('NVIDIA_API_KEY');
+const OPENWEATHER_API_KEY = defineSecret('OPENWEATHER_API_KEY');
+const GOOGLE_MAPS_API_KEY = defineSecret('GOOGLE_MAPS_API_KEY');
+const getUid = requireUid(admin);
+const rateLimit = createRateLimiter(admin);
 const PLACES_URL = 'https://maps.googleapis.com/maps/api/place';
+const OWM_URL = 'https://api.openweathermap.org/data/2.5';
+const CATEGORIES = ['harassment', 'theft', 'assault', 'accident', 'unsafe_area', 'medical', 'lost', 'fraud', 'other'];
+const SEVERITIES = ['low', 'medium', 'high', 'critical'];
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'content-type, authorization, x-firebase-token, x-goog-api-key',
-};
-
-class HttpError extends Error {
-  constructor(status, message, kind) {
-    super(message);
-    this.status = status;
-    this.kind = kind || 'upstream';
-  }
+function endpoint(name, handler, options = {}) {
+  return onRequest({
+    region: REGION,
+    timeoutSeconds: options.timeoutSeconds || 30,
+    memory: options.memory || '256MiB',
+    secrets: options.secrets || [],
+  }, makeHandler(name, handler, {methods: options.methods}));
 }
 
-const MAX_BODY = 100 * 1024;
-
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = '';
-    let size = 0;
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY) {
-        reject(new HttpError(413, 'Request body too large.', 'validation'));
-        req.destroy();
-        return;
-      }
-      raw += chunk;
-    });
-    req.on('end', () => {
-      if (!raw) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch (_) {
-        reject(new HttpError(400, 'Invalid JSON body.', 'validation'));
-      }
-    });
-    req.on('error', (e) => reject(e));
-  });
+async function authenticated(req, bucket) {
+  const uid = await getUid(req);
+  await rateLimit(uid, bucket);
+  return uid;
 }
 
-async function getUid(req) {
-  const header = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!header) return null;
-  try {
-    const decoded = await admin.auth().verifyIdToken(header);
-    return decoded.uid;
-  } catch (_) {
-    return null;
-  }
+function googleKey() {
+  return requiredEnv('GOOGLE_MAPS_API_KEY');
 }
 
-const LIMITS = {
-  chat: 10,
-  itinerary: 5,
-  incidentAnalyze: 5,
-  weatherCurrent: 20,
-  weatherForecast: 20,
-  placesSearch: 30,
-  placesDetails: 30,
-  placesPhoto: 30,
-  emergencyNearby: 10,
-  route: 20,
-  geocodeReverse: 20,
-};
-
-/** Per-uid, per-endpoint, per-minute rate limit (Firestore-backed). */
-async function rateLimit(uid, endpoint) {
-  const limit = LIMITS[endpoint];
-  if (!limit) return;
-  if (!uid) {
-    throw new HttpError(429, 'Too many requests from this device. Try again shortly.', 'rate');
-  }
-  const minute = Math.floor(Date.now() / 60000);
-  const ref = admin
-    .firestore()
-    .collection('rateLimits')
-    .doc(`${uid}:${endpoint}:${minute}`);
-  await admin.firestore().runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const count = (snap.exists ? snap.data().count : 0) + 1;
-    if (count > limit) {
-      throw new HttpError(
-        429,
-        'Rate limit exceeded for this action. Please wait a minute and try again.',
-        'rate',
-      );
-    }
-    if (snap.exists) {
-      tx.update(ref, { count });
-    } else {
-      tx.set(ref, { count, expiresAt: admin.firestore.FieldValue.serverTimestamp() });
-    }
-  });
-}
-
-function requireFiniteNumber(value, field, min, max) {
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  if (typeof n !== 'number' || !Number.isFinite(n) || n < min || n > max) {
-    throw new HttpError(400, `Invalid value for "${field}".`, 'validation');
-  }
-  return n;
-}
-
-function requireText(value, field, min, max) {
-  const s = typeof value === 'string' ? value.trim() : '';
-  if (s.length < min || s.length > max) {
-    throw new HttpError(400, `Invalid or missing "${field}".`, 'validation');
-  }
-  return s;
+function weatherKey() {
+  return requiredEnv('OPENWEATHER_API_KEY');
 }
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Google encoded polyline -> [{lat,lng}...] (decoded server-side so the
- * client never has to decode polylines). Downsamples to `maxPoints`. */
-function decodePolyline(encoded, maxPoints) {
+function decodePolyline(encoded, maxPoints = 250) {
   const points = [];
   let index = 0;
   let lat = 0;
   let lng = 0;
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dLat = result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-    const dLng = result & 1 ? ~(result >> 1) : result >> 1;
-    lat += dLat;
-    lng += dLng;
-    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  if (maxPoints && points.length > maxPoints) {
-    const step = (points.length - 1) / (maxPoints - 1);
-    const out = [];
-    for (let i = 0; i < maxPoints; i++) {
-      out.push(points[Math.round(i * step)]);
+  while (index < encoded.length && points.length < maxPoints) {
+    for (const target of ['lat', 'lng']) {
+      let shift = 0;
+      let result = 0;
+      let byte;
+      do {
+        if (index >= encoded.length) return points;
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20 && shift < 30);
+      const delta = (result & 1) ? ~(result >> 1) : (result >> 1);
+      if (target === 'lat') lat += delta;
+      else lng += delta;
     }
-    return out;
+    points.push({lat: lat / 1e5, lng: lng / 1e5});
   }
   return points;
 }
 
-/** Runs an endpoint handler with uniform CORS + error mapping. */
-function makeHandler(fn) {
-  return async (req, res) => {
-    res.set(CORS);
-    if (req.method === 'OPTIONS') {
-      res.status(204).end();
-      return;
-    }
-    try {
-      await fn(req, res);
-    } catch (e) {
-      if (e instanceof HttpError) {
-        res.status(e.status).json({ error: e.message, kind: e.kind });
-      } else {
-        console.error('[yatrawise] unexpected error:', e);
-        res.status(500).json({
-          error: 'Internal server error.',
-          kind: 'internal',
-        });
-      }
-    }
+/* ---------------------------------- AI --------------------------------- */
+
+exports.chat = endpoint('chat', async (req, res, body) => {
+  await authenticated(req, 'chat');
+  const messages = v.chatMessages(body.messages);
+  const locationLabel = v.optionalText(body.locationLabel, 'locationLabel', 200);
+  const profileContext = v.optionalText(body.profileContext, 'profileContext', 400);
+  let system = 'You are Tourism, a travel and personal-safety assistant. ' +
+    'Give practical, location-aware advice in under 250 words. Never invent precise ' +
+    'facts or claim that authorities/emergency services were contacted. Say when ' +
+    'information needs verification. For immediate danger, advise local emergency services.';
+  if (locationLabel) system += ` Traveller location context: ${locationLabel}.`;
+  if (profileContext) system += ` Traveller preferences: ${profileContext}.`;
+  const reply = await chatComplete([{role: 'system', content: system}, ...messages], {maxTokens: 700});
+  res.status(200).json({reply});
+}, {secrets: [NVIDIA_API_KEY], timeoutSeconds: 60, memory: '512MiB'});
+
+exports.itinerary = endpoint('itinerary', async (req, res, body) => {
+  await authenticated(req, 'itinerary');
+  const destination = v.text(body.destination, 'destination', 120, {min: 2});
+  const days = v.integer(body.days, 'days', 1, 10);
+  const interests = v.stringList(body.interests, 'interests', 10, 60, {required: false});
+  const budget = v.oneOf(body.budget, 'budget', ['low', 'mid', 'high', 'budget', 'moderate', 'luxury']);
+  const travelStyle = v.text(body.travelStyle, 'travelStyle', 40, {min: 2});
+  const prompt = `Create a realistic ${days}-day travel itinerary for ${destination}. ` +
+    `Interests: ${interests.length ? interests.join(', ') : 'general sightseeing'}. ` +
+    `Budget: ${budget}. Pace: ${travelStyle}. Use real attractions but do not invent ` +
+    'opening hours, prices or bookings. Return ONLY JSON with schema ' +
+    '{"plan":[{"day":1,"title":"...","items":[{"time":"HH:MM","title":"...",' +
+    '"description":"1-2 sentences","cost":"unknown or approximate"}]}]}. ' +
+    `Include 3-6 items for each of ${days} days. No markdown or extra keys.`;
+  const parsed = await chatJson([
+    {role: 'system', content: 'You are a meticulous travel planner that outputs strict JSON only.'},
+    {role: 'user', content: prompt},
+  ], {maxTokens: 3000, temperature: 0.2});
+  const rawPlan = Array.isArray(parsed.plan) ? parsed.plan : [];
+  const plan = [];
+  for (const day of rawPlan.slice(0, days)) {
+    if (!day || !Array.isArray(day.items)) continue;
+    const items = day.items.slice(0, 8).map((item) => ({
+      time: typeof item?.time === 'string' ? item.time.trim().slice(0, 8) : '',
+      title: typeof item?.title === 'string' ? item.title.trim().slice(0, 140) : '',
+      description: typeof item?.description === 'string' ? item.description.trim().slice(0, 400) : '',
+      cost: typeof item?.cost === 'string' ? item.cost.trim().slice(0, 60) : '',
+    })).filter((item) => item.title);
+    if (!items.length) continue;
+    plan.push({
+      day: plan.length + 1,
+      title: typeof day.title === 'string' ? day.title.trim().slice(0, 120) : `Day ${plan.length + 1}`,
+      items,
+    });
+  }
+  if (plan.length !== days) {
+    throw new HttpError(502, 'The AI returned an incomplete itinerary. Please regenerate.', 'incomplete_ai_response');
+  }
+  res.status(200).json({plan});
+}, {secrets: [NVIDIA_API_KEY], timeoutSeconds: 90, memory: '512MiB'});
+
+exports.incidentAnalyze = endpoint('incidentAnalyze', async (req, res, body) => {
+  await authenticated(req, 'incidentAnalyze');
+  const description = v.text(body.description, 'description', 2000, {min: 10});
+  const locationLabel = v.optionalText(body.locationLabel, 'locationLabel', 200);
+  const hasPhoto = body.hasPhoto === undefined ? false : v.bool(body.hasPhoto, 'hasPhoto');
+  const hasVideo = body.hasVideo === undefined ? false : v.bool(body.hasVideo, 'hasVideo');
+  const prompt = 'Triaging a traveller incident report. Description: """' + description + '""" ' +
+    (locationLabel ? `Location context: ${locationLabel}. ` : '') +
+    `Evidence attached: ${[hasPhoto ? 'photo' : null, hasVideo ? 'video' : null].filter(Boolean).join(' + ') || 'none'}. ` +
+    'Return ONLY JSON with category, severity, summary and recommendedAction. ' +
+    `category must be one of ${CATEGORIES.join('|')}; severity one of ${SEVERITIES.join('|')}. ` +
+    'Be neutral and factual. Never claim authorities or emergency services were notified.';
+  const parsed = await chatJson([
+    {role: 'system', content: 'You output strict JSON only.'},
+    {role: 'user', content: prompt},
+  ], {maxTokens: 600, temperature: 0.1});
+  const category = CATEGORIES.includes(parsed.category) ? parsed.category : 'other';
+  const severity = SEVERITIES.includes(parsed.severity) ? parsed.severity : 'medium';
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim().slice(0, 500) : '';
+  const recommendedAction = typeof parsed.recommendedAction === 'string' ? parsed.recommendedAction.trim().slice(0, 500) : '';
+  if (!summary || !recommendedAction) {
+    throw new HttpError(502, 'The AI triage response was incomplete. Please retry.', 'incomplete_ai_response');
+  }
+  res.status(200).json({category, severity, summary, recommendedAction});
+}, {secrets: [NVIDIA_API_KEY], timeoutSeconds: 60, memory: '512MiB'});
+
+/* -------------------------------- Weather ------------------------------- */
+
+function weatherConditionLabel(value) {
+  const description = typeof value?.description === 'string' ? value.description : 'Unknown';
+  return description.charAt(0).toUpperCase() + description.slice(1);
+}
+
+async function weatherRequest(path, lat, lng) {
+  const data = await fetchJson(`${OWM_URL}/${path}?lat=${lat}&lon=${lng}&units=metric&appid=${encodeURIComponent(weatherKey())}`);
+  if (String(data.cod) !== '200') {
+    throw new HttpError(502, 'No weather data is available for this location.', 'upstream_error');
+  }
+  return data;
+}
+
+exports.weatherCurrent = endpoint('weatherCurrent', async (req, res, body) => {
+  await authenticated(req, 'weatherCurrent');
+  const {lat, lng} = v.coordinates(body);
+  const data = await weatherRequest('weather', lat, lng);
+  if (!data.main || !Array.isArray(data.weather) || !data.weather.length) {
+    throw new HttpError(502, 'The weather response was incomplete.', 'upstream_error');
+  }
+  res.status(200).json({current: {
+    tempC: data.main.temp,
+    feelsLikeC: data.main.feels_like,
+    humidityPct: data.main.humidity,
+    windMs: data.wind?.speed || 0,
+    windDeg: data.wind?.deg || 0,
+    condition: weatherConditionLabel(data.weather[0]),
+    icon: data.weather[0]?.icon || '01d',
+    pressureHpa: data.main.pressure,
+    visibilityM: data.visibility || 0,
+    updatedAt: new Date((data.dt || Date.now() / 1000) * 1000).toISOString(),
+  }});
+}, {secrets: [OPENWEATHER_API_KEY]});
+
+exports.weatherForecast = endpoint('weatherForecast', async (req, res, body) => {
+  await authenticated(req, 'weatherForecast');
+  const {lat, lng} = v.coordinates(body);
+  const data = await weatherRequest('forecast', lat, lng);
+  if (!Array.isArray(data.list) || !data.list.length) {
+    throw new HttpError(502, 'No forecast data is available for this location.', 'upstream_error');
+  }
+  const byDay = new Map();
+  for (const item of data.list.slice(0, 40)) {
+    const key = String(item.dt_txt || '').slice(0, 10);
+    if (!key || !item.main) continue;
+    const current = byDay.get(key) || {
+      date: `${key}T12:00:00.000Z`,
+      tempMaxC: -Infinity,
+      tempMinC: Infinity,
+      condition: weatherConditionLabel(item.weather?.[0]),
+      icon: item.weather?.[0]?.icon || '01d',
+      precipChancePct: 0,
+    };
+    current.tempMaxC = Math.max(current.tempMaxC, item.main.temp_max ?? item.main.temp);
+    current.tempMinC = Math.min(current.tempMinC, item.main.temp_min ?? item.main.temp);
+    current.precipChancePct = Math.max(current.precipChancePct, Math.round((item.pop || 0) * 100));
+    byDay.set(key, current);
+  }
+  res.status(200).json({days: Array.from(byDay.values()).slice(0, 5)});
+}, {secrets: [OPENWEATHER_API_KEY]});
+
+/* ------------------------------ Google Places --------------------------- */
+
+function functionBaseUrl(req) {
+  const project = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '';
+  if (project) return `https://${REGION}-${project}.cloudfunctions.net`;
+  const host = req.headers.host || '';
+  if (/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) return `http://${host}`;
+  throw new HttpError(500, 'The backend URL is not configured.', 'configuration_error');
+}
+
+function mapPlace(raw, base) {
+  const location = raw?.geometry?.location;
+  const lat = typeof location?.lat === 'function' ? location.lat() : location?.lat;
+  const lng = typeof location?.lng === 'function' ? location.lng() : location?.lng;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const photos = Array.isArray(raw.photos) ? raw.photos.slice(0, 3).map((photo) => {
+    const reference = photo.photo_reference || photo.photoReference || '';
+    return reference ? `${base}/placesPhoto?photoreference=${encodeURIComponent(reference)}&maxwidth=1200` : null;
+  }).filter(Boolean) : [];
+  const hours = raw.opening_hours || raw.open_hours;
+  return {
+    placeId: raw.place_id || raw.placeId || '',
+    name: typeof raw.name === 'string' ? raw.name.slice(0, 200) : 'Unknown place',
+    lat,
+    lng,
+    address: raw.formatted_address || raw.vicinity || raw.formattedAddress || null,
+    rating: typeof raw.rating === 'number' ? raw.rating : null,
+    userRatingCount: typeof raw.user_ratings_total === 'number' ? raw.user_ratings_total : null,
+    primaryType: Array.isArray(raw.types) && raw.types.length ? raw.types[0] : null,
+    types: Array.isArray(raw.types) ? raw.types.filter((type) => typeof type === 'string').slice(0, 10) : [],
+    photoUrls: photos,
+    phone: raw.formatted_phone_number || raw.international_phone_number || raw.formattedPhoneNumber || null,
+    website: raw.website || null,
+    priceLevel: typeof raw.price_level === 'number' ? raw.price_level : null,
+    openNow: typeof hours?.open_now === 'boolean' ? hours.open_now : null,
+    provider: 'google',
   };
 }
 
-function env(name) {
-  const v = process.env[name];
-  if (!v) {
-    throw new HttpError(
-      500,
-      `Backend is missing the ${name} configuration. Ask your admin.`,
-      'config',
-    );
+async function googlePlacesSearch(body, req) {
+  const query = v.optionalText(body.query, 'query', 120);
+  const hasLocation = body.location && typeof body.location === 'object' && !Array.isArray(body.location);
+  const lat = hasLocation ? v.finiteNumber(body.location.lat, 'location.lat', -90, 90) : null;
+  const lng = hasLocation ? v.finiteNumber(body.location.lng, 'location.lng', -180, 180) : null;
+  const types = v.stringList(body.types, 'types', 3, 50, {required: false})
+    .map((type) => {
+      if (!/^[a-z_]+$/.test(type)) throw new HttpError(400, 'types contains an unsupported value.', 'invalid_argument');
+      return type;
+    });
+  const radius = body.radiusMeters === undefined ? (hasLocation ? 25000 : null) :
+    v.integer(body.radiusMeters, 'radiusMeters', 100, 50000);
+  if (!query && !(hasLocation && types.length)) {
+    throw new HttpError(400, 'Provide a query, or location and types.', 'invalid_argument');
   }
-  return v;
+  const params = [];
+  if (query) {
+    params.push(`query=${encodeURIComponent(query)}`);
+    if (hasLocation) {
+      params.push(`location=${lat.toFixed(6)},${lng.toFixed(6)}`, `radius=${radius}`);
+      if (types.length === 1) params.push(`type=${types[0]}`);
+    }
+  } else {
+    params.push(`location=${lat.toFixed(6)},${lng.toFixed(6)}`, `radius=${radius}`, `type=${types[0]}`);
+    if (types.length > 1) params.push(`keyword=${encodeURIComponent(types.slice(1).join(' '))}`);
+  }
+  const path = query ? 'textsearch' : 'nearbysearch';
+  const data = await fetchJson(`${PLACES_URL}/${path}/json?${params.join('&')}&key=${encodeURIComponent(googleKey())}`);
+  if (data.status === 'ZERO_RESULTS') return [];
+  if (data.status !== 'OK' || !Array.isArray(data.results)) {
+    throw new HttpError(502, 'Places search is temporarily unavailable.', 'upstream_error');
+  }
+  let places = data.results.slice(0, 30).map((place) => mapPlace(place, functionBaseUrl(req))).filter(Boolean);
+  if (hasLocation) {
+    places = places.map((place) => ({place, distance: haversineMeters(lat, lng, place.lat, place.lng)}))
+      .sort((a, b) => a.distance - b.distance).map((entry) => entry.place);
+  }
+  return places.slice(0, 20);
 }
 
-function googleKey() {
-  return env('GOOGLE_MAPS_API_KEY');
-}
+exports.placesSearch = endpoint('placesSearch', async (req, res, body) => {
+  await authenticated(req, 'placesSearch');
+  res.status(200).json({places: await googlePlacesSearch(body, req)});
+}, {secrets: [GOOGLE_MAPS_API_KEY]});
 
-async function fetchJson(url, opts) {
+exports.placesDetails = endpoint('placesDetails', async (req, res, body) => {
+  await authenticated(req, 'placesDetails');
+  const placeId = v.text(body.placeId, 'placeId', 200);
+  const data = await fetchJson(`${PLACES_URL}/details/json?place_id=${encodeURIComponent(placeId)}` +
+    '&fields=name,formatted_address,geometry,rating,user_ratings_total,types,photos,formatted_phone_number,international_phone_number,website,price_level,opening_hours' +
+    `&key=${encodeURIComponent(googleKey())}`);
+  const place = data.status === 'OK' ? mapPlace(data.result, functionBaseUrl(req)) : null;
+  if (!place) throw new HttpError(404, 'Place details were not found.', 'place_not_found');
+  res.status(200).json({place});
+}, {secrets: [GOOGLE_MAPS_API_KEY]});
+
+exports.placesPhoto = endpoint('placesPhoto', async (req, res) => {
+  await authenticated(req, 'placesPhoto');
+  const reference = v.text(req.query?.photoreference, 'photoreference', 300);
+  const maxwidth = req.query?.maxwidth === undefined ? 1200 : v.integer(Number(req.query.maxwidth), 'maxwidth', 1, 1600);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const resp = await fetch(url, { ...opts, signal: controller.signal });
-    const text = await resp.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (_) {
-      throw new HttpError(502, 'Upstream service returned an invalid response.', 'upstream');
+    const response = await fetch(`${PLACES_URL}/photo?photoreference=${encodeURIComponent(reference)}&maxwidth=${maxwidth}&key=${encodeURIComponent(googleKey())}`, {signal: controller.signal});
+    const contentType = response.headers.get('content-type') || '';
+    const declaredLength = Number(response.headers.get('content-length') || 0);
+    if (!response.ok || !contentType.startsWith('image/') || declaredLength > 8 * 1024 * 1024) {
+      throw new HttpError(502, 'The place photo is unavailable.', 'upstream_error');
     }
-    if (!resp.ok) {
-      if (resp.status === 401 || resp.status === 403) {
-        throw new HttpError(
-          502,
-          `Upstream rejected the request (${resp.status}). Check backend key configuration.`,
-          'upstream',
-        );
-      }
-      const detail = (data && (data.error && data.error.message)) || data.status || '';
-      throw new HttpError(
-        502,
-        `Upstream request failed: ${String(detail).slice(0, 160) || resp.status}`,
-        'upstream',
-      );
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 8 * 1024 * 1024) {
+      throw new HttpError(502, 'The place photo was empty or too large.', 'upstream_error');
     }
-    return data;
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    if (e.name === 'AbortError') {
-      throw new HttpError(504, 'Upstream request timed out.', 'upstream');
-    }
-    throw new HttpError(502, 'Could not reach the upstream service.', 'upstream');
+    res.status(200).set({'Content-Type': contentType, 'Cache-Control': 'private, max-age=86400'}).send(bytes);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, 'The place photo is unavailable.', 'upstream_error');
   } finally {
     clearTimeout(timer);
   }
-}
+}, {secrets: [GOOGLE_MAPS_API_KEY], methods: ['GET', 'POST']});
 
-/* ------------------------------ NVIDIA AI ------------------------------ */
-
-async function nvidiaChat(messages, { jsonMode = false, maxTokens = 1200 } = {}) {
-  const key = env('NVIDIA_API_KEY');
-  const data = await fetchJson(NVIDIA_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: process.env.NVIDIA_MODEL || 'meta/llama3.1-70b-instruct',
-      messages,
-      temperature: 0.6,
-      top_p: 0.9,
-      max_tokens: maxTokens,
-      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-    }),
-  });
-  const content =
-    data && data.choices && data.choices[0] && data.choices[0].message
-      ? data.choices[0].message.content
-      : null;
-  if (!content || !String(content).trim()) {
-    throw new HttpError(502, 'The AI model returned an empty response.', 'upstream');
+exports.emergencyNearby = endpoint('emergencyNearby', async (req, res, body) => {
+  await authenticated(req, 'emergencyNearby');
+  if (!body.location || typeof body.location !== 'object') {
+    throw new HttpError(400, 'location is required.', 'invalid_argument');
   }
-  return String(content);
-}
-
-function parseJsonLoose(text) {
-  let t = String(text).trim();
-  // Strip markdown fences if the model added them despite json mode.
-  if (t.startsWith('```')) {
-    t = t.replace(/^```[a-zA-Z]*\s*/, '').replace(/```\s*$/, '');
-  }
-  const start = t.indexOf('{');
-  const end = t.lastIndexOf('}');
-  if (start >= 0 && end > start) t = t.slice(start, end + 1);
-  return JSON.parse(t);
-}
-
-/* --------------------------- shared validators ------------------------- */
-
-const CATEGORIES = [
-  'theft',
-  'fraud',
-  'assault',
-  'harassment',
-  'accident',
-  'unsafe_area',
-  'poor_infrastructure',
-  'natural_hazard',
-  'other',
-];
-const SEVERITIES = ['low', 'medium', 'high', 'critical'];
-
-function pickEnum(obj, field, allowed, fallback) {
-  const v = typeof obj[field] === 'string' ? obj[field].trim().toLowerCase() : '';
-  return allowed.includes(v) ? v : fallback;
-}
-
-function pickString(obj, field, max) {
-  const v = typeof obj[field] === 'string' ? obj[field].trim() : '';
-  return v.slice(0, max);
-}
-
-/* -------------------------------- /chat -------------------------------- */
-
-exports.chat = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 60, memory: 512 },
-  },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'chat');
-    const body = await readJsonBody(req);
-
-    const messages = Array.isArray(body.messages) ? body.messages : null;
-    if (!messages || messages.length === 0 || messages.length > 40) {
-      throw new HttpError(400, 'Provide 1-40 chat messages.', 'validation');
-    }
-    const clean = [];
-    for (const m of messages) {
-      const role = m && (m.role === 'user' || m.role === 'assistant') ? m.role : null;
-      const content = m && typeof m.content === 'string' ? m.content.trim() : '';
-      if (!role || content.length < 1 || content.length > 2000) {
-        throw new HttpError(400, 'Each message needs role user/assistant and 1-2000 chars.', 'validation');
+  const location = v.coordinates(body.location);
+  const radius = body.radiusMeters === undefined ? 5000 : v.integer(body.radiusMeters, 'radiusMeters', 100, 20000);
+  const types = ['hospital', 'police', 'fire_station'];
+  const results = await Promise.allSettled(types.map((type) => googlePlacesSearch({location, radiusMeters: radius, types: [type]}, req)));
+  const seen = new Set();
+  let places = [];
+  for (const result of results) {
+    if (result.status !== 'fulfilled') continue;
+    for (const place of result.value) {
+      const id = place.placeId || `${place.lat},${place.lng}`;
+      if (!seen.has(id)) {
+        seen.add(id);
+        places.push(place);
       }
-      clean.push({ role, content });
     }
-    if (!clean.some((m) => m.role === 'user')) {
-      throw new HttpError(400, 'At least one user message is required.', 'validation');
-    }
-
-    let system =
-      'You are YatraWise, a smart tourism and personal-safety assistant. ' +
-      'Answer travel questions (attractions, food, transport, itineraries, local tips) ' +
-      'with practical, current, location-aware advice. Keep replies under 250 words, ' +
-      'friendly and specific. If safety is at stake, advise calling local emergency services. ' +
-      'Never invent precise facts you are unsure of; say what is typical and suggest verifying. ';
-    if (typeof body.locationLabel === 'string' && body.locationLabel.trim()) {
-      system += `The traveler is currently in: ${body.locationLabel.slice(0, 200)}. `;
-    }
-    if (typeof body.profileContext === 'string' && body.profileContext.trim()) {
-      system += `Traveler preferences: ${body.profileContext.slice(0, 400)}. `;
-    }
-
-    const reply = await nvidiaChat([
-      { role: 'system', content: system },
-      ...clean,
-    ]);
-    res.status(200).json({ reply: reply.trim() });
-  }),
-);
-
-/* ------------------------------- /itinerary ---------------------------- */
-
-exports.itinerary = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 90, memory: 512 },
-  },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'itinerary');
-    const body = await readJsonBody(req);
-
-    const destination = requireText(body.destination, 'destination', 2, 120);
-    const days =
-      typeof body.days === 'number' && Number.isInteger(body.days) ? body.days : parseInt(body.days, 10);
-    if (!Number.isInteger(days) || days < 1 || days > 10) {
-      throw new HttpError(400, 'days must be an integer between 1 and 10.', 'validation');
-    }
-    const interests = Array.isArray(body.interests)
-      ? body.interests.filter((i) => typeof i === 'string').slice(0, 10).map((i) => i.trim()).filter(Boolean)
-      : [];
-    const budget = requireText(body.budget, 'budget', 2, 40);
-    const style = requireText(body.travelStyle, 'travelStyle', 2, 40);
-
-    const prompt =
-      `Create a realistic ${days}-day travel itinerary for ${destination}. ` +
-      `Traveler interests: ${interests.length ? interests.join(', ') : 'general sightseeing'}. ` +
-      `Budget level: ${budget}. Pace: ${style}. ` +
-      `Respond with ONLY JSON matching exactly this schema: ` +
-      '{"plan":[{"day":1,"items":[{"time":"HH:MM","title":"...","description":"1-2 sentences","cost":"e.g. free, $15, ~₹500"}]}]}. ' +
-      `Include 3-6 items per day with times, covering ${destination}'s real attractions, ` +
-      'food and transport. No markdown, no extra keys.';
-
-    const raw = await nvidiaChat(
-      [
-        { role: 'system', content: 'You are a meticulous travel planner that outputs strict JSON only.' },
-        { role: 'user', content: prompt },
-      ],
-      { jsonMode: true, maxTokens: 2400 },
-    );
-
-    let parsed;
-    try {
-      parsed = parseJsonLoose(raw);
-    } catch (_) {
-      throw new HttpError(502, 'The AI returned a malformed itinerary. Please regenerate.', 'upstream');
-    }
-    const rawPlan = Array.isArray(parsed.plan) ? parsed.plan : [];
-    const plan = [];
-    for (const d of rawPlan.slice(0, 10)) {
-      if (!d || !Array.isArray(d.items)) continue;
-      const items = d.items.slice(0, 10).map((it) => ({
-        time: pickString(it, 'time', 8) || '',
-        title: pickString(it, 'title', 140),
-        description: pickString(it, 'description', 400),
-        cost: pickString(it, 'cost', 60),
-      }));
-      if (items.length === 0) continue;
-      plan.push({
-        day: Number.isFinite(parseInt(d.day, 10)) ? parseInt(d.day, 10) : plan.length + 1,
-        items,
-      });
-    }
-    if (plan.length === 0) {
-      throw new HttpError(502, 'The AI returned an empty itinerary. Please regenerate.', 'upstream');
-    }
-    res.status(200).json({ plan });
-  }),
-);
-
-/* ---------------------------- /incidentAnalyze -------------------------- */
-
-exports.incidentAnalyze = onRequest(
-  {
-    region: REGION,
-    runtimeOptions: { timeoutSeconds: 60, memory: 512 },
-  },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'incidentAnalyze');
-    const body = await readJsonBody(req);
-
-    const description = requireText(body.description, 'description', 10, 2000);
-    const locationLabel =
-      typeof body.locationLabel === 'string' && body.locationLabel.trim()
-        ? body.locationLabel.trim().slice(0, 200)
-        : null;
-    const hasPhoto = body.hasPhoto === true;
-    const hasVideo = body.hasVideo === true;
-
-    const prompt =
-      `You are a security analyst triaging a traveler's incident report. ` +
-      `Description: """${description}""" ` +
-      (locationLabel ? `Location: ${locationLabel}. ` : '') +
-      `Attached evidence: ${[hasPhoto ? 'photo' : null, hasVideo ? 'video' : null].filter(Boolean).join(' + ') || 'none'}. ` +
-      'Respond with ONLY JSON: ' +
-      '{"category":"one of ' +
-      CATEGORIES.join('|') +
-      '","severity":"one of ' +
-      SEVERITIES.join('|') +
-      '","summary":"1-2 sentence neutral summary","recommendedAction":"1-2 concrete safety actions for the traveler"}. ' +
-      'Do not claim authorities were notified. Be factual.';
-
-    const raw = await nvidiaChat(
-      [
-        { role: 'system', content: 'You output strict JSON only.' },
-        { role: 'user', content: prompt },
-      ],
-      { jsonMode: true, maxTokens: 600 },
-    );
-    let parsed;
-    try {
-      parsed = parseJsonLoose(raw);
-    } catch (_) {
-      throw new HttpError(502, 'The AI triage failed. Please retry.', 'upstream');
-    }
-    res.status(200).json({
-      category: pickEnum(parsed, 'category', CATEGORIES, 'other'),
-      severity: pickEnum(parsed, 'severity', SEVERITIES, 'medium'),
-      summary: pickString(parsed, 'summary', 500),
-      recommendedAction: pickString(parsed, 'recommendedAction', 500),
-    });
-  }),
-);
-
-/* ------------------------------- OpenWeather ---------------------------- */
-
-function ownKey() {
-  return env('OPENWEATHER_API_KEY');
-}
-
-function weatherConditionLabel(d) {
-  const desc = typeof d.description === 'string' ? d.description : 'Unknown';
-  return desc.charAt(0).toUpperCase() + desc.slice(1);
-}
-
-exports.weatherCurrent = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'weatherCurrent');
-    const body = await readJsonBody(req);
-    const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
-    const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);
-
-    const d = await fetchJson(
-      `${OWM_URL}/weather?lat=${lat}&lon=${lng}&units=metric&appid=${ownKey()}`,
-    );
-    if (d.cod !== 200 || !d.main || !Array.isArray(d.weather) || d.weather.length === 0) {
-      throw new HttpError(502, `No weather data for this location (${d.message || d.cod || 'unknown'}).`, 'upstream');
-    }
-    res.status(200).json({
-      current: {
-        tempC: d.main.temp,
-        feelsLikeC: d.main.feels_like,
-        humidityPct: d.main.humidity,
-        windMs: (d.wind && d.wind.speed) || 0,
-        windDeg: (d.wind && d.wind.deg) || 0,
-        condition: weatherConditionLabel(d.weather[0]),
-        icon: (d.weather[0] && d.weather[0].icon) || '01d',
-        pressureHpa: d.main.pressure,
-        visibilityM: d.visibility || 0,
-        updatedAt: new Date((d.dt || Date.now() / 1000) * 1000).toISOString(),
-      },
-    });
-  }),
-);
-
-exports.weatherForecast = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'weatherForecast');
-    const body = await readJsonBody(req);
-    const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
-    const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);
-
-    const d = await fetchJson(
-      `${OWM_URL}/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${ownKey()}`,
-    );
-    if (d.cod !== 200 || !Array.isArray(d.list) || d.list.length === 0) {
-      throw new HttpError(502, 'No forecast data for this location.', 'upstream');
-    }
-    const byDay = new Map();
-    for (const item of d.list) {
-      const key = String(item.dt_txt || '').slice(0, 10);
-      if (!key) continue;
-      const cur = byDay.get(key) || {
-        date: `${key}T12:00:00.000Z`,
-        tempMaxC: -Infinity,
-        tempMinC: Infinity,
-        condition: weatherConditionLabel(item.weather && item.weather[0] ? item.weather[0] : {}),
-        icon: (item.weather && item.weather[0] && item.weather[0].icon) || '01d',
-        precipChancePct: 0,
-      };
-      cur.tempMaxC = Math.max(cur.tempMaxC, item.main && item.main.temp_max !== undefined ? item.main.temp_max : item.main.temp);
-      cur.tempMinC = Math.min(cur.tempMinC, item.main && item.main.temp_min !== undefined ? item.main.temp_min : item.main.temp);
-      cur.precipChancePct = Math.max(cur.precipChancePct, Math.round((item.pop || 0) * 100));
-      byDay.set(key, cur);
-    }
-    const days = Array.from(byDay.values()).slice(0, 5).map((x) => ({
-      date: x.date,
-      tempMaxC: x.tempMaxC,
-      tempMinC: x.tempMinC,
-      condition: x.condition,
-      icon: x.icon,
-      precipChancePct: x.precipChancePct,
-    }));
-    res.status(200).json({ days });
-  }),
-);
-
-/* -------------------------- Google Places (legacy) ---------------------- */
-
-function functionBaseUrl(req) {
-  const host = req && req.headers && req.headers.host;
-  if (host) return `https://${host}/functions/v2`;
-  const project =
-    process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '';
-  if (project) return `https://${REGION}-${project}.cloudfunctions.net`;
-  throw new HttpError(
-    500,
-    'Backend cannot determine its function URL (missing project context).',
-    'config',
-  );
-}
-
-function mapPlace(r, base) {
-  if (!r || typeof r !== 'object') return null;
-  const loc = r.geometry && r.geometry.location ? r.geometry.location : null;
-  if (!loc) return null;
-  const photos = Array.isArray(r.photos)
-    ? r.photos.slice(0, 3).map((p) =>
-        `${base}/placesPhoto?photoreference=${encodeURIComponent(p.photo_reference || '')}&maxwidth=1200`)
-    : [];
-  const openHours = r.open_hours || r.opening_hours || null;
-  return {
-    placeId: r.place_id || '',
-    name: r.name || 'Unknown place',
-    lat: loc.lat,
-    lng: loc.lng,
-    address: r.formatted_address || null,
-    rating: typeof r.rating === 'number' ? r.rating : null,
-    userRatingCount: typeof r.user_ratings_total === 'number' ? r.user_ratings_total : null,
-    primaryType: Array.isArray(r.types) && r.types.length ? r.types[0] : null,
-    types: Array.isArray(r.types) ? r.types.slice(0, 10) : [],
-    photoUrls: photos,
-    phone: r.formatted_phone_number || r.international_phone_number || null,
-    website: r.website || null,
-    priceLevel: typeof r.price_level === 'number' ? r.price_level : null,
-    openNow:
-      typeof r.open_now === 'boolean'
-        ? r.open_now
-        : openHours && typeof openHours.open_now === 'boolean'
-          ? openHours.open_now
-          : null,
-  };
-}
-
-async function googlePlacesSearch(body) {
-  const key = googleKey();
-  const query =
-    body.query && String(body.query).trim()
-      ? String(body.query).trim().slice(0, 120)
-      : '';
-  const hasLoc =
-    body.location &&
-    Number.isFinite(body.location.lat) &&
-    Number.isFinite(body.location.lng);
-  const hasTypes = Array.isArray(body.types) && body.types.length > 0;
-  let url;
-  let params;
-  if (hasLoc && hasTypes) {
-    const radius =
-      body.radiusMeters && Number.isFinite(body.radiusMeters)
-        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-        : 5000;
-    params = [
-      `location=${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}`,
-      `radius=${radius}`,
-      `type=${encodeURIComponent(body.types.slice(0, 5).join('|'))}`,
-    ];
-    url = `${PLACES_URL}/nearbysearchjson?${params.join('&')}`;
-  } else {
-    params = [
-      `input=${encodeURIComponent(query)}`,
-      'inputtype=textquery',
-    ];
-    if (hasLoc) {
-      const radius =
-        body.radiusMeters && Number.isFinite(body.radiusMeters)
-          ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 50000)
-          : 5000;
-      params.push(
-        `locationbias=point:${body.location.lat.toFixed(6)},${body.location.lng.toFixed(6)}|circle:${radius}m`,
-      );
-    }
-    url = `${PLACES_URL}/findplacefromtext/json?${params.join('&')}`;
   }
-  url += `&key=${encodeURIComponent(key)}`;
-  const d = await fetchJson(url);
-  if (d.status === 'ZERO_RESULTS') return [];
-  if (d.status !== 'OK' && d.status !== 'ZERO_RESULTS') {
-    throw new HttpError(502, `Places search failed: ${d.status}${d.error_message ? ' — ' + d.error_message : ''}`.slice(0, 200), 'upstream');
+  if (results.every((result) => result.status === 'rejected')) {
+    throw new HttpError(502, 'Emergency-place search is temporarily unavailable.', 'upstream_error');
   }
-  return (Array.isArray(d.results) ? d.results : [])
-    .slice(0, 20)
-    .map((r) => mapPlace(r, functionBaseUrl({})))
-    .filter(Boolean);
-}
+  places = places.map((place) => ({place, distance: haversineMeters(location.lat, location.lng, place.lat, place.lng)}))
+    .sort((a, b) => a.distance - b.distance).slice(0, 20).map((entry) => entry.place);
+  res.status(200).json({places, partial: results.some((result) => result.status === 'rejected')});
+}, {secrets: [GOOGLE_MAPS_API_KEY], timeoutSeconds: 45});
 
-exports.placesSearch = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'placesSearch');
-    const body = await readJsonBody(req);
-    if (!body.query && !(body.location && Array.isArray(body.types))) {
-      throw new HttpError(400, 'Provide a query (or location + types).', 'validation');
-    }
-    const places = await googlePlacesSearch(body);
-    res.status(200).json({ places });
-  }),
-);
-
-exports.placesDetails = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'placesDetails');
-    const body = await readJsonBody(req);
-    const placeId = requireText(body.placeId, 'placeId', 1, 200);
-    const key = googleKey();
-    const d = await fetchJson(
-      `${PLACES_URL}/details/json?place_id=${encodeURIComponent(placeId)}` +
-        `&fields=name,formatted_address,geometry,rating,user_ratings_total,types,photos,formatted_phone_number,international_phone_number,website,price_level,open_hours,status&key=${encodeURIComponent(key)}`,
-    );
-    if (d.status !== 'OK' || !d.result) {
-      throw new HttpError(404, `Place not found (${d.status || 'unknown'}).`, 'upstream');
-    }
-    res.status(200).json({ place: mapPlace(d.result, functionBaseUrl(req)) });
-  }),
-);
-
-exports.placesPhoto = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'GET' && req.method !== 'POST') {
-      throw new HttpError(405, 'Method not allowed.', 'validation');
-    }
-    const uid = await getUid(req);
-    await rateLimit(uid, 'placesPhoto');
-    const ref = requireText(req.query && req.query.photoreference, 'photoreference', 1, 300);
-    const maxwidth = Math.min(
-      Math.max(parseInt(req.query && req.query.maxwidth, 10) || 1200, 1),
-      1600,
-    );
-    const key = googleKey();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
-    try {
-      const resp = await fetch(
-        `${PLACES_URL}/photo?photoreference=${encodeURIComponent(ref)}&maxwidth=${maxwidth}&key=${encodeURIComponent(key)}`,
-        { signal: controller.signal },
-      );
-      if (!resp.ok) {
-        throw new HttpError(502, 'Could not fetch the place photo.', 'upstream');
-      }
-      const bytes = Buffer.from(await resp.arrayBuffer());
-      res
-        .status(200)
-        .set({ 'Content-Type': resp.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'public, max-age=86400' })
-        .send(bytes);
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      throw new HttpError(502, 'Could not fetch the place photo.', 'upstream');
-    } finally {
-      clearTimeout(timer);
-    }
-  }),
-);
-
-exports.emergencyNearby = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'emergencyNearby');
-    const body = await readJsonBody(req);
-    if (!body.location || typeof body.location.lat !== 'number' || typeof body.location.lng !== 'number') {
-      throw new HttpError(400, 'location {lat,lng} is required.', 'validation');
-    }
-    const radius =
-      body.radiusMeters && Number.isFinite(body.radiusMeters)
-        ? Math.min(Math.max(Math.round(body.radiusMeters), 100), 20000)
-        : 5000;
-    const places = await googlePlacesSearch({
-      query: 'emergency services',
-      location: { lat: body.location.lat, lng: body.location.lng },
-      radiusMeters: radius,
-      types: ['hospital', 'police_station', 'fire_station', 'doctor'],
-    });
-    res.status(200).json({ places });
-  }),
-);
-
-/* -------------------------------- /route ------------------------------- */
+/* ------------------------------ Route/geocode --------------------------- */
 
 async function googleRoute(origin, destination) {
-  const key = googleKey();
-  const data = await fetchJson('https://directions.googleapis.com/v2/routes:computeRoutes', {
+  const data = await fetchJson('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': key,
+      'x-goog-api-key': googleKey(),
+      'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
     },
     body: JSON.stringify({
-      origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-      destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
-      travelMode: 'DRIVING',
-      routeModifiers: { trafficModel: 'AVG_TRAFFIC_MODEL' },
-      computePolylines: true,
-      fields: 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+      origin: {location: {latLng: {latitude: origin.lat, longitude: origin.lng}}},
+      destination: {location: {latLng: {latitude: destination.lat, longitude: destination.lng}}},
+      travelMode: 'DRIVE',
+      routingPreference: 'ROUTING_PREFERENCE_UNSPECIFIED',
+      polylineEncoding: 'ENCODED_POLYLINE',
+      computeAlternativeRoutes: false,
     }),
   });
-  const routes = Array.isArray(data.routes) ? data.routes : [];
-  if (routes.length === 0) {
-    throw new HttpError(502, 'Directions API returned no routes.', 'upstream');
-  }
-  const r = routes[0];
-  const polyline = decodePolyline(
-    r.polyline && typeof r.polyline.encodedPolyline === 'string'
-      ? r.polyline.encodedPolyline
-      : '',
-    250,
-  );
-  if (polyline.length === 0) {
-    throw new HttpError(502, 'Directions API returned no route geometry.', 'upstream');
-  }
+  const route = Array.isArray(data.routes) ? data.routes[0] : null;
+  const polyline = decodePolyline(route?.polyline?.encodedPolyline || '');
+  if (!route || !polyline.length) throw new HttpError(502, 'No road route was returned.', 'upstream_error');
   return {
-    distanceMeters: parseFloat(r.distanceMeters) || 0,
-    durationSeconds: parseFloat((r.duration || '').replace('s', '')) || 0,
+    distanceMeters: Number(route.distanceMeters) || 0,
+    durationSeconds: Number.parseFloat(route.duration) || 0,
     polyline,
     provider: 'google',
   };
 }
 
-exports.route = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'route');
-    const body = await readJsonBody(req);
-    const lat1 = requireFiniteNumber(
-      body.origin && body.origin.lat, 'origin.lat', -90, 90);
-    const lng1 = requireFiniteNumber(
-      body.origin && body.origin.lng, 'origin.lng', -180, 180);
-    const lat2 = requireFiniteNumber(
-      body.destination && body.destination.lat, 'destination.lat', -90, 90);
-    const lng2 = requireFiniteNumber(
-      body.destination && body.destination.lng, 'destination.lng', -180, 180);
-
-    try {
-      const route = await googleRoute(
-        { lat: lat1, lng: lng1 },
-        { lat: lat2, lng: lng2 },
-      );
-      res.status(200).json(route);
-      return;
-    } catch (e) {
-      if (!(e instanceof HttpError) || e.kind !== 'upstream') throw e;
-      // Honest fallback: straight-line distance + average driving speed.
-    }
-    const meters = haversineMeters(lat1, lng1, lat2, lng2) * 1.3; // road factor
-    res.status(200).json({
-      distanceMeters: Math.round(meters),
-      durationSeconds: Math.round(meters / (30000 / 3600)), // 30 km/h
-      polyline: [
-        { lat: lat1, lng: lng1 },
-        { lat: lat2, lng: lng2 },
-      ],
-      provider: 'fallback',
-    });
-  }),
-);
-
-/* ----------------------------- /geocodeReverse -------------------------- */
+exports.route = endpoint('route', async (req, res, body) => {
+  await authenticated(req, 'route');
+  if (!body.origin || !body.destination) throw new HttpError(400, 'origin and destination are required.', 'invalid_argument');
+  const origin = v.coordinates(body.origin);
+  const destination = v.coordinates(body.destination);
+  try {
+    res.status(200).json(await googleRoute(origin, destination));
+    return;
+  } catch (error) {
+    if (!(error instanceof HttpError) || !error.code.startsWith('upstream')) throw error;
+  }
+  const meters = haversineMeters(origin.lat, origin.lng, destination.lat, destination.lng) * 1.3;
+  res.status(200).json({
+    distanceMeters: Math.round(meters),
+    durationSeconds: Math.round(meters / (30000 / 3600)),
+    polyline: [origin, destination],
+    provider: 'fallback',
+    estimated: true,
+  });
+}, {secrets: [GOOGLE_MAPS_API_KEY]});
 
 function buildLabel(components) {
   if (!Array.isArray(components)) return null;
-  const find = (types) =>
-    components.find((c) => Array.isArray(c.types) && c.types.some((t) => types.includes(t)));
+  const find = (types) => components.find((component) => Array.isArray(component.types) && component.types.some((type) => types.includes(type)));
   const parts = [];
   const route = find(['route', 'neighborhood', 'sublocality_level_3']);
-  const street = find(['street']);
   const number = find(['street_number']);
   const locality = find(['locality']);
   const area = find(['administrative_area_level_1']);
-  if (number && street) {
-    parts.push(`${street.short_name} ${number.short_name}`);
-  } else if (street) {
-    parts.push(street.short_name);
-  } else if (route) {
-    parts.push(route.short_name);
-  }
+  if (number && route) parts.push(`${route.short_name} ${number.short_name}`);
+  else if (route) parts.push(route.short_name);
   if (locality) parts.push(locality.short_name);
-  if (parts.length === 0 && area) parts.push(area.short_name);
-  const label = parts.join(', ');
-  return label.length > 0 ? label.slice(0, 160) : null;
+  if (!parts.length && area) parts.push(area.short_name);
+  return parts.filter(Boolean).join(', ').slice(0, 160) || null;
 }
 
-exports.geocodeReverse = onRequest(
-  { region: REGION, runtimeOptions: { timeoutSeconds: 30, memory: 256 } },
-  makeHandler(async (req, res) => {
-    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed.', 'validation');
-    const uid = await getUid(req);
-    await rateLimit(uid, 'geocodeReverse');
-    const body = await readJsonBody(req);
-    const lat = requireFiniteNumber(body.lat, 'lat', -90, 90);
-    const lng = requireFiniteNumber(body.lng, 'lng', -180, 180);
-    const key = googleKey();
-    let data;
-    try {
-      data = await fetchJson(
-        `${'https://maps.googleapis.com/maps/api/geocode/json?latlng='}${lat},${lng}&key=${encodeURIComponent(key)}`,
-      );
-    } catch (e) {
-      res.status(200).json({ label: null });
-      return;
-    }
+exports.geocodeReverse = endpoint('geocodeReverse', async (req, res, body) => {
+  await authenticated(req, 'geocodeReverse');
+  const {lat, lng} = v.coordinates(body);
+  try {
+    const data = await fetchJson(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${encodeURIComponent(googleKey())}`);
     const first = Array.isArray(data.results) ? data.results[0] : null;
-    const label = first ? buildLabel(first.address_components) : null;
-    res.status(200).json({ label: label || null });
-  }),
-);
+    res.status(200).json({label: first ? buildLabel(first.address_components) : null});
+  } catch (error) {
+    if (!(error instanceof HttpError) || !error.code.startsWith('upstream')) throw error;
+    res.status(200).json({label: null});
+  }
+}, {secrets: [GOOGLE_MAPS_API_KEY]});
+
+/* ----------------------------- Account cleanup -------------------------- */
+
+exports.deleteAccount = endpoint('deleteAccount', async (req, res) => {
+  const uid = await authenticated(req, 'deleteAccount');
+  const summary = await deleteAccount(admin, uid);
+  res.status(200).json({deleted: true, ...summary});
+}, {timeoutSeconds: 120, memory: '512MiB'});

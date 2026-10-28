@@ -1,162 +1,344 @@
-name: Build APK
+name: Verify and build Tourism APKs
 
 permissions:
-  contents: write
+  contents: read
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
   pull_request:
     branches: [main]
 
+concurrency:
+  group: tourism-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  analyze-test:
-    name: Analyze & test
+  backend:
+    name: Backend tests and security rules
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          channel: stable  # latest stable (2026 deps need a modern SDK)
-          cache: true
-
-      - name: Install dependencies
-        run: set -o pipefail; flutter pub get 2>&1 | tee pub-get.log
-
-      - name: Upload pub diagnostics (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pub-diagnostics
-          path: pub-get.log
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Surface pub error as annotations
-        if: failure()
-        run: |
-          (flutter --version 2>&1 | head -n 3; echo '---'; tail -n 25 pub-get.log) > /tmp/surf.txt
-          MSG=$(sed 's/%/%25/g' /tmp/surf.txt | awk '{printf "%s%%0A", $0}' | head -c 3500)
-          echo "::error::$MSG"
-
-      - name: Analyze (fatal warnings)
-        run: set -o pipefail; flutter analyze 2>&1 | tee analyze.log
-
-      - name: Surface analyze errors as annotations
-        if: failure()
-        run: |
-          echo "::warning title=analyze shape::lines=$(wc -l < analyze.log) errors=$(grep -a -c -E '^ *error . ' analyze.log || true) warnings=$(grep -a -c -E '^ *warning . ' analyze.log || true)"
-          grep -a -E "^ *(error|warning|info|hint) . " analyze.log > /tmp/issues.txt || true
-          if [ -s /tmp/issues.txt ]; then
-            sed -E 's/^ *(error|warning|info|hint) . .* . ([^ ]+) . ([A-Za-z_0-9]+) *$/\1 \2 \3/' /tmp/issues.txt | paste -d'|' - - - - - | head -n 12 | while IFS= read -r line; do
-              echo "::error title=analyze issues::$line"
-            done
-          else
-            cat -n analyze.log | head -n 20 | while IFS= read -r line; do
-              MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-              echo "::warning title=analyze raw::$MSG"
-            done
-          fi
-
-      - name: Run tests
-        run: set -o pipefail; flutter test 2>&1 | tee test.log
-
-      - name: Surface test failures as annotations
-        if: failure()
-        run: |
-          grep -a -E "FAILED|failed|Expected|Actual|_test.dart" test.log | grep -a -v "✅" | head -n 60 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
-            echo "::error title=flutter test::$MSG"
-          done
-
-  build-apk:
-    name: Build release APK
-    runs-on: ubuntu-latest
-    needs: analyze-test
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v5
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable  # latest stable (2026 deps need a modern SDK)
-          cache: true
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Restore upload keystore (permanent signing key)
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          java-version: '21'
+      - name: Install locked backend dependencies
+        working-directory: functions
+        run: npm ci
+      - name: Syntax and unit tests
+        working-directory: functions
         run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — the APK will be signed with a throwaway debug key (SHA changes every build, updates will NOT install over old versions). Add the single secret (see android/RELEASE_SIGNING_BACKUP.txt) to get the permanent SHA."
-            exit 0
-          fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.p12
-          echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/app/upload-keystore.p12" >> "$GITHUB_ENV"
-          echo "### Permanent signing fingerprints" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "YatraWise-Upload-2026" 2>/dev/null | grep -E "Alias name|SHA1:|SHA256:" >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Build release APK
-        env:
-          MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          npm run check
+          npm test
+      - name: Dependency vulnerability gate
+        working-directory: functions
+        run: npm audit --audit-level=moderate
+      - name: Firestore and Storage emulator tests
         run: |
-          DEFINES=""
-          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
-            DEFINES="--dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
-          fi
-          # --build-number uses the (always increasing) workflow run number so
-          # every new APK installs directly over the previous version.
-          set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
-
-      - name: Surface build errors as annotations
+          set -o pipefail
+          functions/node_modules/.bin/firebase emulators:exec \
+            --only firestore,storage --project demo-tourism \
+            'cd functions && npm run test:rules' 2>&1 | tee rules-emulator.log
+      - name: Surface rules diagnostics
         if: failure()
         run: |
-          grep -a -A 8 "What went wrong" gradle.log | head -n 20 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
-          done
-          grep -a -E "^e: |FAILED|error: " gradle.log | head -n 12 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
-          done
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('rules-emulator.log')
+          lines = p.read_text(errors='replace').splitlines() if p.exists() else ['No emulator log was produced.']
+          import re
+          text = re.sub(r'\x1b\[[0-9;]*m', '', '\n'.join(lines))
+          start = text.find('> node --test')
+          if start >= 0:
+              text = text[start:]
+          payload = text
+          for index in range(0, min(len(payload), 24000), 3000):
+              safe = payload[index:index + 3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=rules diagnostic::{safe}')
+          PY
 
-      - name: Verify APK signature
+  analyze-test:
+    name: Flutter analyze and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
         run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          ls -lh "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)"
-          if [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
-            echo "### APK signature" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E "SHA-256|SHA-1" /tmp/certs.txt | head -n 4 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            jarsigner -verify "$APK"
+          flutter pub get
+          if ! git ls-files --error-unmatch pubspec.lock >/dev/null 2>&1 || [ -n "$(git status --porcelain -- pubspec.lock)" ]; then
+            echo '::error::pubspec.lock is missing, untracked or stale. Commit the lockfile generated by Flutter.'
+            exit 1
           fi
+      - name: Reject private AI provider keys in client source
+        run: |
+          if git grep -nE 'fromEnvironment\([^)]*(NVIDIA|GROQ|GEMINI|AI)_API_KEY' -- lib; then
+            echo '::error::Private AI provider credentials must remain backend-only.'
+            exit 1
+          fi
+      - name: Analyze
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee analyze.log
+      - name: Test
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.log
+      - name: Surface Flutter diagnostics
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          sections = []
+          for name in ('analyze.log', 'test.log'):
+              p = Path(name)
+              if not p.exists():
+                  continue
+              text = re.sub(r'\x1b\[[0-9;]*m', '', p.read_text(errors='replace'))
+              lines = text.splitlines()
+              markers = ('error •', 'warning •', '[E]', 'Expected:', 'Actual:', 'Test failed', 'EXCEPTION', 'Incorrect use of ParentDataWidget')
+              indexes = [i for i, line in enumerate(lines) if any(marker in line for marker in markers)]
+              if indexes:
+                  start = max(0, indexes[0] - 8)
+                  selected = lines[start:start + 220]
+              else:
+                  selected = lines[-100:]
+              sections.append(f'--- {name} ---\n' + '\n'.join(selected))
+          payload = '\n'.join(sections) or 'No Flutter diagnostic log was produced.'
+          for index in range(0, min(len(payload), 24000), 3000):
+              safe = payload[index:index + 3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Flutter diagnostic::{safe}')
+          PY
 
-      - name: Upload APK artifact
+  build-debug:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    needs: [backend, analyze-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          if ! git ls-files --error-unmatch pubspec.lock >/dev/null 2>&1 || [ -n "$(git status --porcelain -- pubspec.lock)" ]; then
+            echo '::error::pubspec.lock is missing, untracked or stale. Commit the lockfile generated by Flutter.'
+            exit 1
+          fi
+      - name: Build debug APK
+        env:
+          MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
+        run: |
+          set -euo pipefail
+          defines=()
+          if [ -n "${MAPTILER_API_KEY:-}" ]; then
+            defines+=("--dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY")
+          fi
+          # Use the verified public Web client from AppConfig. A stale hidden
+          # CI override can otherwise produce Google error 10 even when the
+          # APK's package/SHA registration is correct.
+          set -o pipefail
+          flutter build apk --debug \
+            --build-number='${{ github.run_number }}' "${defines[@]}" 2>&1 | tee build-debug.log
+      - name: Surface debug build diagnostics
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('build-debug.log')
+          lines = p.read_text(errors='replace').splitlines() if p.exists() else ['No debug build log was produced.']
+          for line in lines[-70:]:
+              safe = line.replace('%', '%25').replace('\r', '%0D')
+              print(f'::error title=debug build diagnostic::{safe}')
+          PY
+      - name: Verify debug APK exists
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-debug.apk
+          test -s "$apk"
+          aapt="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n1)"
+          signer="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          test -x "$aapt" && test -x "$signer"
+          "$aapt" dump badging "$apk" > build-debug-badging.txt
+          grep -q "package: name='app.roamio.tourism'" build-debug-badging.txt
+          grep -q "application-label:'Tourism'" build-debug-badging.txt
+          grep -q 'launchable-activity:' build-debug-badging.txt
+          "$signer" verify --print-certs "$apk" > "$RUNNER_TEMP/tourism-debug-cert.txt"
+          debug_sha1="$(grep -m1 'SHA-1 digest' "$RUNNER_TEMP/tourism-debug-cert.txt" | sed 's/.*digest: *//; s/ //g')"
+          test -n "$debug_sha1"
+          mkdir -p dist
+          {
+            echo 'Tourism debug APK - existing signer fingerprint'
+            echo 'Package: app.roamio.tourism'
+            echo "SHA-1: $debug_sha1"
+            echo 'No signing key or certificate was changed by this verification.'
+            echo 'If Google Sign-In reports error 10, register this exact existing SHA-1 with the Android OAuth client for app.roamio.tourism in Firebase project tourism-39425.'
+            echo 'CI debug certificates can differ between runners. Use the fingerprint shipped with the exact APK being tested, or a consistently signed existing-key build.'
+            echo 'See android/GOOGLE_SIGN_IN.md. Never generate a replacement key just to address error 10.'
+          } > dist/GOOGLE_SIGN_IN.txt
+          echo "::notice title=Existing Tourism debug APK SHA-1::$debug_sha1"
+          unzip -p "$apk" assets/flutter_assets/assets/images/tourism-logo.png > "$RUNNER_TEMP/tourism-logo.png"
+          cmp assets/images/tourism-logo.png "$RUNNER_TEMP/tourism-logo.png"
+          zipinfo -1 "$apk" > "$RUNNER_TEMP/tourism-apk-entries.txt"
+          if grep -Eiq 'yatrawise|yatra[-_ ]wise' "$RUNNER_TEMP/tourism-apk-entries.txt"; then
+            echo '::error::Legacy YatraWise asset path remains in the APK.'
+            exit 1
+          fi
+          if LC_ALL=C grep -aEiq 'yatrawise|yatra[-_ ]wise|integrate\.api\.nvidia\.com|api\.groq\.com|generativelanguage\.googleapis\.com|nvapi-[A-Za-z0-9_-]{16,}|gsk_[A-Za-z0-9]{16,}' "$apk"; then
+            echo '::error::Legacy branding or a private AI provider artifact was found in the APK.'
+            exit 1
+          fi
+          cp "$apk" dist/tourism-debug.apk
+          (cd dist && sha256sum tourism-debug.apk > SHA256SUMS.txt)
+      - name: Upload successful debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: yatrawise-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: tourism-debug-apk
+          path: |
+            dist/tourism-debug.apk
+            dist/SHA256SUMS.txt
+            dist/GOOGLE_SIGN_IN.txt
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  build-release:
+    name: Build protected signed release APKs
+    runs-on: ubuntu-latest
+    needs: [backend, analyze-test, build-debug]
+    # Fork PRs and development branches never receive production signing.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          if ! git ls-files --error-unmatch pubspec.lock >/dev/null 2>&1 || [ -n "$(git status --porcelain -- pubspec.lock)" ]; then
+            echo '::error::pubspec.lock is missing, untracked or stale. Commit the lockfile generated by Flutter.'
+            exit 1
+          fi
+      - name: Restore and validate protected upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Protected signing secret $name is missing. Refusing release build."
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/tourism-upload-keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          keytool -list -keystore "$keystore" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          {
+            echo "ANDROID_KEYSTORE_FILE=$keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - name: Build signed split and universal release APKs
+        env:
+          MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
+        run: |
+          set -euo pipefail
+          defines=()
+          if [ -n "${MAPTILER_API_KEY:-}" ]; then
+            defines+=("--dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY")
+          fi
+          # Keep release OAuth identity aligned with the verified public Web
+          # client in AppConfig rather than an unreviewed hidden override.
+          set -o pipefail
+          flutter build apk --release --split-per-abi \
+            --build-number='${{ github.run_number }}' "${defines[@]}" 2>&1 | tee build-release.log
+          mkdir -p build-out/split build-out/universal
+          cp build/app/outputs/flutter-apk/*.apk build-out/split/
+          flutter build apk --release \
+            --build-number='${{ github.run_number }}' "${defines[@]}" 2>&1 | tee -a build-release.log
+          cp build/app/outputs/flutter-apk/app-release.apk build-out/universal/
+      - name: Surface release build diagnostics
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('build-release.log')
+          lines = p.read_text(errors='replace').splitlines() if p.exists() else ['No release build log was produced.']
+          for line in lines[-70:]:
+              safe = line.replace('%', '%25').replace('\r', '%0D')
+              print(f'::error title=release build diagnostic::{safe}')
+          PY
+      - name: Verify signatures, package and alignment
+        run: |
+          set -euo pipefail
+          signer="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n1)"
+          aligner="$(dirname "$signer")/zipalign"
+          aapt="$(dirname "$signer")/aapt"
+          test -x "$signer" && test -x "$aligner" && test -x "$aapt"
+          expected="$(keytool -list -v -keystore "$ANDROID_KEYSTORE_FILE" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" \
+            | grep -m1 'SHA256:' | sed 's/.*SHA256: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
+          test -n "$expected"
+          for apk in build-out/split/*.apk build-out/universal/*.apk; do
+            "$signer" verify --print-certs "$apk" > /tmp/tourism-cert.txt
+            actual="$(grep -m1 'SHA-256 digest' /tmp/tourism-cert.txt \
+              | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F')"
+            test "$actual" = "$expected"
+            "$aligner" -c 4 "$apk"
+            "$aapt" dump badging "$apk" > /tmp/tourism-badging.txt
+            grep -q "package: name='app.roamio.tourism'" /tmp/tourism-badging.txt
+            grep -q 'launchable-activity:' /tmp/tourism-badging.txt
+          done
+      - name: Prepare verified Tourism downloads
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build-out/split/app-arm64-v8a-release.apk dist/tourism-arm64-v8a.apk
+          cp build-out/split/app-armeabi-v7a-release.apk dist/tourism-armeabi-v7a.apk
+          cp build-out/split/app-x86_64-release.apk dist/tourism-x86_64.apk
+          cp build-out/universal/app-release.apk dist/tourism-universal.apk
+          (cd dist && sha256sum tourism-*.apk > SHA256SUMS.txt)
+      - name: Upload successful signed release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: tourism-signed-release-apks
+          path: |
+            dist/tourism-*.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 14

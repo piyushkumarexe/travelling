@@ -7,24 +7,30 @@ class Profile {
     required this.uid,
     this.name = '',
     this.photoUrl,
+    this.photoPath,
     this.language = 'en',
     this.emergencyContactName = '',
     this.emergencyContactPhone = '',
     this.interests = const <String>[],
     this.budget = 'mid',
     this.travelStyle = 'balanced',
+    this.vehicle = '',
     this.updatedAt,
   });
 
   final String uid;
   final String name;
   final String? photoUrl;
+  final String? photoPath;
   final String language;
   final String emergencyContactName;
   final String emergencyContactPhone;
   final List<String> interests;
   final String budget;
   final String travelStyle;
+
+  /// Preferred local vehicle: '' | bike | car | auto.
+  final String vehicle;
   final DateTime? updatedAt;
 
   factory Profile.fromMap(String uid, Map<String, dynamic>? m) {
@@ -33,6 +39,7 @@ class Profile {
       uid: uid,
       name: (d['name'] as String?) ?? '',
       photoUrl: d['photoUrl'] as String?,
+      photoPath: d['photoPath'] as String?,
       language: (d['language'] as String?) ?? 'en',
       emergencyContactName: (d['emergencyContactName'] as String?) ?? '',
       emergencyContactPhone: (d['emergencyContactPhone'] as String?) ?? '',
@@ -41,6 +48,7 @@ class Profile {
           : <String>[],
       budget: (d['budget'] as String?) ?? 'mid',
       travelStyle: (d['travelStyle'] as String?) ?? 'balanced',
+      vehicle: (d['vehicle'] as String?) ?? '',
       updatedAt: (d['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -49,12 +57,14 @@ class Profile {
         'uid': uid,
         'name': name,
         'photoUrl': photoUrl,
+        'photoPath': photoPath,
         'language': language,
         'emergencyContactName': emergencyContactName,
         'emergencyContactPhone': emergencyContactPhone,
         'interests': interests,
         'budget': budget,
         'travelStyle': travelStyle,
+        'vehicle': vehicle,
         'updatedAt': DateTime.now().toUtc(),
       };
 }

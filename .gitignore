@@ -24,7 +24,6 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
 
 # Android
 **/android/.gradle
@@ -38,6 +37,11 @@ google-services.json
 **/firebase_options.dart.bak
 firebase-debug.log
 .firebaserc.bak
+
+# Node / Cloud Functions
+node_modules/
+functions/node_modules/
+functions/.runtimeconfig.json
 
 # Secrets / environment
 .env

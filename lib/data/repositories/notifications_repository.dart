@@ -11,6 +11,10 @@ class NotificationsRepository {
       .collection('users')
       .doc(uid)
       .collection('notifications')
+      .orderBy('createdAt', descending: true)
+      // Keep the live listener bounded. Without a cap, every historical
+      // notification was decoded and sorted again on each new alert.
+      .limit(200)
       .snapshots()
       .map((QuerySnapshot<Map<String, dynamic>> s) {
         final List<AppNotification> items = s.docs

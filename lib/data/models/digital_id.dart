@@ -18,6 +18,7 @@ class DigitalId {
     required this.status,
     required this.createdAt,
     this.photoUrl,
+    this.photoPath,
     this.emergencyContactName,
     this.emergencyContactPhone,
   });
@@ -32,6 +33,7 @@ class DigitalId {
   /// active | revoked
   final String status;
   final String? photoUrl;
+  final String? photoPath;
   final String? emergencyContactName;
   final String? emergencyContactPhone;
   final DateTime createdAt;
@@ -45,9 +47,12 @@ class DigitalId {
         token: (m['token'] as String?) ?? '',
         status: (m['status'] as String?) ?? 'revoked',
         photoUrl: m['photoUrl'] as String?,
+        photoPath: m['photoPath'] as String?,
         emergencyContactName: m['emergencyContactName'] as String?,
         emergencyContactPhone: m['emergencyContactPhone'] as String?,
-        createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        createdAt: (m['createdAt'] as Timestamp?)?.toDate() ??
+            (m['updatedAt'] as Timestamp?)?.toDate() ??
+            DateTime.fromMillisecondsSinceEpoch(0),
       );
 
   /// Cryptographically random 256-bit identifier.
