@@ -35,6 +35,7 @@ class _EcoScreenState extends State<EcoScreen> {
   StreamSubscription<EcoScore?>? _scoreSub;
   StreamSubscription<List<EcoActivity>>? _actSub;
   late VoidCallback _trackerListener;
+  EcoTrackerService? _ecoTracker;
   bool _saving = false;
 
   @override
@@ -43,7 +44,7 @@ class _EcoScreenState extends State<EcoScreen> {
     _trackerListener = () {
       if (mounted) setState(() {});
     };
-    _c.ecoTracker.addListener(_trackerListener);
+    _ecoTracker = _c.ecoTracker..addListener(_trackerListener);
     _listen();
   }
 
@@ -260,7 +261,7 @@ class _EcoScreenState extends State<EcoScreen> {
   void dispose() {
     _scoreSub?.cancel();
     _actSub?.cancel();
-    _c.ecoTracker.removeListener(_trackerListener);
+    _ecoTracker?.removeListener(_trackerListener);
     super.dispose();
   }
 

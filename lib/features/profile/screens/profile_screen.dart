@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/app_config.dart';
+import '../../../core/services/settings_service.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/validators.dart';
@@ -31,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Profile? _profile;
   bool _loading = true;
   StreamSubscription<Profile?>? _sub;
+  SettingsService? _settings;
   /// Real save state. This was `final bool _saving = false;` — never set to
   /// true — so the sheet's Save button stayed enabled and a fast double tap
   /// fired two Firestore writes (and popped the sheet twice).
@@ -53,7 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Rebuild when the device-local SOS contact changes (added/removed on the
     // SOS screen) so the toggle gate and "Your details" stay in sync even
     // when Firestore sync is unavailable.
-    _c.settings.addListener(_onSettingsChanged);
+    _settings = _c.settings..addListener(_onSettingsChanged);
     _listen();
   }
 
@@ -298,7 +300,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
-    _c.settings.removeListener(_onSettingsChanged);
+    _settings?.removeListener(_onSettingsChanged);
     _sub?.cancel();
     super.dispose();
   }

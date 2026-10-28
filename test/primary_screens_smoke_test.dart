@@ -10,6 +10,7 @@ import 'package:tourism/core/state/app_container.dart';
 import 'package:tourism/core/theme/app_theme.dart';
 import 'package:tourism/data/models/safety_zone.dart';
 import 'package:tourism/data/repositories/auth_repository.dart';
+import 'package:tourism/data/repositories/notifications_repository.dart';
 import 'package:tourism/data/repositories/zones_repository.dart';
 import 'package:tourism/features/profile/screens/profile_screen.dart';
 import 'package:tourism/features/safety/screens/safety_screen.dart';
@@ -71,6 +72,8 @@ class _TestAppContainer extends AppContainer {
   final _FakeAuthRepository _auth = _FakeAuthRepository();
   final _FakeZonesRepository _zones = _FakeZonesRepository();
   final _FakeLocationService _location = _FakeLocationService();
+  final _FakeNotificationsRepository _notifications =
+      _FakeNotificationsRepository();
 
   @override
   AuthRepository get authRepository => _auth;
@@ -80,6 +83,9 @@ class _TestAppContainer extends AppContainer {
 
   @override
   LocationService get locationService => _location;
+
+  @override
+  NotificationsRepository get notificationsRepository => _notifications;
 }
 
 class _FakeAuthRepository implements AuthRepository {
@@ -95,6 +101,11 @@ class _FakeZonesRepository implements ZonesRepository {
   Stream<List<SafetyZone>> watchAll() =>
       Stream<List<SafetyZone>>.value(const <SafetyZone>[]);
 
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeNotificationsRepository implements NotificationsRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
