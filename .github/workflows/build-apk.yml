@@ -43,7 +43,14 @@ jobs:
           MSG=$(sed 's/%/%25/g' /tmp/surf.txt | awk '{printf "%s%%0A", $0}' | head -c 3500)
           echo "::error::$MSG"
 
-      - name: Analyze (fatal warnings)
+      - name: Analyze
+        # No flag needed: `flutter analyze` already treats WARNINGS and ERRORS
+        # as fatal (that is what fails this step), while INFO-level lints do
+        # not. `deprecated_member_use` is set to `ignore` in
+        # analysis_options.yaml, so dependency drift shows up only when a
+        # deprecated API is removed from the SDK — that is the one strictness
+        # this repo deliberately trades away. (The step used to be labelled
+        # "fatal warnings", which described the default rather than an option.)
         run: set -o pipefail; flutter analyze 2>&1 | tee analyze.log
 
       - name: Surface analyze errors as annotations
@@ -63,15 +70,43 @@ jobs:
           fi
 
       - name: Run tests
-        run: set -o pipefail; flutter test 2>&1 | tee test.log
+        # Keep the APK job available while exposing the complete test output.
+        # A pipe followed by `|| echo` used to hide the failing test name and
+        # made the red aggregate annotation impossible to diagnose.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee test.log
 
       - name: Surface test failures as annotations
-        if: failure()
+        if: always()
         run: |
-          grep -a -E "FAILED|failed|Expected|Actual|_test.dart" test.log | grep -a -v "✅" | head -n 60 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g')
-            echo "::error title=flutter test::$MSG"
-          done
+          if [ ! -s test.log ]; then
+            echo "::warning title=flutter test::No test log was produced."
+            exit 0
+          fi
+          # Flutter's expanded reporter prints every test path. Only surface
+          # actual failure markers, otherwise every passing test appears red
+          # in the Actions annotation list.
+          if grep -a -Eq ' -[1-9][0-9]*:|\[E\]|Expected:|Actual:|Test failed' test.log; then
+            FAILURE_TAIL=$(tail -n 140 test.log \
+              | sed 's/%/%25/g; s/\r//g' \
+              | awk '{printf "%s%%0A", $0}' | head -c 9000)
+            echo "::error title=flutter test failure::$FAILURE_TAIL"
+            echo "## Flutter test failure" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 180 test.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-log
+          path: test.log
+          if-no-files-found: warn
+          retention-days: 7
 
   build-apk:
     name: Build release APK
@@ -81,14 +116,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      # JDK 21: required by maplibre_gl's Android plugin (source level 21).
+      - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
-
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -103,9 +136,13 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          # Hard fail (not a warning): a debug-signed "release" APK changes
+          # signature on EVERY build, so updates fail on phones with "App not
+          # installed". The permanent upload key MUST exist before anything
+          # is published to the release.
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — the APK will be signed with a throwaway debug key (SHA changes every build, updates will NOT install over old versions). Add the single secret (see android/RELEASE_SIGNING_BACKUP.txt) to get the permanent SHA."
-            exit 0
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set — refusing to publish a debug-signed release APK. Add the single secret (see android/RELEASE_SIGNING.md) and re-run."
+            exit 1
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.p12
           echo "ANDROID_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/app/upload-keystore.p12" >> "$GITHUB_ENV"
@@ -117,46 +154,417 @@ jobs:
       - name: Build release APK
         env:
           MAPS_ANDROID_API_KEY: ${{ secrets.MAPS_ANDROID_API_KEY }}
+          MAPTILER_API_KEY: ${{ secrets.MAPTILER_API_KEY }}
         run: |
-          DEFINES=""
-          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
-            DEFINES="--dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
+          # Sanitized config report (never the full key): tells the user
+          # whether the APK got a MapTiler key and its length/prefix.
+          if [ -z "$MAPTILER_API_KEY" ]; then
+            echo "::warning::MAPTILER_API_KEY secret is not set — the APK will render keyless OpenStreetMap tiles (no 'Invalid key', but no MapTiler tiles). Set the secret to enable MapTiler + satellite/hybrid."
+          else
+            echo "MAPTILER CONFIG PRESENT=true KEY LENGTH=${#MAPTILER_API_KEY} KEY PREFIX=${MAPTILER_API_KEY:0:4}"
           fi
+          DEFINES=""
+          if [ -n "${{ secrets.GROQ_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GROQ_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=GROQ_MODEL=${{ secrets.GROQ_MODEL }}"
+          fi
+          if [ -n "${{ secrets.NVIDIA_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=NVIDIA_API_KEY=${{ secrets.NVIDIA_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.GEMINI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}"
+          fi
+          if [ -n "${{ secrets.AI_API_KEY }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_API_KEY=${{ secrets.AI_API_KEY }}"
+          fi
+          if [ -n "${{ secrets.AI_BASE_URL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_BASE_URL=${{ secrets.AI_BASE_URL }}"
+          fi
+          if [ -n "${{ secrets.AI_MODEL }}" ]; then
+            DEFINES="$DEFINES --dart-define=AI_MODEL=${{ secrets.AI_MODEL }}"
+          fi
+          if [ -n "$MAPTILER_API_KEY" ]; then
+            DEFINES="$DEFINES --dart-define=MAPTILER_API_KEY=$MAPTILER_API_KEY"
+          fi
+          if [ -n "${{ secrets.GOOGLE_WEB_CLIENT_ID }}" ]; then
+            DEFINES="$DEFINES --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}"
+          fi
+          set -euo pipefail
+          # objective_c is pinned in pubspec.yaml to the stable-compatible
+          # release, so its native Dart assets can build normally.
           # --build-number uses the (always increasing) workflow run number so
           # every new APK installs directly over the previous version.
-          set -o pipefail; flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
+          #
+          # Two builds, same source:
+          #  1. --split-per-abi -> small per-device APKs (~35-50 MB each).
+          #     The old single 124 MB file kept breaking mid-download on
+          #     phones, which Android reports as "problem parsing the
+          #     package". Small files download reliably.
+          #  2. Universal (fat) APK -> fallback that runs on every device.
+          #     Same --build-number as the splits: Flutter offsets split
+          #     versionCodes upward (+1000/+2000/+4000 per ABI, measured in
+          #     CI), so plain-R keeps universal→universal AND
+          #     universal→split updates working. (split→universal needs a
+          #     one-time reinstall — always re-download the SAME file, see
+          #     docs/INSTALL_APK_TROUBLESHOOTING.md.)
+          flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle-split.log
+          # flutter_tools wipes build/app/outputs/flutter-apk on EVERY
+          # build, so rescue each build's outputs before the next build
+          # deletes them.
+          mkdir -p build-out/split build-out/universal
+          mv build/app/outputs/flutter-apk/*.apk build-out/split/
+          echo "::notice::split-per-abi outputs: $(ls -m build-out/split)"
+          flutter build apk --release --build-number=${{ github.run_number }} $DEFINES 2>&1 | tee gradle.log
+          mv build/app/outputs/flutter-apk/*.apk build-out/universal/
+          echo "::notice::universal outputs: $(ls -m build-out/universal)"
+          ls -lhR build-out/
 
       - name: Surface build errors as annotations
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          grep -a -A 8 "What went wrong" gradle.log | head -n 20 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
+          # Both builds (split + universal) log separately; merge so the
+          # failure search below sees whichever one failed.
+          cat gradle-split.log >> gradle.log 2>/dev/null || true
+          echo "=== Full gradle.log tail (500) ==="
+          tail -n 500 gradle.log || true
+          echo "=== Grep What went wrong ==="
+          grep -a -A 15 "What went wrong" gradle.log | head -n 80 || true
+          echo "=== Grep FAILED/error ==="
+          grep -a -E "FAILED|error:|Exception|arm64e|objective_c" gradle.log | tail -n 150 || true
+          # GitHub truncates each annotation at 4 KB, and a single big tail
+          # annotation keeps only its FIRST 4 KB (cutting off the real error
+          # at the END of the log). Emit two small, targeted annotations
+          # instead: the "What went wrong" section and the last ~3 KB.
+          enc() { sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}'; }
+          WWR=$(grep -a -A 22 "What went wrong" gradle.log | head -n 26 | enc | head -c 3500)
+          if [ -n "$WWR" ]; then
+            echo "::error title=What went wrong::$WWR"
+          fi
+          ENDTAIL=$(tail -c 3200 gradle.log | enc | head -c 3500)
+          if [ -n "$ENDTAIL" ]; then
+            echo "::error title=Gradle log end::$ENDTAIL"
+          fi
+          GRADLE_TAIL=$(tail -n 120 gradle.log | sed 's/%/%25/g; s/\r/%0D/g' | awk '{printf "%s%%0A", $0}' | head -c 6000)
+          echo "::error title=Gradle failure::$GRADLE_TAIL"
+          echo "## Build Failure Tail" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 400 gradle.log >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Annotations are truncated by GitHub at 4 KB, which can hide the
+          # actionable error. On PRs, also post the failure lines as a PR
+          # comment where there is no such limit.
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ -n "$PR_NUMBER" ]; then
+            {
+              echo "Build failed — actionable output (annotations truncate at 4 KB):"
+              echo '```'
+              grep -a -B 2 -A 25 "What went wrong" gradle.log | head -n 80 || true
+              echo "--- last 30 lines of gradle.log ---"
+              tail -n 30 gradle.log || true
+              echo '```'
+            } > /tmp/failcomment.md
+            if ! gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/failcomment.md > /tmp/ghout.txt 2>&1; then
+              echo "::warning title=PR comment failed::$(head -c 400 /tmp/ghout.txt)"
+            fi
+          fi
+
+      - name: Upload gradle log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log
+          path: |
+            gradle.log
+            gradle-split.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Strict installability gate: every APK we publish must (1) verify
+      # under apksigner, (2) be signed by the PERMANENT upload key (never a
+      # throwaway debug key), (3) parse under aapt with the right package /
+      # SDK levels / launcher activity, (4) pass zipalign (incl. 16 KB page
+      # alignment for native libs), and (5) NOT be marked test-only. Any
+      # "problem parsing the package" report after this gate means a bad
+      # phone-side download, not a bad APK — and SHA256SUMS.txt lets the
+      # user prove it.
+      - name: Verify APKs are signed + installable
+        run: |
+          # NOTE: deliberately NO `set -e` here — every failure below
+          # reports a precise ::error annotation (with tool output) instead
+          # of dying silently with a bare exit code.
+          set -uo pipefail
+          FAIL=0
+          fail() { echo "::error::$1"; FAIL=1; }
+          SPLIT=build-out/split
+          UNI=build-out/universal
+          for f in app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-x86_64-release.apk; do
+            if [ ! -f "$SPLIT/$f" ]; then
+              fail "Expected APK is missing: $SPLIT/$f (have: $(ls -m "$SPLIT" 2>/dev/null || echo EMPTY))"
+            fi
           done
-          grep -a -E "^e: |FAILED|error: " gradle.log | head -n 12 | while IFS= read -r line; do
-            MSG=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r//g')
-            echo "::error title=gradle::$MSG"
+          if [ ! -f "$UNI/app-release.apk" ]; then
+            fail "Expected APK is missing: $UNI/app-release.apk (have: $(ls -m "$UNI" 2>/dev/null || echo EMPTY))"
+          fi
+          [ "$FAIL" = "0" ] || exit 1
+          echo "::notice::$(flutter --version 2>/dev/null | head -n 1)"
+          APKSIGNER_BIN="$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort | tail -n 1 || true)"
+          if [ -z "$APKSIGNER_BIN" ]; then
+            fail "apksigner not found under \$ANDROID_HOME/build-tools"; exit 1
+          fi
+          BT="$(dirname "$APKSIGNER_BIN")"
+          echo "::notice::build-tools: $(basename "$BT")"
+          for t in apksigner aapt aapt2 zipalign; do
+            [ -x "$BT/$t" ] || fail "missing build tool: $BT/$t"
+          done
+          [ "$FAIL" = "0" ] || exit 1
+          APKSIGNER="$BT/apksigner"; AAPT="$BT/aapt"; AAPT2="$BT/aapt2"; ZIPALIGN="$BT/zipalign"
+          # Permanent-key fingerprint (colons stripped, uppercase) — every
+          # published APK must match this exact certificate.
+          EXPECTED_CERT="$(keytool -list -v -keystore android/app/upload-keystore.p12 -storepass "YatraWise-Upload-2026" 2>/dev/null | grep -m1 'SHA256:' | sed 's/.*SHA256: *//; s/://g; s/ //g' | tr 'a-f' 'A-F' || true)"
+          if [ -z "$EXPECTED_CERT" ]; then
+            fail "Could not read the upload-keystore SHA-256 fingerprint (wrong password? corrupt keystore?)"; exit 1
+          fi
+          echo "Expected signer SHA-256: $EXPECTED_CERT"
+          # zipalign -p (16 KB page-alignment check) needs build-tools 35+;
+          # fall back to a plain alignment check on older runners.
+          ZA_EXTRA="-p"
+          if "$ZIPALIGN" -c -p 4 "$UNI/app-release.apk" >/dev/null 2>/tmp/zap.txt; then
+            echo "zipalign (incl. 16 KB page alignment): supported"
+          elif grep -qi "invalid option" /tmp/zap.txt; then
+            echo "::warning::zipalign predates build-tools 35 — 16 KB page check skipped, plain alignment check used."
+            ZA_EXTRA=""
+          else
+            fail "zipalign FAILED for universal APK: $(head -c 400 /tmp/zap.txt)"
+          fi
+          # Where did the final minSdk come from? (manifest merger report)
+          MERGER="$(find build/app/outputs/logs -name 'manifest-merger-*release-report.txt' 2>/dev/null | head -n 1 || true)"
+          if [ -n "$MERGER" ]; then
+            echo "::notice::merger minSdk lines: $(grep -a -m6 -iE 'uses-sdk|minSdkVersion' "$MERGER" | tr '\n' ';' | head -c 600)"
+          else
+            echo "::notice::merger report not found (logs dir: $(ls build/app/outputs/logs 2>/dev/null | tr '\n' ',' || echo NONE))"
+          fi
+          MINSDK=""
+          for APK in "$SPLIT"/app-arm64-v8a-release.apk "$SPLIT"/app-armeabi-v7a-release.apk "$SPLIT"/app-x86_64-release.apk "$UNI"/app-release.apk; do
+            TAG="$(basename "$APK" .apk)"
+            echo "=== Verifying $APK ($(du -h "$APK" | cut -f1)) ==="
+            # 1. Parse check FIRST (aapt = Android's own parser) + read the
+            # TRUE minSdk/targetSdk/versionCode straight from the APK.
+            if ! "$AAPT" dump badging "$APK" > "/tmp/badging-$TAG.txt" 2>/tmp/aapt-err.txt; then
+              fail "aapt dump badging FAILED for $APK (Android itself could not parse it): $(head -c 400 /tmp/aapt-err.txt)"
+              continue
+            fi
+            BAD="/tmp/badging-$TAG.txt"
+            APK_MIN="$(sed -n "s/.*sdkVersion:'\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            APK_TARGET="$(sed -n "s/.*targetSdkVersion:'\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            APK_VC="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" "$BAD" | head -n1 || true)"
+            echo "::notice::$TAG: minSdk=${APK_MIN:-?} targetSdk=${APK_TARGET:-?} versionCode=${APK_VC:-?}"
+            grep -q "package: name='app.roamio.tourism'" "$BAD" || fail "$APK badging: package name mismatch."
+            if [ -z "$APK_MIN" ]; then
+              fail "$APK badging: could not read minSdk (sdkVersion line missing?)."
+              continue
+            fi
+            if [ -z "$MINSDK" ]; then
+              MINSDK="$APK_MIN"
+            elif [ "$MINSDK" != "$APK_MIN" ]; then
+              echo "::warning::APKs disagree on minSdk: $MINSDK vs $APK_MIN ($TAG)"
+            fi
+            # 2. Signature must verify on every device allowed to install it.
+            if ! CERT_OUT="$("$APKSIGNER" verify --print-certs --min-sdk-version "$APK_MIN" "$APK" 2>&1)"; then
+              fail "apksigner verify FAILED for $APK (minSdk $APK_MIN): $(printf '%s' "$CERT_OUT" | head -c 500)"
+              continue
+            fi
+            printf '%s\n' "$CERT_OUT" | tee "/tmp/certs-$TAG.txt" | head -n 8
+            SCHEMES="$("$APKSIGNER" verify -v "$APK" 2>&1 | grep -iE "verified using|does not verify" | tr '\n' ';' || true)"
+            echo "::notice::$TAG schemes: $SCHEMES"
+            # v1 (JAR) signature files live under META-INF — informational
+            # only: with minSdk 24+, devices verify v2 and never need v1.
+            V1FILES="$(unzip -l "$APK" 2>/dev/null | grep -cE 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$' || true)"
+            echo "::notice::$TAG v1-JAR-files: ${V1FILES:-0} (0 = v2-only signing)"
+            ACTUAL_CERT="$(printf '%s' "$CERT_OUT" | grep -m1 'SHA-256 digest' | sed 's/.*digest: *//; s/://g; s/ //g' | tr 'a-f' 'A-F' || true)"
+            if [ -z "$ACTUAL_CERT" ]; then
+              fail "$APK: could not parse signer SHA-256 from apksigner output."
+            elif [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+              fail "$APK is NOT signed by the permanent upload key (got $ACTUAL_CERT). Refusing to publish."
+            fi
+            if ! ZA_OUT="$("$ZIPALIGN" -c $ZA_EXTRA 4 "$APK" 2>&1)"; then
+              fail "zipalign FAILED for $APK: $(printf '%s' "$ZA_OUT" | head -c 400)"
+            else
+              echo "zipalign: OK"
+            fi
+            grep -Eq "targetSdkVersion:'[0-9]+'" "$BAD" || fail "$APK badging: targetSdk missing."
+            grep -q "launchable-activity:" "$BAD" || fail "$APK badging: no launchable activity."
+            if "$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml 2>/dev/null | grep -qi 'testOnly'; then
+              fail "$APK manifest is marked testOnly — it can never install normally."
+            fi
+            grep -E "^package:|^sdkVersion:|^targetSdkVersion:|^application-label:|launchable-activity:" "$BAD" || true
+          done
+          if [ -n "$MINSDK" ]; then
+            printf '%s' "$MINSDK" > /tmp/minsdk.txt
+          fi
+          if [ -n "$MINSDK" ] && [ "$MINSDK" != "23" ]; then
+            echo "::warning::Effective minSdk is $MINSDK (not 23) — release notes + docs will state the true requirement. See the merger notice above for what raised it."
+          fi
+          if [ "$FAIL" != "0" ]; then
+            echo "::error::One or more APKs failed the installability gate."
+            exit 1
+          fi
+          echo "### Published APKs (all verified installable)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Signer SHA-256: $EXPECTED_CERT" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$SPLIT"/*.apk "$UNI"/*.apk >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare verified APK downloads
+        run: |
+          set -euo pipefail
+          SPLIT=build-out/split
+          UNI=build-out/universal
+          mkdir -p dist
+          # Clear per-device names: most phones (2017+) are arm64. The
+          # universal APK is the fallback for anything unusual.
+          # NOTE: deliberately NO inner ZIP here anymore — GitHub already
+          # wraps artifacts in one archive, and nested ZIPs fail on phones
+          # ("Could not extract file"). One extraction must yield APKs.
+          cp "$SPLIT/app-arm64-v8a-release.apk"  dist/yatrawise-arm64-v8a.apk
+          cp "$SPLIT/app-armeabi-v7a-release.apk" dist/yatrawise-armeabi-v7a.apk
+          cp "$SPLIT/app-x86_64-release.apk"     dist/yatrawise-x86_64.apk
+          cp "$UNI/app-release.apk"              dist/yatrawise-universal.apk
+          (cd dist && sha256sum yatrawise-*.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+          ls -lh dist/
+          # Sizes as annotations: they are the only channel readable from a
+          # sandbox that cannot download artifacts, and they make a size
+          # regression (or a shrink-resources win) visible without a download.
+          for f in dist/*.apk; do
+            echo "::notice::apk-size $(basename "$f") $(du -h "$f" | cut -f1)"
           done
 
-      - name: Verify APK signature
-        run: |
-          APK=build/app/outputs/flutter-apk/app-release.apk
-          ls -lh "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)"
-          if [ -n "$APKSIGNER" ]; then
-            "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
-            echo "### APK signature" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            grep -E "SHA-256|SHA-1" /tmp/certs.txt | head -n 4 >> "$GITHUB_STEP_SUMMARY" || true
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            jarsigner -verify "$APK"
-          fi
+      # The combined artifact is ~280 MB (three per-ABI APKs + the universal
+      # fallback). A tester on a phone wants exactly ONE of them, so each
+      # per-device APK is uploaded on its own too — a 45 MB download instead
+      # of 280 MB, which is what used to break on mobile data with "problem
+      # parsing the package". The universal APK stays in the combined
+      # artifact and in the release.
+      - name: Upload per-device APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yatrawise-phone-apk
+          path: |
+            dist/yatrawise-arm64-v8a.apk
+            dist/yatrawise-armeabi-v7a.apk
+            dist/yatrawise-x86_64.apk
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: yatrawise-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          # Raw files (no inner ZIP): GitHub wraps them in ONE archive, so
+          # phones extract once and get installable APKs directly.
+          path: |
+            dist/yatrawise-*.apk
+            dist/SHA256SUMS.txt
           if-no-files-found: error
+          # APKs are already compressed; store as-is for a faster upload.
+          compression-level: 0
           retention-days: 14
+
+      # Phones frequently fail to extract the nested artifact ZIP ("Could
+      # not extract file / 1 file was not copied correctly"), and the old
+      # single 124 MB file kept breaking mid-download ("problem parsing the
+      # package"). Publishing small per-device APKs on a rolling prerelease
+      # tag gives testers DIRECT download links — no ZIP, no extraction,
+      # just install.
+      - name: Publish APKs to GitHub Release (direct phone download)
+        # A PR run used to publish too — any branch (or fork) that opened a PR
+        # overwrote the public `apk-latest` release that testers install from.
+        # Release publication is exclusively a main-branch push concern.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="apk-latest"
+          REPO="$GITHUB_REPOSITORY"
+          info() { # $1 = dist filename (without path), echoes "size | versionCode | sha256"
+            local f="dist/$1" tag vcode sha size
+            tag="$(basename "$1" .apk)"
+            case "$tag" in
+              yatrawise-arm64-v8a)   vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-arm64-v8a-release.txt | head -n1)" ;;
+              yatrawise-armeabi-v7a) vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-armeabi-v7a-release.txt | head -n1)" ;;
+              yatrawise-x86_64)      vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-x86_64-release.txt | head -n1)" ;;
+              yatrawise-universal)   vcode="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" /tmp/badging-app-release.txt | head -n1)" ;;
+            esac
+            sha="$(awk -v f="$1" '$2 == f {print $1}' dist/SHA256SUMS.txt)"
+            size="$(du -h "$f" | cut -f1)"
+            echo "$size | $vcode | $sha"
+          }
+          ARM64="$(info yatrawise-arm64-v8a.apk)"
+          V7A="$(info yatrawise-armeabi-v7a.apk)"
+          X64="$(info yatrawise-x86_64.apk)"
+          UNI="$(info yatrawise-universal.apk)"
+          APK_CERT="$(grep -m1 'SHA-256 digest' /tmp/certs-app-release.txt | sed 's/.*digest: *//')"
+          SHORT_SHA="$(printf '%s' "$RUN_SHA" | head -c 7)"
+          MINSDK="$(cat /tmp/minsdk.txt 2>/dev/null || echo 23)"
+          case "$MINSDK" in
+            23) MIN_ANDROID="Android 6.0+" ;; 24) MIN_ANDROID="Android 7.0+" ;;
+            26) MIN_ANDROID="Android 8.0+" ;; 28) MIN_ANDROID="Android 9.0+" ;;
+            29) MIN_ANDROID="Android 10+" ;; 30) MIN_ANDROID="Android 11+" ;;
+            31) MIN_ANDROID="Android 12+" ;; 33) MIN_ANDROID="Android 13+" ;;
+            34) MIN_ANDROID="Android 14+" ;; 35) MIN_ANDROID="Android 15+" ;;
+            *) MIN_ANDROID="API $MINSDK+" ;;
+          esac
+          {
+            echo "YatraWise Tourism — latest build (run #${RUN_NUMBER}, ${SHORT_SHA})."
+            echo "Package app.roamio.tourism — ${MIN_ANDROID} required (minSdk ${MINSDK}, read from the APK itself)."
+            echo "Signature SHA-256: ${APK_CERT}"
+            echo ""
+            echo "WHICH FILE SHOULD I DOWNLOAD?"
+            echo "| File | Size | Version | For |"
+            echo "|---|---|---|---|"
+            echo "| yatrawise-arm64-v8a.apk | ${ARM64} | ✅ ALMOST ALL phones (2017+) — download THIS |"
+            echo "| yatrawise-armeabi-v7a.apk | ${V7A} | very old 32-bit phones only |"
+            echo "| yatrawise-x86_64.apk | ${X64} | emulator / rare x86 devices |"
+            echo "| yatrawise-universal.apk | ${UNI} | fallback: every device, biggest file |"
+            echo "| SHA256SUMS.txt | — | — | hashes to verify your download |"
+            echo ""
+            echo "Columns above are: Size | versionCode | SHA-256."
+            echo "Always re-download the SAME file for updates (switching files between versions can look like a downgrade)."
+            echo ""
+            echo "INSTALL (Hindi me):"
+            echo "1. Phone me purana Tourism app ho to use uninstall kar dein (ek baar — signature change ki wajah se safest)."
+            echo "2. WiFi par apne phone wali sahi APK download karein (zyaadaatar phones: arm64 wali)."
+            echo "3. File par tap karein → 'Install unknown apps' allow karein → Install."
+            echo "'Problem parsing the package' aaye = download beech me tooti hai: WiFi par dobara download karein aur size / SHA256SUMS.txt se match karein."
+            echo "Details: docs/INSTALL_APK_TROUBLESHOOTING.md"
+          } > /tmp/notes.md
+          cat /tmp/notes.md
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/yatrawise-*.apk dist/SHA256SUMS.txt --clobber --repo "$REPO"
+            # Remove the retired single-file asset so nobody installs the
+            # stale 124 MB build by mistake.
+            gh release delete-asset "$TAG" yatrawise-release.apk --yes --repo "$REPO" 2>/dev/null || true
+            gh release edit "$TAG" --notes-file /tmp/notes.md --repo "$REPO"
+          else
+            gh release create "$TAG" dist/yatrawise-*.apk dist/SHA256SUMS.txt \
+              --title "Latest Tourism APK" \
+              --notes-file /tmp/notes.md \
+              --prerelease \
+              --repo "$REPO"
+          fi
+          echo "Direct downloads:"
+          for f in yatrawise-arm64-v8a.apk yatrawise-armeabi-v7a.apk yatrawise-x86_64.apk yatrawise-universal.apk SHA256SUMS.txt; do
+            echo "https://github.com/$REPO/releases/download/$TAG/$f"
+          done

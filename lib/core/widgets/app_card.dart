@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Consistent minimal card used across the app: clean surface, hairline
-/// border and a soft drop shadow (uiverse-inspired "soft UI" look).
+/// Consistent glass card used across the app: translucent gradient surface,
+/// hairline border and a soft drop shadow (uiverse-style glassmorphism).
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
@@ -24,17 +24,59 @@ class AppCard extends StatelessWidget {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final BorderRadius radius = BorderRadius.circular(AppTheme.cardRadius);
     final Widget content = Padding(padding: padding, child: child);
-    return Container(
-      decoration: BoxDecoration(
-        color: color ?? (dark ? scheme.surfaceContainerLow : Colors.white),
+
+    final BoxDecoration decoration;
+    if (color != null) {
+      decoration = BoxDecoration(
+        color: color,
         borderRadius: radius,
-        border:
-            Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.10)
+              : scheme.outlineVariant.withValues(alpha: 0.5),
+        ),
         boxShadow: AppTheme.softShadow(context),
-      ),
+      );
+    } else {
+      // Uiverse-style layered surface translated to Flutter: a very subtle
+      // accent wash, gradient rim and restrained glow. Unlike heavy backdrop
+      // blur this is GPU-cheap and stays smooth over maps/lists.
+      decoration = BoxDecoration(
+        borderRadius: radius,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color.alphaBlend(
+              Colors.white.withValues(alpha: dark ? 0.025 : 0.70),
+              scheme.surface,
+            ),
+            Color.alphaBlend(
+              scheme.secondary.withValues(alpha: dark ? 0.075 : 0.035),
+              scheme.surface,
+            ),
+          ],
+        ),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: dark ? 0.20 : 0.10),
+        ),
+        boxShadow: <BoxShadow>[
+          ...AppTheme.softShadow(context),
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: dark ? 0.08 : 0.035),
+            blurRadius: 18,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      decoration: decoration,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
         child: onTap == null
             ? content
             : InkWell(
@@ -65,11 +107,25 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 10),
       child: Row(
         children: <Widget>[
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[AppTheme.brandStart, AppTheme.brandEnd],
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
+                    letterSpacing: -0.25,
                   ),
             ),
           ),

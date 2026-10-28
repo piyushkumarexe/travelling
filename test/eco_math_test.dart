@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yatrawise/core/utils/eco_math.dart';
+import 'package:yatrawise/data/models/eco.dart';
 
 void main() {
   group('EcoMath.activityPoints', () {
@@ -75,6 +76,26 @@ void main() {
       expect(EcoMath.modeLabel('walk'), 'Walking');
       expect(EcoMath.modeLabel('cycle'), 'Cycling');
       expect(EcoMath.modeLabel('transit'), 'Public transport');
+    });
+  });
+
+  group('EcoMath.applyActivity', () {
+    test('accumulates score, distance, sessions and badges', () {
+      final EcoScore s = EcoScore(uid: 'u');
+      final EcoActivity a = EcoActivity(
+        id: '1',
+        uid: 'u',
+        mode: 'walk',
+        distanceMeters: 1000,
+        durationSeconds: 600,
+        createdAt: DateTime.now(),
+      );
+      final EcoScore next = EcoMath.applyActivity(s, a);
+      expect(next.score, 14);
+      expect(next.byMode['walk'], 1000);
+      expect(next.sessions, 1);
+      expect(next.badges, contains('first-steps'));
+      expect(next.badges, contains('walk-1'));
     });
   });
 }

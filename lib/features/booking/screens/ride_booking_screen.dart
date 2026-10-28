@@ -1,0 +1,725 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
+import 'package:latlong2/latlong.dart';
+
+import '../../../core/app_config.dart';
+import '../../../core/network/free_geo_client.dart';
+import '../../../core/services/location_service.dart';
+import '../../../core/state/app_container.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../data/models/places.dart';
+import '../booking_icons.dart';
+import '../booking_models.dart';
+import '../booking_service.dart';
+import 'price_compare_sheet.dart';
+
+/// 🚕 Ride booking — real GPS pickup, MapTiler destination search / map pin,
+/// OSRM route preview, and hand-off to VERIFIED official provider flows
+/// (Uber/Ola deep links with pickup+drop; Rapido official app without
+/// prefill — honestly labelled). No fares, drivers or availability are ever
+/// invented — those live in the provider's app.
+class RideBookingScreen extends StatefulWidget {
+  const RideBookingScreen({super.key});
+
+  @override
+  State<RideBookingScreen> createState() => _RideBookingScreenState();
+}
+
+class _RideBookingScreenState extends State<RideBookingScreen> {
+  AppContainer get _c => AppScope.of(context);
+  LocationService get _loc => _c.locationService;
+
+  final TextEditingController _destText = TextEditingController();
+  final MapController _mapController = MapController();
+
+  ({String name, double lat, double lng})? _pickup;
+  ({String name, double lat, double lng})? _drop;
+  String _serviceType = 'cab'; // bike | auto | cab
+  List<({String name, double lat, double lng})> _recents =
+      const <({String name, double lat, double lng})>[];
+  List<Place> _suggestions = const <Place>[];
+  Position? _suggestFix; // GPS fix used for the current suggestions
+  Timer? _debounce;
+  bool _pickingOnMap = false;
+  RouteInfo? _route;
+  bool _routeLoading = false;
+  String? _routeError;
+  BookingProvider? _launching;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecents();
+    _useCurrentLocation();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _destText.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRecents() async {
+    final List<({String name, double lat, double lng})> r =
+        await _c.bookingService.recentLocations();
+    if (mounted) setState(() => _recents = r);
+  }
+
+  Future<void> _useCurrentLocation() async {
+    final Position? p = await _loc.currentPosition();
+    if (!mounted) return;
+    if (p == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Your current location is unavailable. Enable GPS and try again.')));
+      return;
+    }
+    setState(() {
+      _pickup = (
+        name: 'Current location',
+        lat: p.latitude,
+        lng: p.longitude,
+      );
+    });
+    _moveMap(LatLng(p.latitude, p.longitude));
+    _refreshRoute();
+  }
+
+  void _moveMap(LatLng point) {
+    try {
+      _mapController.move(point, 14);
+    } catch (_) {}
+  }
+
+  void _onDestQueryChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 3) {
+      setState(() => _suggestions = const <Place>[]);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 450), () async {
+      final Position? me = await _loc.currentPosition();
+      try {
+        final List<Place> places = await _c.placesRepository.suggest(
+          q.trim(),
+          location: me == null
+              ? null
+              : gm.LatLng(me.latitude, me.longitude),
+          limit: 6,
+        );
+        if (!mounted) return;
+        setState(() {
+          _suggestFix = me;
+          _suggestions = places;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _suggestions = const <Place>[]);
+      }
+    });
+  }
+
+  /// Contextual suggestion subtitle: " — Area, City · 3.2 km".
+  String _subtitleFor(Place p) {
+    final Position? me = _suggestFix;
+    return PlaceRanking.subtitleFor(
+        p, me == null ? null : gm.LatLng(me.latitude, me.longitude));
+  }
+
+  void _pickSuggestion(Place p) {
+    setState(() {
+      _drop = (name: p.name, lat: p.lat, lng: p.lng);
+      _suggestions = const <Place>[];
+      _destText.text = p.name;
+    });
+    _moveMap(LatLng(p.lat, p.lng));
+    unawaited(_c.bookingService
+        .addRecentLocation(p.name, p.lat, p.lng)
+        .then((_) => _loadRecents()));
+    _refreshRoute();
+  }
+
+  void _refreshRoute() {
+    final ({String name, double lat, double lng})? from = _pickup;
+    final ({String name, double lat, double lng})? to = _drop;
+    if (from == null || to == null) return;
+    setState(() {
+      _routeLoading = true;
+      _routeError = null;
+    });
+    _c.osrmClient
+        .route(
+      origin: gm.LatLng(from.lat, from.lng),
+      destination: gm.LatLng(to.lat, to.lng),
+      mode: _serviceType == 'bike' ? 'bike' : 'car',
+    )
+        .then((RouteInfo r) {
+      if (!mounted) return;
+      setState(() {
+        _route = r;
+        _routeLoading = false;
+      });
+    }).catchError((Object e) {
+      if (!mounted) return;
+      setState(() {
+        _route = null;
+        _routeLoading = false;
+        _routeError =
+            'Fresh route information is temporarily unavailable. '
+            'The ride provider will still receive your coordinates.';
+      });
+    });
+  }
+
+  bool get _dropNeedsAddress {
+    final String n = (_drop?.name ?? '').trim();
+    return n.isEmpty || n.startsWith('Map pin (') || n == 'Finding address…';
+  }
+
+  /// Provider search boxes understand a street/locality/address, not our old
+  /// internal `Map pin (lat, lng)` label. Resolve it both when the pin is
+  /// dropped AND immediately before handoff (covers old recents/state).
+  Future<bool> _ensureSearchableDrop() async {
+    final ({String name, double lat, double lng})? point = _drop;
+    if (point == null) return false;
+    if (!_dropNeedsAddress) return true;
+    final String? address = await _c.placesRepository
+        .reverseGeocodeAddress(gm.LatLng(point.lat, point.lng))
+        .timeout(const Duration(seconds: 12), onTimeout: () => null);
+    if (!mounted) return false;
+    final String clean = (address ?? '').trim();
+    if (clean.isEmpty) {
+      setState(() {
+        _drop = (name: 'Selected location', lat: point.lat, lng: point.lng);
+        _destText.text = 'Selected location';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('This pin has no searchable street address. Search a '
+            'nearby landmark or locality before opening a ride app.'),
+      ));
+      return false;
+    }
+    setState(() {
+      _drop = (name: clean, lat: point.lat, lng: point.lng);
+      _destText.text = clean;
+    });
+    unawaited(_c.bookingService.addRecentLocation(clean, point.lat, point.lng));
+    return true;
+  }
+
+  Future<void> _pickMapPoint(LatLng point) async {
+    setState(() {
+      _drop = (
+        name: 'Finding address…',
+        lat: point.latitude,
+        lng: point.longitude,
+      );
+      _destText.text = 'Finding address…';
+      _pickingOnMap = false;
+    });
+    _refreshRoute();
+    await _ensureSearchableDrop();
+  }
+
+  Future<void> _openSummary(BookingProvider provider) async {
+    if (_pickup == null || _drop == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Set both pickup and destination to continue.')));
+      return;
+    }
+    if (!await _ensureSearchableDrop() || !mounted) return;
+    final BookingQuery q = _query();
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(providerIcon(provider.providerName,
+                      category: BookingCategory.ride)),
+                  const SizedBox(width: 8),
+                  Text('Continue with ${provider.providerName}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _row('Pickup', _pickup!.name),
+              _row('Destination', _drop!.name),
+              _row('Service type', _serviceType),
+              if (_route != null) ...<Widget>[
+                _row(
+                    'Route (OSRM, real)',
+                    '${(_route!.distanceMeters / 1000).toStringAsFixed(1)} km · '
+                        '~${(_route!.durationSeconds / 60).round()} min'),
+              ],
+              if (_route == null && _routeError != null)
+                const Text('Route preview unavailable — the provider will '
+                    'still get your coordinates.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.warning)),
+              const SizedBox(height: 8),
+              Text(provider.handoffNote,
+                  style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  label: Text('Continue with ${provider.providerName}'),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((Object? confirmed) async {
+      if (confirmed != true) return;
+      await _launch(provider, q);
+    });
+  }
+
+  Future<void> _launch(BookingProvider provider, BookingQuery q) async {
+    setState(() => _launching = provider);
+    final bool copied =
+        await _c.bookingService.prepareDestinationBackup(q);
+    if (!mounted) return;
+    if (copied) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('Opening ${provider.providerName}… destination address '
+            'copied. Paste it if the provider leaves Drop empty.'),
+      ));
+      // Let the traveller read the fallback before this app is backgrounded.
+      await Future<void>.delayed(const Duration(milliseconds: 650));
+      if (!mounted) return;
+    }
+    final BookingLaunchResult result =
+        await _c.bookingService.continueWithProvider(provider, q);
+    if (!mounted) return;
+    setState(() => _launching = null);
+    final String message = switch (result) {
+      BookingLaunchResult.openedPrefilled =>
+        'Official ${provider.providerName} booking page opened with the '
+            'coordinate link. Searchable destination copied as backup.',
+      BookingLaunchResult.opened =>
+        '${provider.providerName} opened. Searchable destination copied — '
+            'paste it if the destination field is empty.',
+      BookingLaunchResult.openedApp => _c.bookingService.lastDestinationCopied
+          ? 'Official ${provider.providerName} app opened. Location prefill '
+              'cannot be verified; searchable address copied. Paste it in '
+              'the destination box.'
+          : 'Official ${provider.providerName} app opened. Choose the '
+              'destination there.',
+      BookingLaunchResult.openedWeb =>
+        'Official ${provider.providerName} website opened.',
+      BookingLaunchResult.appNotInstalled =>
+        'The ${provider.providerName} app is not installed — its official '
+            'Play Store page was opened.',
+      _ => describeLaunch(result),
+    };
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// The query both the provider flow and the comparison use.
+  BookingQuery _query() => BookingQuery(
+        fromName: _pickup?.name,
+        fromLat: _pickup?.lat,
+        fromLng: _pickup?.lng,
+        toName: _drop?.name,
+        toLat: _drop?.lat,
+        toLng: _drop?.lng,
+        serviceType: _serviceType,
+      );
+
+  /// ONE TAP comparison for the ride apps. The distance is the real ROAD
+  /// distance from the route on the map (not straight-line), which is why
+  /// ride estimates are the highest-confidence numbers the app produces.
+  Future<void> _comparePrices() async {
+    if (_pickup == null || _drop == null) return;
+    if (!await _ensureSearchableDrop() || !mounted) return;
+    final BookingQuery q = _query();
+    final double? km = _route == null ? null : _route!.distanceMeters / 1000;
+    final double? mins = _route == null ? null : _route!.durationSeconds / 60;
+    await showPriceCompareSheet(
+      context,
+      category: BookingCategory.ride,
+      query: q,
+      providers: BookingProviders.forCategory(BookingCategory.ride),
+      date: DateTime.now(),
+      pax: 1,
+      distanceKm: km,
+      minutes: mins,
+      serviceType: _serviceType,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<BookingProvider> providers =
+        BookingProviders.forCategory(BookingCategory.ride);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Book a ride')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: <Widget>[
+          _serviceTypeChips(),
+          const SizedBox(height: 12),
+          _pickupCard(),
+          const SizedBox(height: 10),
+          _destinationCard(),
+          const SizedBox(height: 10),
+          _mapCard(),
+          if (_route != null || _routeError != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _routeCard(),
+          ],
+          const SizedBox(height: 14),
+          // One tap → every ride app's estimate for THIS route (the road
+          // distance comes from the route already drawn on the map, so
+          // these are the most accurate numbers in the app).
+          FilledButton.icon(
+            onPressed: _pickup == null || _drop == null ? null : _comparePrices,
+            icon: const Icon(Icons.compare_arrows),
+            label: const Text('⚖️ Compare all ride apps (1 tap)'),
+          ),
+          const SizedBox(height: 14),
+          Text('Continue with a provider',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          for (final BookingProvider p in providers)
+            _providerCard(p),
+          const SizedBox(height: 10),
+          Text(
+            'Booking and payment happen in the provider\'s own app/site. '
+            'Tourism never shows fares or availability — live prices come '
+            'only from the provider.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(fontStyle: FontStyle.italic),
+          ),
+          const SizedBox(height: 16),
+          const Center(
+            child: Text('TRAVEL-BOOKING-HUB-2026-09-14-01',
+                style: TextStyle(fontSize: 10, color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceTypeChips() {
+    return SegmentedButton<String>(
+      segments: const <ButtonSegment<String>>[
+        ButtonSegment<String>(
+            value: 'bike', icon: Icon(Icons.two_wheeler_outlined),
+            label: Text('Bike')),
+        ButtonSegment<String>(
+            value: 'auto', icon: Icon(Icons.electric_rickshaw),
+            label: Text('Auto')),
+        ButtonSegment<String>(
+            value: 'cab', icon: Icon(Icons.local_taxi_outlined),
+            label: Text('Cab')),
+      ],
+      selected: <String>{_serviceType},
+      onSelectionChanged: (Set<String> s) {
+        setState(() => _serviceType = s.first);
+        _refreshRoute();
+      },
+    );
+  }
+
+  Widget _pickupCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.trip_origin, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _pickup == null
+                        ? 'Pickup: getting your location…'
+                        : 'Pickup: ${_pickup!.name}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Use current location',
+                  onPressed: _useCurrentLocation,
+                  icon: const Icon(Icons.my_location, size: 18),
+                ),
+              ],
+            ),
+            if (_pickup != null)
+              Text(
+                '${_pickup!.lat.toStringAsFixed(5)}, ${_pickup!.lng.toStringAsFixed(5)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _destinationCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TextField(
+              controller: _destText,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.location_on, size: 18),
+                hintText: 'Where to? (MapTiler search)',
+                isDense: true,
+                suffixIcon: IconButton(
+                  tooltip: _pickingOnMap
+                      ? 'Done picking on map'
+                      : 'Pick on map',
+                  icon: Icon(_pickingOnMap ? Icons.check : Icons.pin_drop,
+                      size: 20),
+                  onPressed: () => setState(() => _pickingOnMap = !_pickingOnMap),
+                ),
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: _onDestQueryChanged,
+            ),
+            if (_drop != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Drop: ${_drop!.name}',
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            if (_suggestions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 6),
+              for (final Place p in _suggestions)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.place, size: 16),
+                  title: Text(p.name,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13)),
+                  subtitle: Text(_subtitleFor(p),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11)),
+                  onTap: () => _pickSuggestion(p),
+                ),
+            ],
+            if (_recents.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Text('Recent',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final ({String name, double lat, double lng}) r
+                      in _recents.take(4))
+                    ActionChip(
+                      label: Text(r.name,
+                          style: const TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        setState(() {
+                          _drop = r;
+                          _destText.text = r.name;
+                        });
+                        _moveMap(LatLng(r.lat, r.lng));
+                        _refreshRoute();
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mapCard() {
+    final LatLng initial = _drop != null
+        ? LatLng(_drop!.lat, _drop!.lng)
+        : _pickup != null
+            ? LatLng(_pickup!.lat, _pickup!.lng)
+            : const LatLng(20.5937, 78.9629);
+    return SizedBox(
+      height: 220,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          children: <Widget>[
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: initial,
+                initialZoom: _pickup == null && _drop == null ? 4 : 13,
+                maxZoom: 19,
+                onTap: (TapPosition _, LatLng point) {
+                  if (!_pickingOnMap) return;
+                  unawaited(_pickMapPoint(point));
+                },
+              ),
+              children: <Widget>[
+                TileLayer(
+                  urlTemplate: AppConfig.tileUrlTemplate('streets-v2'),
+                  fallbackUrl: AppConfig.tileFallbackUrl,
+                  userAgentPackageName: 'app.roamio.tourism',
+                  retinaMode: RetinaMode.isHighDensity(context),
+                  maxNativeZoom: 19,
+                ),
+                PolylineLayer(
+                  polylines: <Polyline>[
+                    if (_route != null && _route!.polyline.length >= 2)
+                      Polyline(
+                        points: _route!.polyline
+                            .map((gm.LatLng p) =>
+                                LatLng(p.latitude, p.longitude))
+                            .toList(),
+                        color: Theme.of(context).colorScheme.primary,
+                        strokeWidth: 5,
+                      ),
+                  ],
+                ),
+                MarkerLayer(
+                  markers: <Marker>[
+                    if (_pickup != null)
+                      Marker(
+                        point: LatLng(_pickup!.lat, _pickup!.lng),
+                        width: 28,
+                        height: 28,
+                        child: const Icon(Icons.trip_origin,
+                            color: AppTheme.success, size: 26),
+                      ),
+                    if (_drop != null)
+                      Marker(
+                        point: LatLng(_drop!.lat, _drop!.lng),
+                        width: 28,
+                        height: 28,
+                        child: const Icon(Icons.location_pin,
+                            color: AppTheme.danger, size: 28),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            if (_pickingOnMap)
+              Positioned(
+                top: 8,
+                left: 8,
+                right: 8,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'Tap the map to set your destination pin',
+                    style: TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _routeCard() {
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: _routeLoading
+            ? const SizedBox(
+                height: 20,
+                child: LinearProgressIndicator())
+            : _route != null
+                ? Text(
+                    'Route (real OSRM): '
+                    '${(_route!.distanceMeters / 1000).toStringAsFixed(1)} km · '
+                    '~${(_route!.durationSeconds / 60).round()} min by '
+                    '${_serviceType == 'bike' ? 'bike' : 'car'}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  )
+                : Text(_routeError ?? '',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.warning)),
+      ),
+    );
+  }
+
+  Widget _providerCard(BookingProvider p) {
+    final bool busy = _launching?.providerId == p.providerId;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        onTap: busy ? null : () => _openSummary(p),
+        leading: Icon(providerIcon(p.providerName,
+            category: BookingCategory.ride)),
+        title: Text(p.providerName,
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(
+          p.locationFormat == LocationFormat.latLng
+              ? 'Pickup & drop passed to the official flow'
+              : 'Opens the official app — set locations there',
+          style: const TextStyle(fontSize: 11.5),
+        ),
+        trailing: busy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.chevron_right),
+      ),
+    );
+  }
+
+  Widget _row(String k, String v) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SizedBox(
+                width: 110,
+                child: Text(k,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant))),
+            Expanded(child: Text(v)),
+          ],
+        ),
+      );
+}
