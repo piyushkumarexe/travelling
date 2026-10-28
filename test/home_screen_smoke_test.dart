@@ -46,17 +46,22 @@ void main() {
 class _TestAppContainer extends AppContainer {
   _TestAppContainer() : super(firebaseReady: false, app: null);
 
-  @override
-  final AuthRepository authRepository = _FakeAuthRepository();
+  final _FakeAuthRepository _auth = _FakeAuthRepository();
+  final _FakeZonesRepository _zones = _FakeZonesRepository();
+  final _FakeLocationService _location = _FakeLocationService();
+  final _FakeAutopilotService _autopilot = _FakeAutopilotService();
 
   @override
-  final ZonesRepository zonesRepository = _FakeZonesRepository();
+  AuthRepository get authRepository => _auth;
 
   @override
-  final LocationService locationService = _FakeLocationService();
+  ZonesRepository get zonesRepository => _zones;
 
   @override
-  final AutopilotService autopilotService = _FakeAutopilotService();
+  LocationService get locationService => _location;
+
+  @override
+  AutopilotService get autopilotService => _autopilot;
 }
 
 class _FakeAuthRepository implements AuthRepository {
