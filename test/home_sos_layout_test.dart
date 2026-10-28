@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tourism/features/home/screens/home_screen.dart';
 
 void main() {
   testWidgets('Home SOS action labels do not throw ParentData errors',
@@ -10,24 +11,18 @@ void main() {
           body: Row(
             children: <Widget>[
               Expanded(
-                child: OutlinedButton.icon(
+                child: HomeSosActionButton(
+                  icon: Icons.campaign,
+                  label: 'Report incident',
                   onPressed: () {},
-                  icon: const Icon(Icons.campaign),
-                  // Reproduce the current HomeScreen layout before replacing
-                  // it with a shared production widget.
-                  label: const Flexible(
-                    child: Text('Report incident', overflow: TextOverflow.ellipsis),
-                  ),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: OutlinedButton.icon(
+                child: HomeSosActionButton(
+                  icon: Icons.qr_code_2,
+                  label: 'Emergency ID',
                   onPressed: () {},
-                  icon: const Icon(Icons.qr_code_2),
-                  label: const Flexible(
-                    child: Text('Emergency ID', overflow: TextOverflow.ellipsis),
-                  ),
                 ),
               ),
             ],
@@ -39,5 +34,14 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Report incident'), findsOneWidget);
     expect(find.text('Emergency ID'), findsOneWidget);
+    // Flutter's OutlinedButton.icon supplies this single Flexible. A second
+    // Flexible in the label would compete with it and crash the screen.
+    expect(
+      find.descendant(
+        of: find.byType(OutlinedButton),
+        matching: find.byType(Flexible),
+      ),
+      findsNWidgets(2),
+    );
   });
 }
