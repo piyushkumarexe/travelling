@@ -24,6 +24,7 @@ dependencies:
   # --- Maps & location (real Google Maps SDK, real GPS) ---
   google_maps_flutter: ^2.12.1
   geolocator: ^13.0.1
+  shared_preferences: ^2.3.3
 
   # --- Navigation, networking, UI ---
   go_router: ^14.8.1

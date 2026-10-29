@@ -84,7 +84,18 @@ class ApiClient {
       msg = (data['error'] ?? data['message']) as String?;
       details = data['code'] as String?;
     } else if (data is String && data.isNotEmpty) {
-      msg = data.length > 300 ? data.substring(0, 300) : data;
+      final String raw = data.trimLeft();
+      if (raw.startsWith('<')) {
+        // The server answered with an HTML page (the classic Google "404
+        // Page not found" returned when the Cloud Functions backend is not
+        // deployed). Never surface raw markup to the user.
+        msg = code == 404
+            ? 'Backend endpoint not found (404). The Tourism backend is '
+                'probably not deployed yet — run: firebase deploy --only functions.'
+            : 'The server returned an unexpected page (${code ?? 'unknown'}).';
+      } else {
+        msg = data.length > 300 ? data.substring(0, 300) : data;
+      }
     }
     if (code == 401) {
       return ApiException(ApiErrorKind.unauthorized,

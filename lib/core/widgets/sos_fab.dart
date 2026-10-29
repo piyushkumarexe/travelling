@@ -13,7 +13,7 @@ class SosFab extends StatelessWidget {
       onPressed: () => showSOSSheet(context),
       backgroundColor: AppTheme.danger,
       foregroundColor: Colors.white,
-      icon: const Icon(Icons.sos),
+      icon: const Icon(Icons.phone),
       label: const Text('SOS'),
     );
   }

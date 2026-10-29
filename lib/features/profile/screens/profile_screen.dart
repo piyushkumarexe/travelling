@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/state/app_container.dart';
+import '../../../core/state/theme_controller.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
@@ -28,6 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Profile? _profile;
   bool _loading = true;
+  String? _loadError;
   StreamSubscription<Profile?>? _sub;
   final bool _saving = false;
   bool _uploadingPhoto = false;
@@ -40,7 +42,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _listen() {
     final String? uid = _c.authRepository.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError = 'You are signed out. Sign in again to see your profile.';
+        });
+      }
+      return;
+    }
     _sub = _c.profileRepository
         .watch(uid)
         .listen((Profile? p) {
@@ -48,9 +58,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _profile = p;
           _loading = false;
+          _loadError = null;
         });
       }
-    }, onError: (Object _) {});
+    }, onError: (Object _) {
+      // Never swallow the error silently — otherwise the loading spinner
+      // stays on screen forever.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError =
+              'Could not load your profile. Check your connection and try again.';
+        });
+      }
+    });
+  }
+
+  void _retryLoad() {
+    _sub?.cancel();
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    _listen();
+  }
+
+  Widget _appearanceRow(IconData icon, String title, String subtitle,
+      ThemeMode value, ThemeMode current) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool selected = value == current;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setThemeMode(value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w700)),
+                  Text(subtitle,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 20,
+              color: selected ? scheme.primary : scheme.outline,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _signOut() async {
@@ -184,6 +254,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Profile')),
         body: const LoadingView(message: 'Loading profile…'),
+      );
+    }
+    if (_loadError != null && _profile == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: ErrorState(message: _loadError!, onRetry: _retryLoad),
       );
     }
     final Profile? p = _profile;
@@ -376,6 +452,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Appearance',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          AppCard(
+            child: ValueListenableBuilder<ThemeMode>(
+              valueListenable: themeModeNotifier,
+              builder: (BuildContext context, ThemeMode mode, Widget? _) =>
+                  Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _appearanceRow(Icons.light_mode, 'Light',
+                      'Bright theme (default)', ThemeMode.light, mode),
+                  _appearanceRow(
+                      Icons.dark_mode, 'Dark', 'Dark theme', ThemeMode.dark, mode),
+                  _appearanceRow(Icons.brightness_auto, 'System',
+                      'Follow the device theme', ThemeMode.system, mode),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'core/state/app_container.dart';
+import 'core/state/theme_controller.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -40,5 +41,6 @@ Future<void> main() async {
     container.authState.start();
   }
 
+  await loadThemeMode();
   runApp(TourismApp(container: container));
 }
