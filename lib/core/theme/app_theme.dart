@@ -6,13 +6,13 @@ import 'package:flutter/material.dart';
 class AppTheme {
   AppTheme._();
 
-  static const Color seed = Color(0xFF0D9488);
-  static const Color seedBright = Color(0xFF14B8A6);
+  static const Color seed = Color(0xFF7A28E8);
+  static const Color seedBright = Color(0xFF9A5CF5);
   static const Color danger = Color(0xFFE11D48);
   static const Color warning = Color(0xFFF59E0B);
   static const Color success = Color(0xFF16A34A);
 
-  static const double cardRadius = 18;
+  static const double cardRadius = 26;
 
   /// Soft "floating card" shadow used across the app.
   static List<BoxShadow> softShadow(BuildContext context) {
@@ -38,10 +38,10 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor:
-          dark ? scheme.surface : const Color(0xFFF6F8F7),
+          dark ? scheme.surface : const Color(0xFFF4F4F6),
       visualDensity: VisualDensity.adaptivePlatformDensity,
       appBarTheme: AppBarTheme(
-        backgroundColor: dark ? scheme.surface : const Color(0xFFF6F8F7),
+        backgroundColor: dark ? scheme.surface : const Color(0xFFF4F4F6),
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -49,8 +49,10 @@ class AppTheme {
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: scheme.onSurface,
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'serif',
+          letterSpacing: 0.2,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -75,7 +77,7 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(30),
           ),
           textStyle: const TextStyle(
             fontWeight: FontWeight.w700,
@@ -86,7 +88,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(30),
           ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
@@ -102,26 +104,27 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        fillColor: dark ? scheme.surfaceContainerLow : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide(color: scheme.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide(color: scheme.primary, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide(color: scheme.error),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide(color: scheme.error, width: 1.6),
         ),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         side: BorderSide(color: scheme.outlineVariant),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -147,7 +150,9 @@ class AppTheme {
     return BoxDecoration(
       color: dark ? scheme.surfaceContainerLow : Colors.white,
       borderRadius: BorderRadius.circular(cardRadius),
-      border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      border: dark
+          ? Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))
+          : null,
       boxShadow: <BoxShadow>[
         BoxShadow(
           color: Colors.black.withValues(alpha: dark ? 0.28 : 0.06),

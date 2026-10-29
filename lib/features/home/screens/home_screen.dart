@@ -265,7 +265,12 @@ class _HomeScreenState extends State<HomeScreen> {
           children: <Widget>[
             Text(
               'Hello, $_greetingName',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'serif',
+                letterSpacing: 0.2,
+              ),
             ),
             Text(
               _locationDone

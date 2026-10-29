@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val localProperties = java.util.Properties()
+val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
@@ -48,7 +50,7 @@ android {
     // versions install directly over old ones. Local builds without the
     // keystore fall back to the debug key (development only).
     val keystorePropsFile = rootProject.file("keystore.properties")
-    val keystoreProps = java.util.Properties()
+    val keystoreProps = Properties()
     if (keystorePropsFile.exists()) {
         keystorePropsFile.inputStream().use { keystoreProps.load(it) }
     }
