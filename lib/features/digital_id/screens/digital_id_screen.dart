@@ -220,7 +220,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                     'The QR code contains only a random verification token — '
                     'no name, phone or other personal data. First responders '
                     'scan it (or type the token) and the app verifies it '
-                    'against YatraWise\'s secure records.',
+                    'against Tourism\'s secure records.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
@@ -255,7 +255,7 @@ class _DigitalIdScreenState extends State<DigitalIdScreen> {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      'YATRAWISE EMERGENCY ID',
+                      'TOURISM EMERGENCY ID',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.8),
                         fontSize: 12,

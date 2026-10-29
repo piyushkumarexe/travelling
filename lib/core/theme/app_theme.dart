@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// YatraWise "Clean Minimal" theme (uiverse-inspired soft UI):
+/// Tourism "Clean Minimal" theme (uiverse-inspired soft UI):
 /// fresh teal accent, hairline borders, soft shadows, pill-ish radii.
 
 class AppTheme {

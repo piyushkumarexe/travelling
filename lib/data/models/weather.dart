@@ -1,4 +1,4 @@
-// OpenWeather data (proxied through the YatraWise backend).
+// OpenWeather data (proxied through the Tourism backend).
 
 class WeatherCurrent {
   WeatherCurrent({

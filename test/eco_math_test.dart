@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:yatrawise/core/utils/eco_math.dart';
+import 'package:tourism/core/utils/eco_math.dart';
 
 void main() {
   group('EcoMath.activityPoints', () {

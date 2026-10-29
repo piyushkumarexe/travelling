@@ -24,7 +24,7 @@ Future<void> main() async {
       // Firebase exists but failed to initialize (bad key, offline first
       // start, ...). The app still opens in a guided setup state so the user
       // can fix the configuration.
-      debugPrint('YatraWise: Firebase init failed: $e');
+      debugPrint('Tourism: Firebase init failed: $e');
       app = null;
     }
   }
@@ -40,5 +40,5 @@ Future<void> main() async {
     container.authState.start();
   }
 
-  runApp(YatraWiseApp(container: container));
+  runApp(TourismApp(container: container));
 }

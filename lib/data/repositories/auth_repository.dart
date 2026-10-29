@@ -54,7 +54,7 @@ class AuthRepository {
       case 'invalid-firebase-credential':
         return 'Google credential was not accepted. Try signing in again.';
       case 'account-exists-with-different-credential':
-        return 'This Google account is already linked to another YatraWise account.';
+        return 'This Google account is already linked to another Tourism account.';
       case 'too-many-requests':
         return 'Too many attempts. Wait a minute and try again.';
       case 'network-request-failed':
