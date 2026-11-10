@@ -25,6 +25,10 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications (and friends) use java.time / other
+        // JDK 8+ APIs that Android < 26 does not provide. Without core
+        // library desugaring ':app:checkReleaseAarMetadata' fails the build.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -106,4 +110,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Backs isCoreLibraryDesugaringEnabled above.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
