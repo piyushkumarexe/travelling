@@ -11,8 +11,8 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
 
-val flutterVersionCode: Int = localProperties.getProperty("flutter.versionCode")?.toIntOrNull() ?: 1
-val flutterVersionName: String = localProperties.getProperty("flutter.versionName") ?: "1.0.0"
+val flutterVersionCode: Int = localProperties.getProperty("flutter.versionCode")?.toIntOrNull() ?: 30
+val flutterVersionName: String = localProperties.getProperty("flutter.versionName") ?: "1.0.30"
 
 android {
     namespace = "app.roamio.tourism"

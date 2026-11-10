@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/app_config.dart';
 import '../../../core/state/app_container.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/validators.dart';
@@ -418,7 +419,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'YatraWise 1.0.0 · data encrypted in transit and at rest',
+              'YatraWise ${AppConfig.appVersion} · data encrypted in transit and at rest',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall

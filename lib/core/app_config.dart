@@ -8,6 +8,12 @@
 class AppConfig {
   AppConfig._();
 
+  /// Human-readable app version shown in the UI (Profile screen).
+  ///
+  /// Keep in sync with the `version:` field in `pubspec.yaml`
+  /// (`1.0.30+30` → name `1.0.30`, code `30`).
+  static const String appVersion = '1.0.30';
+
   /// Region where the YatraWise backend Cloud Functions are deployed.
   ///
   /// Must match the `region` setting in `functions/src/index.js` and the
