@@ -1,7 +1,7 @@
 name: yatrawise
 description: "YatraWise - Smart Tourism & Safety Assistant for Android."
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.30+30
 
 environment:
   sdk: ">=3.5.0 <5.0.0"

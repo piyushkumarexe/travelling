@@ -75,7 +75,9 @@ jobs:
 
   build-apk:
     name: Build release APK
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is migrating to Ubuntu 26 and images change under
+    # us; 24.04 ships a stable, preinstalled Android SDK for the release build.
+    runs-on: ubuntu-24.04
     needs: analyze-test
     steps:
       - name: Checkout
@@ -87,8 +89,49 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK tools
-        uses: android-actions/setup-android@v3
+      # GitHub's ubuntu images already ship a complete Android SDK. The
+      # third-party android-actions/setup-android step used to fail here
+      # (Node 20 -> 24 runner migration) and took the whole build down, so we
+      # verify/repair the preinstalled SDK ourselves and install what we need.
+      - name: Ensure Android SDK + licenses
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "No preinstalled SDK found — installing command-line tools"
+            SDK="$RUNNER_TEMP/android-sdk"
+            mkdir -p "$SDK/cmdline-tools"
+            curl -fsSL -o /tmp/cmdline-tools.zip \
+              https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q /tmp/cmdline-tools.zip -d "$SDK/cmdline-tools"
+            mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+            {
+              echo "ANDROID_SDK_ROOT=$SDK"
+              echo "ANDROID_HOME=$SDK"
+            } >> "$GITHUB_ENV"
+            echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          fi
+
+          echo "Android SDK: $SDK"
+          ls "$SDK" || true
+
+          SDKMANAGER="$(find "$SDK" -path '*/cmdline-tools/*/bin/sdkmanager' -type f 2>/dev/null | sort | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::cmdline-tools/sdkmanager not found under $SDK"
+            exit 1
+          fi
+          echo "sdkmanager: $SDKMANAGER"
+
+          # Accept SDK licences so Gradle can auto-fetch anything missing.
+          yes 2>/dev/null | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          # compileSdk is 36 (android/app/build.gradle.kts); keep 35 too for
+          # plugins that still pin it.
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" \
+            "platforms;android-35" "build-tools;36.0.0" "build-tools;35.0.0" \
+            2>&1 | tail -n 3 || true
+
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

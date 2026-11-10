@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,21 +7,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val localProperties = java.util.Properties()
+// NOTE: `java.util.Properties` cannot be used inline here — in the
+// Kotlin DSL the `java` Gradle extension accessor shadows the `java`
+// package ("Unresolved reference: util"). Import the type instead.
+val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
 
-val flutterVersionCode: Int = localProperties.getProperty("flutter.versionCode")?.toIntOrNull() ?: 1
-val flutterVersionName: String = localProperties.getProperty("flutter.versionName") ?: "1.0.0"
+val flutterVersionCode: Int = localProperties.getProperty("flutter.versionCode")?.toIntOrNull() ?: 30
+val flutterVersionName: String = localProperties.getProperty("flutter.versionName") ?: "1.0.30"
 
 android {
     namespace = "app.roamio.tourism"
-    compileSdk = 35
+    // camera/ mobile_scanner (androidx.camera 1.6.x) require compiling
+    // against API 36; AGP 8.11.x supports it.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications (and friends) use java.time / other
+        // JDK 8+ APIs that Android < 26 does not provide. Without core
+        // library desugaring ':app:checkReleaseAarMetadata' fails the build.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -48,7 +59,7 @@ android {
     // versions install directly over old ones. Local builds without the
     // keystore fall back to the debug key (development only).
     val keystorePropsFile = rootProject.file("keystore.properties")
-    val keystoreProps = java.util.Properties()
+    val keystoreProps = Properties()
     if (keystorePropsFile.exists()) {
         keystorePropsFile.inputStream().use { keystoreProps.load(it) }
     }
@@ -101,4 +112,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Backs isCoreLibraryDesugaringEnabled above.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
