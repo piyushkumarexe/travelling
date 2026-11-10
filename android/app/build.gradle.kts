@@ -21,7 +21,9 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 android {
     namespace = "app.roamio.tourism"
-    compileSdk = 35
+    // camera/ mobile_scanner (androidx.camera 1.6.x) require compiling
+    // against API 36; AGP 8.11.x supports it.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

@@ -125,9 +125,11 @@ jobs:
           # Accept SDK licences so Gradle can auto-fetch anything missing.
           yes 2>/dev/null | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
 
-          # compileSdk/targetSdk are 35 (see android/app/build.gradle.kts).
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" \
-            "build-tools;35.0.0" 2>&1 | tail -n 3 || true
+          # compileSdk is 36 (android/app/build.gradle.kts); keep 35 too for
+          # plugins that still pin it.
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" \
+            "platforms;android-35" "build-tools;36.0.0" "build-tools;35.0.0" \
+            2>&1 | tail -n 3 || true
 
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
