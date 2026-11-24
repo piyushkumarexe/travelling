@@ -87,11 +87,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      # JDK 21: AGP 9.3.1's bundled lint calls JDK 21 APIs
+      # (List.removeLast) and crashes lintVital on 17 with
+      # NoSuchMethodError. Flutter's floor is 17, so 21 is allowed;
+      # bytecode target stays 17 (see app/build.gradle.kts).
+      - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       # GitHub's ubuntu images already ship a complete Android SDK. The
       # third-party android-actions/setup-android step used to fail here
