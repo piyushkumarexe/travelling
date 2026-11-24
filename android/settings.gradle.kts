@@ -18,8 +18,12 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.11.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
+    // Versions pair with android/gradle.properties (android.builtInKotlin=
+    // false, android.newDsl=false) and the Gradle wrapper — Flutter stable's
+    // DependencyVersionChecker hard-errors below Gradle 9.3.1 / AGP 9.1.1 /
+    // KGP 2.4.10. These match flutter create's template defaults exactly.
+    id("com.android.application") version "9.3.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.20" apply false
 }
 
 include(":app")

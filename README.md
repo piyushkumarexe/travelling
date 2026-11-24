@@ -44,7 +44,9 @@ Cloud Functions backend; the Android app ships with zero API keys.
 - **OpenWeather** — current + forecast (server key, proxied).
 - **NVIDIA API** — Llama 3.1 70B instruct for chat, itinerary JSON and
   incident triage (server key only).
-- **GitHub Actions** — analyze + test + release APK artifact.
+- **GitHub Actions** — analyze + test + per-ABI/universal release APKs
+  (artifacts `yatrawise-phone-apk` + `yatrawise-release-apk`, and the
+  `apk-latest` GitHub Release with direct phone-download links).
 
 ## Repository layout
 
@@ -183,29 +185,59 @@ that has access to the OAuth client) and you land on the dashboard.
 
 1. Push to `main` (or any PR into `main`), **or** open
    **GitHub → Actions → "Build APK" → Run workflow**.
-2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze
-   --fatal-warnings`, `flutter test`) and **Build release APK**
-   (JDK 17 + Android SDK + `flutter build apk --release`).
-3. Download the **`yatrawise-release-apk`** artifact from the job summary.
+2. Watch the two jobs: **Analyze & test** (pub get, `flutter analyze`,
+   `flutter test`) and **Build release APK**, which builds the app twice
+   from the same source:
+   - `flutter build apk --release --split-per-abi` → three small
+     per-device APKs (`yatrawise-arm64-v8a.apk` for almost every phone
+     since 2017, `yatrawise-armeabi-v7a.apk` for very old 32-bit
+     devices, `yatrawise-x86_64.apk` for emulators), then
+   - `flutter build apk --release` → one universal APK
+     (`yatrawise-universal.apk`) that runs everywhere.
 
-The release APK is signed with the project's *debug* keystore (the same
-one CI always has). For public distribution you should create a proper
-release keystore and provide it as workflow secrets — see "Signing"
-below.
+   Both builds use the workflow run number as `--build-number`, so every
+   new APK installs directly over the previous one. Before anything is
+   published, a strict gate re-checks each APK: signature verifies under
+   `apksigner`, signed by the **permanent upload key** (never a
+   throwaway debug key), parses under `aapt` with the right package /
+   SDK levels / launcher activity, passes `zipalign` (incl. 16 KB page
+   alignment), and is not marked `testOnly`.
+3. Download from the job summary:
+   - **`yatrawise-phone-apk`** — just the three per-device APKs +
+     `SHA256SUMS.txt` (~45–55 MB each; what a tester installs on a
+     phone), or
+   - **`yatrawise-release-apk`** — all four APKs (per-device + universal)
+     + `SHA256SUMS.txt`.
+
+Pushes to `main` additionally publish the same files to the
+**[`apk-latest` prerelease](https://github.com/piyushkumarexe/travelling/releases/tag/apk-latest)**
+as direct download links (no Actions account needed):
+
+```
+https://github.com/piyushkumarexe/travelling/releases/download/apk-latest/yatrawise-arm64-v8a.apk
+```
+
+If a download ever fails mid-way ("problem parsing the package"), the
+release notes' size / versionCode / SHA-256 table and `SHA256SUMS.txt`
+let you verify the file; re-download over WiFi.
 
 ### Locally
 
 ```bash
-flutter build apk --release
-# → build/app/outputs/flutter-apk/app-release.apk
+flutter build apk --release              # single universal APK
+flutter build apk --release --split-per-abi   # per-device APKs
+# → build/app/outputs/flutter-apk/app-release.apk (or app-<abi>-release.apk)
 ```
 
 ### Signing (optional, for store distribution)
 
-Create a keystore, add its path/password to **Settings → Secrets** in the
-repo, and switch `android/app/build.gradle` release signing config to
-read from `System.getenv(...)`. The committed config intentionally
-uses the debug keystore so the CI build is reproducible without secrets.
+CI decodes the `ANDROID_KEYSTORE_BASE64` secret into
+`android/app/upload-keystore.p12` and signs every release APK with that
+**permanent** key, so the SHA-1/SHA-256 fingerprints never change and
+new versions install over old ones (see
+`android/app/build.gradle.kts`). Local builds without the keystore fall
+back to the debug key — fine for development only; never for
+distribution.
 
 ## Android permissions (and why)
 
@@ -294,8 +326,9 @@ Every response is JSON with `kind` on errors (`validation`, `upstream`,
 - Geofence monitoring runs while the app is alive (foreground or
   background with location permission); it is not a separate OS-level
   geofence service.
-- The release APK in CI is debug-keystore signed until you supply a
-  release keystore.
+- CI release APKs are signed with the permanent upload keystore only
+  when the `ANDROID_KEYSTORE_BASE64` secret is set; without it the
+  build warns and the installability gate refuses to publish anything.
 - Incidents/SOS records are *stored and visible to admins* — the app
   never contacts police or emergency services on your behalf; the call
   buttons dial real local services through your phone app.

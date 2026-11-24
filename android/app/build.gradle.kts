@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val localProperties = java.util.Properties()
+// NOTE: `java.util.Properties` cannot be used inline here — in the
+// Kotlin DSL the `java` Gradle extension accessor shadows the `java`
+// package ("Unresolved reference: util"). Import the type instead.
+val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
@@ -16,16 +21,19 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 
 android {
     namespace = "app.roamio.tourism"
-    compileSdk = 35
+    // camera/ mobile_scanner (androidx.camera 1.6.x) require compiling
+    // against API 36; AGP 9.x supports it.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        // flutter_local_notifications (and friends) use java.time / other
+        // JDK 8+ APIs that Android < 26 does not provide. Without core
+        // library desugaring ':app:checkReleaseAarMetadata' fails the build.
+        // Java 17 target matches Flutter stable's app template (AGP 9 era).
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
@@ -48,7 +56,7 @@ android {
     // versions install directly over old ones. Local builds without the
     // keystore fall back to the debug key (development only).
     val keystorePropsFile = rootProject.file("keystore.properties")
-    val keystoreProps = java.util.Properties()
+    val keystoreProps = Properties()
     if (keystorePropsFile.exists()) {
         keystorePropsFile.inputStream().use { keystoreProps.load(it) }
     }
@@ -99,6 +107,20 @@ android {
     }
 }
 
+// Top-level kotlin DSL (KGP 2.4): replaces the old android.kotlinOptions
+// block — jvmTarget must match compileOptions or the build fails with
+// "Inconsistent JVM-target compatibility".
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Backs isCoreLibraryDesugaringEnabled above.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
