@@ -22,7 +22,7 @@ val flutterVersionName: String = localProperties.getProperty("flutter.versionNam
 android {
     namespace = "app.roamio.tourism"
     // camera/ mobile_scanner (androidx.camera 1.6.x) require compiling
-    // against API 36; AGP 8.11.x supports it.
+    // against API 36; AGP 9.x supports it.
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -30,13 +30,10 @@ android {
         // flutter_local_notifications (and friends) use java.time / other
         // JDK 8+ APIs that Android < 26 does not provide. Without core
         // library desugaring ':app:checkReleaseAarMetadata' fails the build.
+        // Java 17 target matches Flutter stable's app template (AGP 9 era).
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     defaultConfig {
@@ -107,6 +104,15 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
         }
+    }
+}
+
+// Top-level kotlin DSL (KGP 2.4): replaces the old android.kotlinOptions
+// block — jvmTarget must match compileOptions or the build fails with
+// "Inconsistent JVM-target compatibility".
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
